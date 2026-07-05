@@ -60,3 +60,38 @@ test('KMS-encrypted SNS topic with an email subscription from context', () => {
     Endpoint: 'oncall@nsightcare.com',
   });
 });
+
+test('at least three alarms are wired to the SNS topic', () => {
+  const { t } = makeStack();
+  // status-check + CPU + root-disk + data-disk = 4
+  t.resourceCountIs('AWS::CloudWatch::Alarm', 4);
+  // every alarm actions the on-call topic
+  const alarms = t.findResources('AWS::CloudWatch::Alarm');
+  const topicRef = Object.keys(t.findResources('AWS::SNS::Topic'))[0];
+  for (const alarm of Object.values(alarms)) {
+    expect(JSON.stringify(alarm.Properties.AlarmActions)).toContain(topicRef);
+  }
+});
+
+test('instance status-check and CPU alarms use EC2 metrics', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'StatusCheckFailed_Instance',
+    Namespace: 'AWS/EC2',
+  });
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'CPUUtilization',
+    Namespace: 'AWS/EC2',
+  });
+});
+
+test('root and data disk alarms use the CWAgent disk_used_percent metric at 80%', () => {
+  const { t } = makeStack();
+  const diskAlarms = Object.values(t.findResources('AWS::CloudWatch::Alarm'))
+    .filter((a) => a.Properties.MetricName === 'disk_used_percent');
+  expect(diskAlarms.length).toBe(2);
+  for (const a of diskAlarms) {
+    expect(a.Properties.Namespace).toBe('CWAgent');
+    expect(a.Properties.Threshold).toBe(80);
+  }
+});

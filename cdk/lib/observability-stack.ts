@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -6,6 +6,8 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as backup from 'aws-cdk-lib/aws-backup';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as cw from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -33,5 +35,74 @@ export class ObservabilityStack extends Stack {
       masterKey: props.logsKey,
     });
     this.topic.addSubscription(new subs.EmailSubscription(oncallEmail));
+
+    const action = new cwActions.SnsAction(this.topic);
+
+    // (a) Instance-level status check (distinct from the System check used for
+    // auto-recovery in Phase 3's ComputeStack).
+    const statusCheck = new cw.Alarm(this, 'InstanceStatusCheckAlarm', {
+      alarmName: 'supabase-instance-status-check-failed',
+      metric: new cw.Metric({
+        namespace: 'AWS/EC2',
+        metricName: 'StatusCheckFailed_Instance',
+        dimensionsMap: { InstanceId: props.instance.instanceId },
+        statistic: 'Maximum',
+        period: Duration.minutes(1),
+      }),
+      threshold: 1,
+      evaluationPeriods: 2,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.BREACHING,
+    });
+    statusCheck.addAlarmAction(action);
+
+    // (b) CPU high.
+    const cpuHigh = new cw.Alarm(this, 'CpuHighAlarm', {
+      alarmName: 'supabase-cpu-high',
+      metric: new cw.Metric({
+        namespace: 'AWS/EC2',
+        metricName: 'CPUUtilization',
+        dimensionsMap: { InstanceId: props.instance.instanceId },
+        statistic: 'Average',
+        period: Duration.minutes(5),
+      }),
+      threshold: 85,
+      evaluationPeriods: 3,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.NOT_BREACHING,
+    });
+    cpuHigh.addAlarmAction(action);
+
+    // (c) disk_used_percent >= 80% on BOTH filesystems (CWAgent namespace). The
+    // CWAgent metric only exists if Phase 3's ComputeStack bootstrap installs the
+    // CloudWatch agent with cdk/assets/cwagent-config.json — treatMissingData:
+    // BREACHING makes a missing agent / mismatched dimension fail LOUD, not silent.
+    const diskAlarm = (id: string, path: string, device: string, fstype: string) => {
+      const a = new cw.Alarm(this, id, {
+        alarmName: `supabase-disk-full-${id}`,
+        metric: new cw.Metric({
+          namespace: 'CWAgent',
+          metricName: 'disk_used_percent',
+          dimensionsMap: {
+            InstanceId: props.instance.instanceId,
+            path,
+            device,
+            fstype,
+          },
+          statistic: 'Maximum',
+          period: Duration.minutes(5),
+        }),
+        threshold: 80,
+        evaluationPeriods: 2,
+        comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        treatMissingData: cw.TreatMissingData.BREACHING,
+      });
+      a.addAlarmAction(action);
+      return a;
+    };
+    // device/fstype are the Amazon Linux 2023 Nitro defaults; reconcile the `path`
+    // values with cwagent-config.json and the live metric dimensions (Task 11).
+    diskAlarm('RootDiskAlarm', '/', 'nvme0n1p1', 'xfs');
+    diskAlarm('DataDiskAlarm', '/mnt/pgdata', 'nvme1n1', 'xfs');
   }
 }
