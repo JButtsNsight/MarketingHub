@@ -13,6 +13,7 @@ import * as targets from 'aws-cdk-lib/aws-events-targets';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
+import * as budgets from 'aws-cdk-lib/aws-budgets';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -189,5 +190,43 @@ export class ObservabilityStack extends Stack {
       treatMissingData: cw.TreatMissingData.BREACHING,
     });
     slotLagAlarm.addAlarmAction(action);
+
+    // Monthly cost guardrail (spec §16/§25). Amount from context, never hardcoded.
+    const budgetAmount = Number(this.node.tryGetContext('monthlyBudgetUsd'));
+    if (!Number.isFinite(budgetAmount) || budgetAmount <= 0) {
+      throw new Error('ObservabilityStack requires a positive "monthlyBudgetUsd" context value.');
+    }
+
+    new budgets.CfnBudget(this, 'MonthlyBudget', {
+      budget: {
+        budgetName: 'supabase-monthly-cost',
+        budgetType: 'COST',
+        timeUnit: 'MONTHLY',
+        budgetLimit: { amount: budgetAmount, unit: 'USD' },
+      },
+      notificationsWithSubscribers: [
+        {
+          notification: {
+            comparisonOperator: 'GREATER_THAN',
+            notificationType: 'ACTUAL',
+            threshold: 80, // percent of budget
+            thresholdType: 'PERCENTAGE',
+          },
+          subscribers: [
+            { subscriptionType: 'EMAIL', address: oncallEmail },
+            { subscriptionType: 'SNS', address: this.topic.topicArn },
+          ],
+        },
+        {
+          notification: {
+            comparisonOperator: 'GREATER_THAN',
+            notificationType: 'FORECASTED',
+            threshold: 100,
+            thresholdType: 'PERCENTAGE',
+          },
+          subscribers: [{ subscriptionType: 'EMAIL', address: oncallEmail }],
+        },
+      ],
+    });
   }
 }

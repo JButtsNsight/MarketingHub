@@ -129,3 +129,25 @@ test('alarm on the replication-slot retained-WAL custom metric', () => {
     Namespace: 'Supabase/DB',
   });
 });
+
+test('monthly cost budget at the context amount with SNS + email notification', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::Budgets::Budget', {
+    Budget: Match.objectLike({
+      BudgetType: 'COST',
+      TimeUnit: 'MONTHLY',
+      BudgetLimit: { Amount: 550, Unit: 'USD' },
+    }),
+    NotificationsWithSubscribers: Match.arrayWith([
+      Match.objectLike({
+        Notification: Match.objectLike({
+          ComparisonOperator: 'GREATER_THAN',
+          NotificationType: 'ACTUAL',
+        }),
+        Subscribers: Match.arrayWith([
+          Match.objectLike({ SubscriptionType: 'EMAIL', Address: 'oncall@nsightcare.com' }),
+        ]),
+      }),
+    ]),
+  });
+});
