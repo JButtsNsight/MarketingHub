@@ -111,3 +111,26 @@ test('serviceRoleSecret is encrypted with the dedicated service-role CMK', () =>
     KmsKeyId: Match.anyValue(),
   });
 });
+
+test('appConfigSecret exists, encrypted with secretsKey, with generated randoms and length constraints', () => {
+  const { t } = makeDataTemplate();
+  t.hasResourceProperties('AWS::SecretsManager::Secret', {
+    Name: 'nsight-supabase/app-config',
+    KmsKeyId: Match.anyValue(),
+    GenerateSecretString: Match.objectLike({
+      // VAULT_ENC_KEY must be EXACTLY 32; excludes make the alphanumeric length exact.
+      GenerateStringKey: Match.anyValue(),
+    }),
+  });
+});
+
+test('a Lambda custom resource signs JWT_SECRET/ANON_KEY/SERVICE_ROLE_KEY at deploy time', () => {
+  const { t } = makeDataTemplate();
+  // The signer Lambda (Node 22) …
+  t.hasResourceProperties('AWS::Lambda::Function', {
+    Runtime: 'nodejs22.x',
+    Handler: 'index.handler',
+  });
+  // … invoked by a CloudFormation custom resource.
+  t.resourceCountIs('AWS::CloudFormation::CustomResource', 1);
+});

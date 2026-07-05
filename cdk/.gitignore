@@ -3,3 +3,5 @@ cdk.out/
 *.js
 *.d.ts
 !jest.config.js
+# Lambda handler sources are real source (bundled by CDK Code.fromAsset), not TS build output.
+!lambda/**/*.js
