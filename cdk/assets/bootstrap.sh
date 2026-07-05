@@ -17,12 +17,15 @@ readonly PGDATA_DIR="${DATA_MOUNT}/db/data"     # PGDATA
 readonly PGWAL_DIR="${DATA_MOUNT}/db/wal"       # pg_wal — SAME volume as PGDATA
 readonly FUNCTIONS_DIR="${DATA_MOUNT}/functions"
 readonly AWS_REGION="us-east-1"
+readonly STANZA="supabase"              # pgBackRest stanza (matches pgbackrest.conf)
+readonly DB_CONTAINER="supabase-db"     # pinned bundle's db container name
 # Secret ARNs are injected by user-data (rendered from CDK); fail if unset.
 : "${APP_CONFIG_SECRET_ARN:?APP_CONFIG_SECRET_ARN must be set by user-data}"
 : "${SERVICE_ROLE_SECRET_ARN:?SERVICE_ROLE_SECRET_ARN must be set by user-data}"
 : "${STORAGE_CREDS_SECRET_ARN:?STORAGE_CREDS_SECRET_ARN must be set by user-data}"
 : "${SMTP_SECRET_ARN:?SMTP_SECRET_ARN must be set by user-data}"
 : "${STORAGE_BUCKET:?STORAGE_BUCKET must be set by user-data}"
+: "${BACKUP_BUCKET:?BACKUP_BUCKET must be set by user-data}"
 
 log()  { echo "[bootstrap] $*" >&2; }
 die()  { echo "[bootstrap][FATAL] $*" >&2; exit 1; }
@@ -157,6 +160,72 @@ compose_up() {
   docker compose --env-file "${APP_DIR}/.env" up -d
 }
 
+# ---- 9. Backups: pgBackRest WAL/PITR + full/diff schedule + nightly pg_dump (§9) -----
+install_backup_deps() {
+  if command -v pgbackrest >/dev/null 2>&1 && command -v crond >/dev/null 2>&1; then
+    log "pgBackRest + cron already present."
+  else
+    log "Installing pgBackRest + cronie."
+    dnf -y install pgbackrest cronie
+  fi
+  command -v pgbackrest >/dev/null 2>&1 || die "pgbackrest not installed — cannot back up"
+  command -v crond >/dev/null 2>&1 || die "crond not installed — cannot schedule backups"
+}
+
+wait_for_db() {
+  # Bounded readiness wait (~5 min) before touching Postgres for backup wiring.
+  local i=0
+  while [ "$i" -lt 60 ]; do
+    if docker exec "$DB_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+      log "Postgres is ready."
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 5
+  done
+  die "Postgres did not become ready — cannot configure backups"
+}
+
+configure_wal_archiving() {
+  # Continuous WAL archiving to pgBackRest → PITR, RPO ≤ 5 min (§9). archive_mode
+  # requires a full server restart, so ALTER SYSTEM then restart the db container.
+  log "Enabling WAL archiving (archive_mode + archive_command)."
+  docker exec "$DB_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 \
+    -c "ALTER SYSTEM SET archive_mode = 'on';" \
+    -c "ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=${STANZA} archive-push %p';" \
+    || die "failed to set archive_mode/archive_command on the db"
+  ( cd "$APP_DIR" && docker compose --env-file "${APP_DIR}/.env" restart db ) \
+    || die "failed to restart db to apply archive_mode"
+  wait_for_db
+}
+
+install_backup_schedule() {
+  # full weekly (Sun 02:00), diff daily (Mon–Sat 02:00), nightly pg_dump (03:00). §9.
+  install -d -m 0755 /etc/cron.d
+  cat >/etc/cron.d/nsight-pgbackrest <<CRON
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+BACKUP_BUCKET=${BACKUP_BUCKET}
+AWS_REGION=${AWS_REGION}
+0 2 * * 0 root /usr/local/bin/pgbackrest-cron full
+0 2 * * 1-6 root /usr/local/bin/pgbackrest-cron diff
+0 3 * * * root /usr/local/bin/pgbackrest-cron dump
+CRON
+  chmod 0644 /etc/cron.d/nsight-pgbackrest
+  systemctl enable --now crond || die "crond could not be started — backups not scheduled"
+}
+
+setup_backups() {
+  export BACKUP_BUCKET AWS_REGION
+  install_backup_deps
+  wait_for_db
+  configure_wal_archiving
+  # Initialize + verify the pgBackRest S3 stanza (host process, instance-role creds).
+  /usr/local/bin/pgbackrest-cron stanza || die "pgBackRest stanza init/check failed"
+  install_backup_schedule
+  log "Backups active: WAL archiving + full/diff base backups + nightly pg_dump scheduled."
+}
+
 main() {
   require_imds
   install_docker
@@ -191,6 +260,11 @@ main() {
   render_env
   fetch_bundle
   compose_up
+
+  # Activate the §9 backup machinery: WAL archiving (PITR), scheduled full/diff base
+  # backups, and the nightly pg_dump. Runs on every boot (idempotent — ALTER SYSTEM,
+  # stanza-create, and the cron.d drop are all convergent).
+  setup_backups
 
   # First-boot only: stamp the sentinel AFTER a clean bring-up so a crashed init does
   # not falsely mark the volume initialized.
