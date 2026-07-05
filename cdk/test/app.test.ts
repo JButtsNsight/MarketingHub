@@ -6,6 +6,11 @@ test('cdk synth succeeds for all stacks', () => {
   expect(out).not.toMatch(/Error|Exception/i);
 });
 
+test('SupabaseCompute is in the synthesized cloud assembly', () => {
+  const out = execSync('npx cdk list 2>&1', { cwd: process.cwd() }).toString();
+  expect(out).toContain('SupabaseCompute');
+});
+
 test('DataStack synthesizes with the full contract exported', () => {
   // Reuses the app synth; asserts DataStack template contains the crown-jewel key,
   // both buckets, and the vault (a fast structural smoke test).
