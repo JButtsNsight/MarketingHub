@@ -142,11 +142,17 @@ test('root and data volumes are both KMS-encrypted gp3', () => {
 
 test('the data volume carries the supabase:backup=true tag (Phase 2 BackupSelection hook)', () => {
   const t = makeCompute();
-  // The data volume mapping's Ebs block does not itself carry tags in CFN; the tag
-  // is applied to the volume via a Tags entry on the instance's block-device volume.
-  // We assert the tag key/value appears in the synthesized template.
-  const json = JSON.stringify(t.toJSON());
-  expect(json).toContain('supabase:backup');
+  // CFN block-device mappings cannot carry per-volume tags directly; the ONLY way the
+  // instance tag reaches the attached EBS volumes at launch is
+  // PropagateTagsToVolumeOnCreation=true on the instance. Without it, Phase 2's
+  // BackupSelection.fromTag('supabase:backup','true') matches ZERO volumes (the tag
+  // lives only on the instance). Assert both the tag value AND propagation.
+  t.hasResourceProperties('AWS::EC2::Instance', {
+    PropagateTagsToVolumeOnCreation: true,
+    Tags: Match.arrayWith([
+      Match.objectLike({ Key: 'supabase:backup', Value: 'true' }),
+    ]),
+  });
 });
 
 test('instance user-data references the bootstrap and exports the secret ARNs', () => {
@@ -160,6 +166,27 @@ test('instance user-data references the bootstrap and exports the secret ARNs', 
   expect(json).toContain('APP_CONFIG_SECRET_ARN');
   expect(json).toContain('STORAGE_CREDS_SECRET_ARN');
   expect(json).toContain('bootstrap.sh');
+});
+
+test('instance user-data stays within the EC2 16 KB hard limit', () => {
+  const t = makeCompute();
+  const template = t.toJSON();
+  // Find the AWS::EC2::Instance and pull its UserData (Fn::Base64 -> Fn::Join -> parts).
+  const instances = Object.values(template.Resources as Record<string, any>).filter(
+    (r: any) => r.Type === 'AWS::EC2::Instance',
+  );
+  expect(instances.length).toBe(1);
+  const ud = instances[0].Properties.UserData;
+  const parts = ud['Fn::Base64']['Fn::Join'][1] as unknown[];
+  // Sum literal string bytes; count each unresolved intrinsic generously (128 bytes,
+  // covers ARNs/bucket names resolved at deploy). This is the raw (pre-base64) size EC2
+  // caps at 16384 bytes. Inlining the five assets blew past this (~17 KB) — assets are
+  // now delivered out-of-band via S3, so user-data must stay well under the limit.
+  let bytes = 0;
+  for (const p of parts) {
+    bytes += typeof p === 'string' ? Buffer.byteLength(p, 'utf8') : 128;
+  }
+  expect(bytes).toBeLessThan(16384);
 });
 
 test('auto-recovery alarm on StatusCheckFailed_System with an EC2 recover action', () => {

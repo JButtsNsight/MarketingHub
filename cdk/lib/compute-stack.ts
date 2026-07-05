@@ -7,7 +7,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
-import * as fs from 'fs';
+import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
 import * as path from 'path';
 
 export interface ComputeStackProps extends StackProps {
@@ -121,7 +121,6 @@ export class ComputeStack extends Stack {
 
     // --- Host-side assets staged onto the instance via user-data (spec §7) ---
     const assetDir = path.join(__dirname, '..', 'assets');
-    const readAsset = (f: string) => fs.readFileSync(path.join(assetDir, f), 'utf8');
 
     const userData = ec2.UserData.forLinux();
     // Export the exact ARNs/names the bootstrap requires (fail-loud if unset).
@@ -136,15 +135,22 @@ export class ComputeStack extends Stack {
       `export STORAGE_BUCKET='${props.storageBucket.bucketName}'`,
       `export BACKUP_BUCKET='${props.backupBucket.bucketName}'`,
     );
-    // Stage the host-side assets by writing them verbatim (quoted heredoc) to disk.
+    // Stage the host-side assets OUT-OF-BAND via S3 (aws-s3-assets), then download them
+    // on the host. They are NOT inlined into user-data: the five assets total ~16 KB and
+    // inlining them (plus wrapper/heredoc overhead) blows past EC2's 16 KB user-data hard
+    // limit, which fails the AWS::EC2::Instance create at CloudFormation. Each asset is
+    // read from the CDK staging bucket using the instance role (grantRead below).
     const stage = (name: string, dest: string, mode: string) => {
-      const marker = `NSIGHT_EOF_${name.replace(/[^A-Z0-9]/gi, '_').toUpperCase()}`;
-      userData.addCommands(
-        `cat >'${dest}' <<'${marker}'`,
-        readAsset(name),
-        marker,
-        `chmod ${mode} '${dest}'`,
-      );
+      const asset = new s3assets.Asset(this, `Asset${name.replace(/[^A-Za-z0-9]/g, '')}`, {
+        path: path.join(assetDir, name),
+      });
+      asset.grantRead(role);
+      userData.addS3DownloadCommand({
+        bucket: asset.bucket,
+        bucketKey: asset.s3ObjectKey,
+        localFile: dest,
+      });
+      userData.addCommands(`chmod ${mode} '${dest}'`);
     };
     stage('render-env.sh', '/opt/supabase/render-env.sh', '0750');
     stage('docker-compose.override.yml', '/opt/supabase/docker-compose.override.yml', '0644');
@@ -173,6 +179,11 @@ export class ComputeStack extends Stack {
       // combining requireImdsv2 with metadata options.
       httpTokens: ec2.HttpTokens.REQUIRED,
       httpPutResponseHopLimit: 1,   // blocks container -> IMDS SSRF (spec §7)
+      // Propagate instance tags to the attached EBS volumes at create time. CFN block
+      // devices cannot carry per-volume tags, so this is the ONLY way the data volume
+      // receives supabase:backup=true; without it Phase 2's BackupSelection.fromTag
+      // matches zero volumes and the AWS Backup / Vault-Lock tier never protects it.
+      propagateTagsToVolumeOnCreation: true,
       blockDevices: [
         {
           deviceName: '/dev/xvda', // AL2023 root device
@@ -195,8 +206,8 @@ export class ComputeStack extends Stack {
       ],
     });
 
-    // `ec2.Instance` sets propagateTagsToVolumeOnCreation on its launch template, so
-    // instance tags propagate to the attached volumes at create time — the data volume
+    // With propagateTagsToVolumeOnCreation: true (set on the instance above), this
+    // instance tag propagates to the attached volumes at create time — the data volume
     // therefore receives supabase:backup=true, which Phase 2's BackupSelection matches.
     Tags.of(this.instance).add('supabase:backup', 'true');
     Tags.of(this.instance).add('Name', 'nsight-supabase-host');
