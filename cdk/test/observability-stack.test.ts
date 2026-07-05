@@ -95,3 +95,17 @@ test('root and data disk alarms use the CWAgent disk_used_percent metric at 80%'
     expect(a.Properties.Threshold).toBe(80);
   }
 });
+
+test('EventBridge rule on Backup Job FAILED targets the SNS topic', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::Events::Rule', {
+    EventPattern: {
+      source: ['aws.backup'],
+      'detail-type': ['Backup Job State Change'],
+      detail: { state: ['FAILED'] },
+    },
+    Targets: Match.arrayWith([
+      Match.objectLike({ Arn: Match.anyValue() }),
+    ]),
+  });
+});

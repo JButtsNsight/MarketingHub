@@ -8,6 +8,8 @@ import * as sns from 'aws-cdk-lib/aws-sns';
 import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 import * as cw from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -104,5 +106,21 @@ export class ObservabilityStack extends Stack {
     // values with cwagent-config.json and the live metric dimensions (Task 11).
     diskAlarm('RootDiskAlarm', '/', 'nvme0n1p1', 'xfs');
     diskAlarm('DataDiskAlarm', '/mnt/pgdata', 'nvme1n1', 'xfs');
+
+    // Backup-failure detection: silent AWS Backup failures are otherwise invisible.
+    // Scoped to the Supabase vault (spec §9) so the alert is specific.
+    const backupFailureRule = new events.Rule(this, 'BackupJobFailedRule', {
+      ruleName: 'supabase-backup-job-failed',
+      description: 'Fires when an AWS Backup job for the Supabase vault fails.',
+      eventPattern: {
+        source: ['aws.backup'],
+        detailType: ['Backup Job State Change'],
+        detail: {
+          state: ['FAILED'],
+          backupVaultName: [props.backupVault.backupVaultName],
+        },
+      },
+    });
+    backupFailureRule.addTarget(new targets.SnsTopic(this.topic));
   }
 }
