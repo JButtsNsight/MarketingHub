@@ -1,4 +1,4 @@
-import { Stack, StackProps, RemovalPolicy, Duration, CustomResource } from 'aws-cdk-lib';
+import { Stack, StackProps, RemovalPolicy, Duration, CustomResource, SecretValue } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -21,6 +21,7 @@ export class DataStack extends Stack {
   public readonly serviceRoleKey: kms.Key;
   public readonly serviceRoleSecret: secretsmanager.Secret;
   public readonly appConfigSecret: secretsmanager.Secret;
+  public readonly storageCredsSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -148,5 +149,45 @@ export class DataStack extends Stack {
     // Ensure both secrets (and their generated values) exist before the signer runs.
     jwtSigner.node.addDependency(this.appConfigSecret);
     jwtSigner.node.addDependency(this.serviceRoleSecret);
+
+    // §10 — bucket-scoped principal for the Storage container. The ONLY AWS credential
+    // reachable from inside a container, and it can touch ONLY this one bucket.
+    const storageUser = new iam.User(this, 'StorageUser', {
+      userName: 'nsight-supabase-storage',
+    });
+    storageUser.addToPolicy(new iam.PolicyStatement({
+      sid: 'StorageBucketOnly',
+      effect: iam.Effect.ALLOW,
+      actions: [
+        's3:GetObject', 's3:PutObject', 's3:DeleteObject',
+        's3:ListBucket', 's3:GetBucketLocation',
+        's3:AbortMultipartUpload', 's3:ListMultipartUploadParts',
+      ],
+      resources: [this.storageBucket.bucketArn, `${this.storageBucket.bucketArn}/*`],
+    }));
+    // Storage must be able to use dataKey to read/write SSE-KMS objects. Expressed as an
+    // identity-policy statement on the user (exact key ARN) — a resource-policy grant on
+    // the Foundation-owned dataKey would create a Foundation->Data cycle (see signer note).
+    storageUser.addToPolicy(new iam.PolicyStatement({
+      sid: 'StorageBucketKmsOnly',
+      effect: iam.Effect.ALLOW,
+      actions: ['kms:Encrypt', 'kms:Decrypt', 'kms:ReEncrypt*', 'kms:GenerateDataKey*', 'kms:DescribeKey'],
+      resources: [props.dataKey.keyArn],
+    }));
+
+    const storageAccessKey = new iam.AccessKey(this, 'StorageAccessKey', {
+      user: storageUser,
+    });
+
+    this.storageCredsSecret = new secretsmanager.Secret(this, 'StorageCredsSecret', {
+      secretName: 'nsight-supabase/storage-creds',
+      description: 'Bucket-scoped IAM creds for the Supabase Storage container (§10).',
+      encryptionKey: props.secretsKey,
+      secretObjectValue: {
+        AWS_ACCESS_KEY_ID: SecretValue.unsafePlainText(storageAccessKey.accessKeyId),
+        AWS_SECRET_ACCESS_KEY: storageAccessKey.secretAccessKey,
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
   }
 }

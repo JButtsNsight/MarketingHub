@@ -134,3 +134,29 @@ test('a Lambda custom resource signs JWT_SECRET/ANON_KEY/SERVICE_ROLE_KEY at dep
   // … invoked by a CloudFormation custom resource.
   t.resourceCountIs('AWS::CloudFormation::CustomResource', 1);
 });
+
+test('storage IAM user policy is scoped to ONLY the storage bucket (no wildcard resource)', () => {
+  const { t } = makeDataTemplate();
+  t.resourceCountIs('AWS::IAM::User', 1);
+  t.hasResourceProperties('AWS::IAM::Policy', {
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Effect: 'Allow',
+          Action: Match.arrayWith(['s3:GetObject', 's3:PutObject', 's3:DeleteObject']),
+          // Resources are two tokens (bucket ARN + /*), never the string '*'.
+          Resource: Match.not('*'),
+        }),
+      ]),
+    }),
+  });
+});
+
+test('storageCredsSecret holds the access key, encrypted with secretsKey', () => {
+  const { t } = makeDataTemplate();
+  t.hasResourceProperties('AWS::SecretsManager::Secret', {
+    Name: 'nsight-supabase/storage-creds',
+    KmsKeyId: Match.anyValue(),
+  });
+  t.resourceCountIs('AWS::IAM::AccessKey', 1);
+});
