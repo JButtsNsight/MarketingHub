@@ -14,6 +14,8 @@ set +x  # never trace secret handling
 : "${STORAGE_BUCKET:?}"
 : "${AWS_REGION:?}"
 
+die() { echo "[render-env][FATAL] $*" >&2; exit 1; }
+
 jget() { printf '%s' "$2" | jq -er --arg k "$1" '.[$k]'; }
 
 # --- App config (crown-jewel + operational secrets) ---
@@ -22,6 +24,14 @@ JWT_SECRET="$(jget JWT_SECRET "$APP_CONFIG_JSON")"
 ANON_KEY="$(jget ANON_KEY "$APP_CONFIG_JSON")"
 SECRET_KEY_BASE="$(jget SECRET_KEY_BASE "$APP_CONFIG_JSON")"
 VAULT_ENC_KEY="$(jget VAULT_ENC_KEY "$APP_CONFIG_JSON")"
+
+# --- Crown-jewel length validation (§13) — fail loud at bootstrap, not later as an
+#     opaque GoTrue/Vault crash-loop after `docker compose up`. Lengths are counted in
+#     characters (these secrets are ASCII), matching the spec's stated requirements. ---
+[ "${#SECRET_KEY_BASE}" -ge 64 ] \
+  || die "SECRET_KEY_BASE must be >= 64 chars (got ${#SECRET_KEY_BASE})"
+[ "${#VAULT_ENC_KEY}" -eq 32 ] \
+  || die "VAULT_ENC_KEY must be exactly 32 chars (got ${#VAULT_ENC_KEY})"
 PG_META_CRYPTO_KEY="$(jget PG_META_CRYPTO_KEY "$APP_CONFIG_JSON")"
 POOLER_TENANT_ID="$(jget POOLER_TENANT_ID "$APP_CONFIG_JSON")"
 DASHBOARD_USERNAME="$(jget DASHBOARD_USERNAME "$APP_CONFIG_JSON")"

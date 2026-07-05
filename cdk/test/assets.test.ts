@@ -37,6 +37,27 @@ test('render-env.sh injects AWS creds only into the storage service', () => {
   expect(renderEnv).toMatch(/STORAGE_S3_FORCE_PATH_STYLE=false/);
 });
 
+test('render-env.sh validates crown-jewel secret lengths (spec §13)', () => {
+  const renderEnv = fs.readFileSync(
+    path.join(assetsDir, 'render-env.sh'), 'utf8',
+  );
+  // §13: SECRET_KEY_BASE >= 64, VAULT_ENC_KEY exactly 32. A mis-provisioned key must
+  // abort loudly at bootstrap, not surface later as an opaque GoTrue/Vault crash-loop.
+  expect(renderEnv).toMatch(/\$\{#SECRET_KEY_BASE\}.*-lt 64|-lt 64.*SECRET_KEY_BASE|\$\{#SECRET_KEY_BASE\}.*-ge 64/);
+  expect(renderEnv).toMatch(/\$\{#VAULT_ENC_KEY\}.*-ne 32|-ne 32.*VAULT_ENC_KEY|\$\{#VAULT_ENC_KEY\}.*-eq 32/);
+});
+
+test('compose override binds Postgres PGDATA to the dedicated data volume (spec §7)', () => {
+  const override = fs.readFileSync(
+    path.join(assetsDir, 'docker-compose.override.yml'), 'utf8',
+  );
+  // The db service MUST remap the bundle's default ./volumes/db/data mount (root vol)
+  // onto the dedicated encrypted data volume, or all Postgres/PHI state lands on the
+  // ephemeral root volume and is lost on instance replacement (spec §7).
+  expect(override).toMatch(/^\s{2}db:/m);
+  expect(override).toMatch(/\/mnt\/pgdata\/db\/data:\/var\/lib\/postgresql\/data/);
+});
+
 test('pgbackrest assets exist', () => {
   const files = fs.readdirSync(assetsDir);
   expect(files).toContain('pgbackrest.conf');
