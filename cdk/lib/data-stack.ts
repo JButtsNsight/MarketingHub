@@ -7,6 +7,8 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import { Provider } from 'aws-cdk-lib/custom-resources';
+import * as backup from 'aws-cdk-lib/aws-backup';
+import * as events from 'aws-cdk-lib/aws-events';
 import * as path from 'path';
 
 export interface DataStackProps extends StackProps {
@@ -23,6 +25,7 @@ export class DataStack extends Stack {
   public readonly appConfigSecret: secretsmanager.Secret;
   public readonly storageCredsSecret: secretsmanager.Secret;
   public readonly smtpSecret: secretsmanager.Secret;
+  public readonly backupVault: backup.BackupVault;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -203,6 +206,61 @@ export class DataStack extends Stack {
         SMTP_PASS: SecretValue.unsafePlainText(''),
       },
       removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // §9 — Vault Lock (COMPLIANCE) on a dedicated backupKey-encrypted vault.
+    // Setting changeableFor puts the lock into the immutable/compliance regime after the
+    // (min 72 h) cooling-off window; minRetention denies early recovery-point deletion.
+    this.backupVault = new backup.BackupVault(this, 'BackupVault', {
+      backupVaultName: 'nsight-supabase-backup-vault',
+      encryptionKey: props.backupKey,
+      removalPolicy: RemovalPolicy.RETAIN,
+      lockConfiguration: {
+        minRetention: Duration.days(35),
+        maxRetention: Duration.days(2555),
+        changeableFor: Duration.days(3), // 72 h cooling-off, then COMPLIANCE-immutable
+      },
+    });
+
+    const plan = new backup.BackupPlan(this, 'BackupPlan', {
+      backupPlanName: 'nsight-supabase-backup-plan',
+      backupVault: this.backupVault,
+    });
+
+    // Daily → retain 35 days.
+    plan.addRule(new backup.BackupPlanRule({
+      ruleName: 'daily-35d',
+      scheduleExpression: events.Schedule.cron({ hour: '5', minute: '0' }),
+      deleteAfter: Duration.days(35),
+      startWindow: Duration.hours(1),
+      completionWindow: Duration.hours(3),
+    }));
+
+    // Weekly (Sundays) → retain 1 year.
+    plan.addRule(new backup.BackupPlanRule({
+      ruleName: 'weekly-1y',
+      scheduleExpression: events.Schedule.cron({ weekDay: 'SUN', hour: '6', minute: '0' }),
+      deleteAfter: Duration.days(365),
+      startWindow: Duration.hours(1),
+      completionWindow: Duration.hours(6),
+    }));
+
+    // Monthly (1st) → retain 7 years (2555 d) — cold tier via moveToColdStorageAfter.
+    plan.addRule(new backup.BackupPlanRule({
+      ruleName: 'monthly-7y',
+      scheduleExpression: events.Schedule.cron({ day: '1', hour: '7', minute: '0' }),
+      deleteAfter: Duration.days(2555),
+      moveToColdStorageAfter: Duration.days(90),
+      startWindow: Duration.hours(1),
+      completionWindow: Duration.hours(8),
+    }));
+
+    // Tag-based selection: everything tagged supabase:backup=true (Phase 3 tags the EBS
+    // data volume). Grants a service role scoped to the tagged resources.
+    plan.addSelection('TaggedResources', {
+      resources: [
+        backup.BackupResource.fromTag('supabase:backup', 'true'),
+      ],
     });
   }
 }

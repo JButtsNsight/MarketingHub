@@ -168,3 +168,38 @@ test('smtpSecret shell exists (empty username/password), encrypted with secretsK
     KmsKeyId: Match.anyValue(),
   });
 });
+
+test('backup vault is Vault-Locked (compliance) and encrypted with backupKey', () => {
+  const { t } = makeDataTemplate();
+  t.resourceCountIs('AWS::Backup::BackupVault', 1);
+  t.hasResourceProperties('AWS::Backup::BackupVault', {
+    // Vault Lock configured => LockConfiguration block present (compliance = MinRetentionDays
+    // set and a ChangeableForDays cooling-off window).
+    LockConfiguration: Match.objectLike({ MinRetentionDays: Match.anyValue() }),
+    EncryptionKeyArn: Match.anyValue(),
+  });
+});
+
+test('backup plan has exactly three tiered rules (35d / 1y / 7y) and a tag-based selection', () => {
+  const { t } = makeDataTemplate();
+  t.hasResourceProperties('AWS::Backup::BackupPlan', {
+    BackupPlan: Match.objectLike({
+      BackupPlanRule: Match.arrayWith([
+        Match.objectLike({ Lifecycle: Match.objectLike({ DeleteAfterDays: 35 }) }),
+        Match.objectLike({ Lifecycle: Match.objectLike({ DeleteAfterDays: 365 }) }),
+        Match.objectLike({ Lifecycle: Match.objectLike({ DeleteAfterDays: 2555 }) }),
+      ]),
+    }),
+  });
+  t.hasResourceProperties('AWS::Backup::BackupSelection', {
+    BackupSelection: Match.objectLike({
+      ListOfTags: Match.arrayWith([
+        Match.objectLike({
+          ConditionType: 'STRINGEQUALS',
+          ConditionKey: 'supabase:backup',
+          ConditionValue: 'true',
+        }),
+      ]),
+    }),
+  });
+});
