@@ -1,4 +1,4 @@
-import { Stack, StackProps, Duration } from 'aws-cdk-lib';
+import { Stack, StackProps, Duration, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -14,6 +14,7 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import * as budgets from 'aws-cdk-lib/aws-budgets';
+import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -228,5 +229,28 @@ export class ObservabilityStack extends Stack {
         },
       ],
     });
+
+    // CloudTrail S3 data events on the PHI storage + backup buckets (spec §15) — object-level
+    // access is otherwise invisible to management-event logging. Encrypted with logsKey; the
+    // trail + its own bucket are RETAINed (audit-adjacent — never auto-delete).
+    const trail = new cloudtrail.Trail(this, 'PhiDataTrail', {
+      trailName: 'supabase-phi-data-events',
+      encryptionKey: props.logsKey,
+      includeGlobalServiceEvents: true,
+      isMultiRegionTrail: false, // single-region stack (spec §5)
+    });
+    trail.applyRemovalPolicy(RemovalPolicy.RETAIN);
+
+    // Object-level data events on the PHI buckets ONLY (not all-S3 — cost + noise).
+    trail.addS3EventSelector(
+      [
+        { bucket: props.storageBucket },
+        { bucket: props.backupBucket },
+      ],
+      {
+        readWriteType: cloudtrail.ReadWriteType.ALL,
+        includeManagementEvents: true,
+      },
+    );
   }
 }

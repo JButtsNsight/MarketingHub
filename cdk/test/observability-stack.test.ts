@@ -151,3 +151,17 @@ test('monthly cost budget at the context amount with SNS + email notification', 
     ]),
   });
 });
+
+test('CloudTrail trail records S3 data events on the PHI buckets', () => {
+  const { t } = makeStack();
+  t.resourceCountIs('AWS::CloudTrail::Trail', 1);
+  t.hasResourceProperties('AWS::CloudTrail::Trail', {
+    EventSelectors: Match.arrayWith([
+      Match.objectLike({
+        DataResources: Match.arrayWith([
+          Match.objectLike({ Type: 'AWS::S3::Object' }),
+        ]),
+      }),
+    ]),
+  });
+});
