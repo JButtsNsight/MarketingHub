@@ -2,6 +2,18 @@
 # Overlay on the pinned Supabase bundle's docker-compose.yml.
 # VERIFY every key against the pinned tag's .env.example (§5, §10).
 services:
+  db:
+    # Bind Postgres' data dir onto the dedicated, encrypted, deleteOnTermination:false
+    # EBS data volume (mounted by bootstrap.sh at /mnt/pgdata). The upstream bundle
+    # defaults to `./volumes/db/data:/var/lib/postgresql/data` — i.e. the ROOT volume
+    # under APP_DIR — which would put ALL Postgres state (PHI) on the ephemeral root
+    # volume and destroy it on any instance replacement (§7 data-loss trap). Compose
+    # merges volume mounts by container target, so this replaces the bundle's bind.
+    # pg_wal lives inside PGDATA, so it lands on the SAME data volume (§7 snapshot
+    # coherence). pg1-path in pgbackrest.conf points at /mnt/pgdata/db/data to match.
+    volumes:
+      - /mnt/pgdata/db/data:/var/lib/postgresql/data:Z
+
   studio:
     # Studio reachable on :3000 (ALB targets this; SG allows :3000 from ALB only).
     ports:
