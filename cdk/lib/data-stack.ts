@@ -22,6 +22,7 @@ export class DataStack extends Stack {
   public readonly serviceRoleSecret: secretsmanager.Secret;
   public readonly appConfigSecret: secretsmanager.Secret;
   public readonly storageCredsSecret: secretsmanager.Secret;
+  public readonly smtpSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -186,6 +187,20 @@ export class DataStack extends Stack {
       secretObjectValue: {
         AWS_ACCESS_KEY_ID: SecretValue.unsafePlainText(storageAccessKey.accessKeyId),
         AWS_SECRET_ACCESS_KEY: storageAccessKey.secretAccessKey,
+      },
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // §13/§20.1 — SES SMTP creds for GoTrue. Shell only; populate AFTER SES production
+    // access is granted (sandbox identities silently drop Auth emails). Empty username/
+    // password placeholders; update via Secrets Manager once SES is live.
+    this.smtpSecret = new secretsmanager.Secret(this, 'SmtpSecret', {
+      secretName: 'nsight-supabase/smtp',
+      description: 'SES SMTP username/password for GoTrue. Populate post-SES prod access (§20.1).',
+      encryptionKey: props.secretsKey,
+      secretObjectValue: {
+        SMTP_USER: SecretValue.unsafePlainText(''),
+        SMTP_PASS: SecretValue.unsafePlainText(''),
       },
       removalPolicy: RemovalPolicy.RETAIN,
     });

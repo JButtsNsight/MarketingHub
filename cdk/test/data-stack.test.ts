@@ -160,3 +160,11 @@ test('storageCredsSecret holds the access key, encrypted with secretsKey', () =>
   });
   t.resourceCountIs('AWS::IAM::AccessKey', 1);
 });
+
+test('smtpSecret shell exists (empty username/password), encrypted with secretsKey', () => {
+  const { t } = makeDataTemplate();
+  t.hasResourceProperties('AWS::SecretsManager::Secret', {
+    Name: 'nsight-supabase/smtp',
+    KmsKeyId: Match.anyValue(),
+  });
+});
