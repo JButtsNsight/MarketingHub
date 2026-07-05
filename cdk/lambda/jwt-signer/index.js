@@ -75,3 +75,8 @@ exports.handler = async (event) => {
 
   return { PhysicalResourceId: 'jwt-signer' }; // no secret material in the CR response
 };
+
+// Exported for unit testing (§12 — JWT signing is the crux of the phase). The Lambda entry
+// point remains `index.handler`; these named exports do not affect runtime behavior.
+exports.signJwt = signJwt;
+exports.b64url = b64url;
