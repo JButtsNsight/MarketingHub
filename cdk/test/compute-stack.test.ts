@@ -148,3 +148,21 @@ test('the data volume carries the supabase:backup=true tag (Phase 2 BackupSelect
   const json = JSON.stringify(t.toJSON());
   expect(json).toContain('supabase:backup');
 });
+
+test('auto-recovery alarm on StatusCheckFailed_System with an EC2 recover action', () => {
+  const t = makeCompute();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    Namespace: 'AWS/EC2',
+    MetricName: 'StatusCheckFailed_System',
+    ComparisonOperator: 'GreaterThanOrEqualToThreshold',
+    Threshold: 1,
+    // The recover action ARN is arn:<partition>:automate:<region>:ec2:recover
+    AlarmActions: Match.arrayWith([
+      Match.objectLike({
+        'Fn::Join': Match.arrayWith([
+          Match.arrayWith([Match.stringLikeRegexp('automate')]),
+        ]),
+      }),
+    ]),
+  });
+});

@@ -1,10 +1,12 @@
-import { Stack, StackProps, Tags } from 'aws-cdk-lib';
+import { Stack, StackProps, Tags, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 
 export interface ComputeStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
@@ -157,5 +159,26 @@ export class ComputeStack extends Stack {
     // therefore receives supabase:backup=true, which Phase 2's BackupSelection matches.
     Tags.of(this.instance).add('supabase:backup', 'true');
     Tags.of(this.instance).add('Name', 'nsight-supabase-host');
+
+    // --- EC2 auto-recovery (spec §7): recover the SAME instance + same EBS on a
+    // failed system status check. This is the single-instance resilience mechanism. ---
+    const systemStatusMetric = new cloudwatch.Metric({
+      namespace: 'AWS/EC2',
+      metricName: 'StatusCheckFailed_System',
+      dimensionsMap: { InstanceId: this.instance.instanceId },
+      period: Duration.minutes(1),
+      statistic: 'Maximum',
+    });
+
+    const recoveryAlarm = new cloudwatch.Alarm(this, 'SystemStatusRecoveryAlarm', {
+      alarmName: 'nsight-supabase-host-system-status-recover',
+      alarmDescription: 'Auto-recover the Supabase host on a failed EC2 system status check',
+      metric: systemStatusMetric,
+      threshold: 1,
+      evaluationPeriods: 2,
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    recoveryAlarm.addAlarmAction(new cwActions.Ec2Action(cwActions.Ec2InstanceAction.RECOVER));
   }
 }
