@@ -205,3 +205,16 @@ test('internal 443 listener has NO authenticate-cognito action (machine clients)
   expect(hasAuthDefault).toBe(false);
   expect(internal).toBeDefined();
 });
+
+test('two Route 53 A/ALIAS records: Studio → public ALB, data API → internal ALB', () => {
+  const { template } = makeEdge();
+  template.resourceCountIs('AWS::Route53::RecordSet', 2);
+  template.hasResourceProperties('AWS::Route53::RecordSet', {
+    Name: 'supabase-studio.nsightcare.com.',
+    Type: 'A',
+  });
+  template.hasResourceProperties('AWS::Route53::RecordSet', {
+    Name: 'supabase-api.internal.nsightcare.com.',
+    Type: 'A',
+  });
+});

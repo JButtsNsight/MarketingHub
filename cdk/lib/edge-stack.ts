@@ -4,6 +4,7 @@ import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elbv2Targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import * as actions from 'aws-cdk-lib/aws-elasticloadbalancingv2-actions';
@@ -59,8 +60,6 @@ export class EdgeStack extends Stack {
       domainName: studioHostname,
       validation: acm.CertificateValidation.fromDns(publicZone),
     });
-    void publicZone;
-
     // --- Task 2: Cognito user pool (identity broker for the ALB) ---
     const userPool = new cognito.UserPool(this, 'StudioUserPool', {
       userPoolName: 'nsight-supabase-studio',
@@ -236,7 +235,6 @@ export class EdgeStack extends Stack {
       domainName: dataApiHostname,
       validation: acm.CertificateValidation.fromDns(privateZone),
     });
-    void privateZone;
 
     // Dedicated SG for the internal ALB: 443 from in-VPC clients only.
     const internalAlbSg = new ec2.SecurityGroup(this, 'InternalAlbSg', {
@@ -275,6 +273,22 @@ export class EdgeStack extends Stack {
       protocol: elbv2.ApplicationProtocol.HTTPS,
       certificates: [dataApiCert],
       defaultAction: elbv2.ListenerAction.forward([kongTargetGroup]),
+    });
+
+    // --- Task 7: Route 53 A/ALIAS records (spec §11 private-hosted-zone DNS) ---
+    // Studio → public ALB (public zone); data API → internal ALB (private zone).
+    // External-DNS (Cloudflare) alternative: omit these and CNAME the hostnames to
+    // alb.loadBalancerDnsName / internalAlb.loadBalancerDnsName (spec §20).
+    new route53.ARecord(this, 'StudioAliasRecord', {
+      zone: publicZone,
+      recordName: studioHostname,
+      target: route53.RecordTarget.fromAlias(new route53Targets.LoadBalancerTarget(this.alb)),
+    });
+
+    new route53.ARecord(this, 'DataApiAliasRecord', {
+      zone: privateZone,
+      recordName: dataApiHostname,
+      target: route53.RecordTarget.fromAlias(new route53Targets.LoadBalancerTarget(this.internalAlb)),
     });
   }
 }
