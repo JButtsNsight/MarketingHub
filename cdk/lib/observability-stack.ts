@@ -10,6 +10,9 @@ import * as cw from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as path from 'path';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -122,5 +125,69 @@ export class ObservabilityStack extends Stack {
       },
     });
     backupFailureRule.addTarget(new targets.SnsTopic(this.topic));
+
+    // Replication-slot lag: a stuck Realtime slot silently retains WAL and fills
+    // the disk. A scheduled Lambda inside the VPC (behind internalClientSg, reaching
+    // Supavisor :5432) queries pg_replication_slots and publishes the max retained-WAL
+    // bytes as a custom metric; the alarm below notifies on-call.
+    const dbSecretArn =
+      (this.node.tryGetContext('dbSecretArn') as string) ?? 'REPLACE_WITH_DB_SECRET_ARN';
+
+    const slotLagFn = new lambda.Function(this, 'SlotLagFn', {
+      functionName: 'supabase-replication-slot-lag',
+      runtime: lambda.Runtime.PYTHON_3_12,
+      handler: 'index.handler',
+      timeout: Duration.seconds(30),
+      code: lambda.Code.fromAsset(path.join(__dirname, '..', 'assets', 'slot-lag-lambda'), {
+        bundling: {
+          image: lambda.Runtime.PYTHON_3_12.bundlingImage,
+          command: [
+            'bash', '-c',
+            'pip install -r requirements.txt -t /asset-output && cp -au . /asset-output',
+          ],
+        },
+      }),
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      securityGroups: [props.internalClientSg], // reaches Supavisor :5432 per NetworkStack §6 rules
+      environment: {
+        DB_SECRET_ARN: dbSecretArn,
+      },
+    });
+    // Least privilege: put ONLY the one custom metric (namespace-scoped; PutMetricData
+    // has no resource-level ARN, so the namespace condition is the tightest scope) ...
+    slotLagFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['cloudwatch:PutMetricData'],
+      resources: ['*'],
+      conditions: { StringEquals: { 'cloudwatch:namespace': 'Supabase/DB' } },
+    }));
+    // ... and read ONLY the DB secret (exact ARN — never "*").
+    slotLagFn.addToRolePolicy(new iam.PolicyStatement({
+      actions: ['secretsmanager:GetSecretValue'],
+      resources: [dbSecretArn],
+    }));
+
+    const slotSchedule = new events.Rule(this, 'SlotLagSchedule', {
+      ruleName: 'supabase-slot-lag-schedule',
+      schedule: events.Schedule.rate(Duration.minutes(5)),
+    });
+    slotSchedule.addTarget(new targets.LambdaFunction(slotLagFn));
+
+    // ~1 GiB retained WAL = investigate before the disk fills. No data = Lambda broken
+    // = fail loud (treatMissingData BREACHING).
+    const slotLagAlarm = new cw.Alarm(this, 'SlotLagAlarm', {
+      alarmName: 'supabase-replication-slot-retained-wal-high',
+      metric: new cw.Metric({
+        namespace: 'Supabase/DB',
+        metricName: 'MaxSlotRetainedWALBytes',
+        statistic: 'Maximum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 1_073_741_824, // 1 GiB
+      evaluationPeriods: 2,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.BREACHING,
+    });
+    slotLagAlarm.addAlarmAction(action);
   }
 }

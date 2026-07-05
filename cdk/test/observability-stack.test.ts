@@ -63,8 +63,8 @@ test('KMS-encrypted SNS topic with an email subscription from context', () => {
 
 test('at least three alarms are wired to the SNS topic', () => {
   const { t } = makeStack();
-  // status-check + CPU + root-disk + data-disk = 4
-  t.resourceCountIs('AWS::CloudWatch::Alarm', 4);
+  // status-check + CPU + root-disk + data-disk + slot-lag = 5
+  t.resourceCountIs('AWS::CloudWatch::Alarm', 5);
   // every alarm actions the on-call topic
   const alarms = t.findResources('AWS::CloudWatch::Alarm');
   const topicRef = Object.keys(t.findResources('AWS::SNS::Topic'))[0];
@@ -107,5 +107,25 @@ test('EventBridge rule on Backup Job FAILED targets the SNS topic', () => {
     Targets: Match.arrayWith([
       Match.objectLike({ Arn: Match.anyValue() }),
     ]),
+  });
+});
+
+test('scheduled Lambda in the VPC monitors replication-slot lag', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::Lambda::Function', {
+    Runtime: Match.stringLikeRegexp('^python3'),
+    VpcConfig: Match.objectLike({ SubnetIds: Match.anyValue() }),
+  });
+  // scheduled every 5 minutes
+  t.hasResourceProperties('AWS::Events::Rule', {
+    ScheduleExpression: 'rate(5 minutes)',
+  });
+});
+
+test('alarm on the replication-slot retained-WAL custom metric', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'MaxSlotRetainedWALBytes',
+    Namespace: 'Supabase/DB',
   });
 });
