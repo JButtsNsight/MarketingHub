@@ -5,6 +5,7 @@ import { FoundationStack } from '../lib/foundation-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
 import { ComputeStack } from '../lib/compute-stack';
+import { EdgeStack } from '../lib/edge-stack';
 
 const app = new App();
 const env = {
@@ -21,7 +22,7 @@ const data = new DataStack(app, 'SupabaseData', {
   secretsKey: foundation.secretsKey,
 });
 
-new ComputeStack(app, 'SupabaseCompute', {
+const compute = new ComputeStack(app, 'SupabaseCompute', {
   env,
   vpc: network.vpc,
   ec2Sg: network.ec2Sg,
@@ -32,6 +33,14 @@ new ComputeStack(app, 'SupabaseCompute', {
   serviceRoleSecret: data.serviceRoleSecret,
   storageCredsSecret: data.storageCredsSecret,
   smtpSecret: data.smtpSecret,
+});
+
+new EdgeStack(app, 'SupabaseEdge', {
+  env,
+  vpc: network.vpc,
+  albSg: network.albSg,
+  internalClientSg: network.internalClientSg,
+  instance: compute.instance,
 });
 
 app.synth();

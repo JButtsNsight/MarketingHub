@@ -3,6 +3,15 @@
   "context": {
     "@aws-cdk/core:newStyleStackSynthesis": true,
     "account": "439024109088",
-    "region": "us-east-1"
+    "region": "us-east-1",
+    "studioHostname": "supabase-studio.nsightcare.com",
+    "dataApiHostname": "supabase-api.internal.nsightcare.com",
+    "hostedZoneId": "REPLACE_ME",
+    "hostedZoneName": "nsightcare.com",
+    "privateHostedZoneId": "REPLACE_ME",
+    "privateHostedZoneName": "internal.nsightcare.com",
+    "googleSamlMetadataUrl": "REPLACE_ME",
+    "adminGroup": "supabase-admins",
+    "cognitoDomainPrefix": "nsight-supabase"
   }
 }

@@ -11,6 +11,11 @@ test('SupabaseCompute is in the synthesized cloud assembly', () => {
   expect(out).toContain('SupabaseCompute');
 });
 
+test('synth includes EdgeStack', () => {
+  const out = execSync('npx cdk synth SupabaseEdge --quiet 2>&1', { cwd: process.cwd() }).toString();
+  expect(out).not.toMatch(/Error|Exception/i);
+});
+
 test('DataStack synthesizes with the full contract exported', () => {
   // Reuses the app synth; asserts DataStack template contains the crown-jewel key,
   // both buckets, and the vault (a fast structural smoke test).
