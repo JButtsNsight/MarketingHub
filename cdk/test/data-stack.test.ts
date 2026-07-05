@@ -55,3 +55,39 @@ test('storage bucket denies non-TLS access (enforceSSL)', () => {
     }),
   });
 });
+
+test('backup bucket uses backupKey, Object-Lock compliance default, and lifecycle to Glacier', () => {
+  const { t } = makeDataTemplate();
+  t.hasResource('AWS::S3::Bucket', {
+    DeletionPolicy: 'Retain',
+    Properties: Match.objectLike({
+      ObjectLockEnabled: true,
+      ObjectLockConfiguration: Match.objectLike({
+        ObjectLockEnabled: 'Enabled',
+        Rule: {
+          DefaultRetention: Match.objectLike({ Mode: 'COMPLIANCE' }),
+        },
+      }),
+      BucketEncryption: {
+        ServerSideEncryptionConfiguration: Match.arrayWith([
+          Match.objectLike({
+            ServerSideEncryptionByDefault: Match.objectLike({ SSEAlgorithm: 'aws:kms' }),
+          }),
+        ]),
+      },
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            Status: 'Enabled',
+            Transitions: Match.arrayWith([
+              Match.objectLike({ StorageClass: 'GLACIER' }),
+            ]),
+            NoncurrentVersionTransitions: Match.arrayWith([
+              Match.objectLike({ StorageClass: 'GLACIER' }),
+            ]),
+          }),
+        ]),
+      },
+    }),
+  });
+});
