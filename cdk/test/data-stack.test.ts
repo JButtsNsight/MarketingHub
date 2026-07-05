@@ -33,7 +33,38 @@ test('storage bucket is SSE-KMS, versioned, Object-Lock-enabled, and retained', 
       BucketEncryption: {
         ServerSideEncryptionConfiguration: Match.arrayWith([
           Match.objectLike({
-            ServerSideEncryptionByDefault: Match.objectLike({ SSEAlgorithm: 'aws:kms' }),
+            ServerSideEncryptionByDefault: Match.objectLike({
+              SSEAlgorithm: 'aws:kms',
+              // §14 key segregation: the storage bucket MUST use Foundation's dataKey (imported),
+              // never the backupKey — a key swap would surface as a different ImportValue here.
+              KMSMasterKeyID: { 'Fn::ImportValue': Match.stringLikeRegexp('DataKey') },
+            }),
+          }),
+        ]),
+      },
+    }),
+  });
+});
+
+test('storage bucket carries an Object-Lock COMPLIANCE default retention (§10)', () => {
+  const { t } = makeDataTemplate();
+  // Object Lock is inert without a default retention; assert the storage bucket has one in
+  // COMPLIANCE mode (WORM), matching the backup bucket — not merely ObjectLockEnabled.
+  t.hasResource('AWS::S3::Bucket', {
+    Properties: Match.objectLike({
+      ObjectLockConfiguration: Match.objectLike({
+        ObjectLockEnabled: 'Enabled',
+        Rule: { DefaultRetention: Match.objectLike({ Mode: 'COMPLIANCE', Days: 2555 }) },
+      }),
+      // §10 lifecycle: superseded PHI versions tier to Glacier and expire at the 7-yr window.
+      LifecycleConfiguration: {
+        Rules: Match.arrayWith([
+          Match.objectLike({
+            Status: 'Enabled',
+            NoncurrentVersionExpiration: Match.objectLike({ NoncurrentDays: 2555 }),
+            NoncurrentVersionTransitions: Match.arrayWith([
+              Match.objectLike({ StorageClass: 'GLACIER' }),
+            ]),
           }),
         ]),
       },
@@ -56,6 +87,33 @@ test('storage bucket denies non-TLS access (enforceSSL)', () => {
   });
 });
 
+test('both bucket policies require SSE-KMS with the specific CMK on upload (§14)', () => {
+  const { t } = makeDataTemplate();
+  const policies = t.findResources('AWS::S3::BucketPolicy');
+  const withKmsDeny = Object.values(policies).filter((p: any) =>
+    (p.Properties.PolicyDocument.Statement as any[]).some(
+      (s) =>
+        s.Effect === 'Deny' &&
+        s.Condition?.StringNotEqualsIfExists?.['s3:x-amz-server-side-encryption'] === 'aws:kms',
+    ),
+  );
+  // Storage AND backup bucket policies each carry the non-KMS-encryption Deny.
+  expect(withKmsDeny).toHaveLength(2);
+
+  // And each also denies an explicit wrong KMS key id (the specific-CMK half of §14).
+  const withWrongKeyDeny = Object.values(policies).filter((p: any) =>
+    (p.Properties.PolicyDocument.Statement as any[]).some(
+      (s) =>
+        s.Effect === 'Deny' &&
+        Object.prototype.hasOwnProperty.call(
+          s.Condition?.StringNotEqualsIfExists ?? {},
+          's3:x-amz-server-side-encryption-aws-kms-key-id',
+        ),
+    ),
+  );
+  expect(withWrongKeyDeny).toHaveLength(2);
+});
+
 test('backup bucket uses backupKey, Object-Lock compliance default, and lifecycle to Glacier', () => {
   const { t } = makeDataTemplate();
   t.hasResource('AWS::S3::Bucket', {
@@ -71,7 +129,11 @@ test('backup bucket uses backupKey, Object-Lock compliance default, and lifecycl
       BucketEncryption: {
         ServerSideEncryptionConfiguration: Match.arrayWith([
           Match.objectLike({
-            ServerSideEncryptionByDefault: Match.objectLike({ SSEAlgorithm: 'aws:kms' }),
+            ServerSideEncryptionByDefault: Match.objectLike({
+              SSEAlgorithm: 'aws:kms',
+              // §14 key segregation: the backup bucket MUST use backupKey (imported), never dataKey.
+              KMSMasterKeyID: { 'Fn::ImportValue': Match.stringLikeRegexp('BackupKey') },
+            }),
           }),
         ]),
       },
@@ -102,24 +164,53 @@ test('a dedicated service-role CMK exists in DataStack, distinct from Foundation
   });
 });
 
-test('serviceRoleSecret is encrypted with the dedicated service-role CMK', () => {
-  const { data, t } = makeDataTemplate();
-  const keyRef = data.serviceRoleKey.keyArn; // token — assert the secret references *a* KMS key
-  expect(keyRef).toBeDefined();
+test('serviceRoleSecret is encrypted with the dedicated service-role CMK (not the shared secretsKey)', () => {
+  const { t } = makeDataTemplate();
+  // The dedicated CMK is a DataStack-local key → Fn::GetAtt to the ServiceRoleKey logical id.
+  // The shared secretsKey is imported from Foundation → it would appear as an Fn::ImportValue.
+  // Asserting GetAtt(ServiceRoleKey) fails the moment someone repoints the secret at secretsKey.
   t.hasResourceProperties('AWS::SecretsManager::Secret', {
     Name: 'nsight-supabase/service-role',
-    KmsKeyId: Match.anyValue(),
+    KmsKeyId: Match.objectLike({
+      'Fn::GetAtt': [Match.stringLikeRegexp('ServiceRoleKey'), 'Arn'],
+    }),
   });
 });
 
-test('appConfigSecret exists, encrypted with secretsKey, with generated randoms and length constraints', () => {
+test('service-role CMK key policy is segregated — no unconditioned kms:* to root, usage gated by ViaService (§14)', () => {
   const { t } = makeDataTemplate();
+  const keys = t.findResources('AWS::KMS::Key');
+  const svcKey = Object.entries(keys).find(([id]) => id.startsWith('ServiceRoleKey'));
+  expect(svcKey).toBeDefined();
+  const statements = (svcKey![1] as any).Properties.KeyPolicy.Statement as any[];
+
+  // No statement grants the blanket kms:* (the default "enable IAM" root delegation is gone).
+  const hasWildcardAction = statements.some((s) => {
+    const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+    return actions.includes('kms:*');
+  });
+  expect(hasWildcardAction).toBe(false);
+
+  // Crypto usage is delegated to IAM ONLY via Secrets Manager (kms:ViaService), deny otherwise.
+  const usage = statements.find(
+    (s) => s.Condition?.StringEquals?.['kms:ViaService'] !== undefined,
+  );
+  expect(usage).toBeDefined();
+  expect(usage.Condition.StringEquals['kms:ViaService']).toMatch(/^secretsmanager\./);
+  expect(usage.Action).toEqual(expect.arrayContaining(['kms:Decrypt', 'kms:GenerateDataKey*']));
+});
+
+test('appConfigSecret exists, encrypted with a CMK, and CDK-generates DASHBOARD_PASSWORD', () => {
+  const { t } = makeDataTemplate();
+  // NOTE: only DASHBOARD_PASSWORD is CDK-generated (generateSecretString allows one key). The
+  // §13 length rules (VAULT_ENC_KEY==32, SECRET_KEY_BASE>=64) are generated + enforced at
+  // Lambda runtime and are covered by test/jwt-signer.test.ts, not this template assertion.
   t.hasResourceProperties('AWS::SecretsManager::Secret', {
     Name: 'nsight-supabase/app-config',
     KmsKeyId: Match.anyValue(),
     GenerateSecretString: Match.objectLike({
-      // VAULT_ENC_KEY must be EXACTLY 32; excludes make the alphanumeric length exact.
-      GenerateStringKey: Match.anyValue(),
+      GenerateStringKey: 'DASHBOARD_PASSWORD',
+      PasswordLength: 40,
     }),
   });
 });

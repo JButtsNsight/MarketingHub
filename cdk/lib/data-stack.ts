@@ -39,6 +39,24 @@ export class DataStack extends Stack {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
       objectLockEnabled: true,
+      // §10 — Object Lock is inert without a retention: storage-api PutObject sends no
+      // per-object retention header, so a bucket-level COMPLIANCE default is what actually
+      // makes each object version WORM. 2555 d (7 yr) so objects can't be hard-deleted out
+      // from under a DB restore, even by a privileged/root principal (§164.312(c)).
+      objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2555)),
+      lifecycleRules: [
+        {
+          id: 'storage-noncurrent-7yr',
+          enabled: true,
+          // Live (current) PHI objects stay in Standard so the app can read them; superseded
+          // (noncurrent) versions tier to Glacier and expire at the 7-yr window (§10). They
+          // can never expire early anyway — COMPLIANCE Object Lock pins each version 2555 d.
+          noncurrentVersionTransitions: [
+            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
+          ],
+          noncurrentVersionExpiration: Duration.days(2555),
+        },
+      ],
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
@@ -71,6 +89,40 @@ export class DataStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    // §14 — require SSE-KMS with the *specific* CMK on upload. Default bucket encryption only
+    // applies when the request omits an encryption header; it does NOT stop a writer that
+    // explicitly overrides it (e.g. `x-amz-server-side-encryption: AES256`, which needs no KMS
+    // permission) from landing PHI outside the segregated data/backup CMK. These Deny
+    // statements close that hole while leaving the normal header-less path (default CMK) intact.
+    const requireSseKms = (bucket: s3.Bucket, key: kms.IKey) => {
+      // Deny an explicit non-aws:kms scheme (IfExists → header-less requests still fall through
+      // to bucket default encryption with the CMK).
+      bucket.addToResourcePolicy(new iam.PolicyStatement({
+        sid: 'DenyNonKmsEncryption',
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ['s3:PutObject'],
+        resources: [`${bucket.bucketArn}/*`],
+        conditions: {
+          StringNotEqualsIfExists: { 's3:x-amz-server-side-encryption': 'aws:kms' },
+        },
+      }));
+      // Deny an explicit KMS key that isn't this bucket's segregated CMK (IfExists → requests
+      // that don't name a key use the bucket default CMK).
+      bucket.addToResourcePolicy(new iam.PolicyStatement({
+        sid: 'DenyWrongKmsKey',
+        effect: iam.Effect.DENY,
+        principals: [new iam.AnyPrincipal()],
+        actions: ['s3:PutObject'],
+        resources: [`${bucket.bucketArn}/*`],
+        conditions: {
+          StringNotEqualsIfExists: { 's3:x-amz-server-side-encryption-aws-kms-key-id': key.keyArn },
+        },
+      }));
+    };
+    requireSseKms(this.storageBucket, props.dataKey);
+    requireSseKms(this.backupBucket, props.backupKey);
+
     // §12 — crown-jewel key segregation. service_role gets its OWN CMK,
     // separate from Foundation's secretsKey used for everything else.
     this.serviceRoleKey = new kms.Key(this, 'ServiceRoleKey', {
@@ -78,6 +130,42 @@ export class DataStack extends Stack {
       description: 'Dedicated CMK for the service_role (BYPASSRLS) crown-jewel secret',
       enableKeyRotation: true,
       removalPolicy: RemovalPolicy.RETAIN,
+      // §14 — segregated key policy: key admins ≠ usage principals, and NO unconditioned
+      // kms:*-to-root. Replacing the default policy means an over-scoped IAM/break-glass role
+      // holding a broad kms:Decrypt can no longer decrypt the crown-jewel data key directly:
+      // usage is delegated to IAM only through Secrets Manager (kms:ViaService), which is where
+      // the service_role secret's envelope key is legitimately exercised (§12).
+      policy: new iam.PolicyDocument({
+        statements: [
+          // Administration only (no en/decrypt) — keeps the key manageable by the account.
+          new iam.PolicyStatement({
+            sid: 'KeyAdministration',
+            effect: iam.Effect.ALLOW,
+            principals: [new iam.AccountRootPrincipal()],
+            actions: [
+              'kms:Create*', 'kms:Describe*', 'kms:Enable*', 'kms:List*', 'kms:Put*',
+              'kms:Update*', 'kms:Revoke*', 'kms:Disable*', 'kms:Get*', 'kms:Delete*',
+              'kms:TagResource', 'kms:UntagResource',
+              'kms:ScheduleKeyDeletion', 'kms:CancelKeyDeletion',
+            ],
+            resources: ['*'],
+          }),
+          // Crypto usage delegated to IAM, but ONLY via Secrets Manager — deny otherwise.
+          new iam.PolicyStatement({
+            sid: 'UsageViaSecretsManagerOnly',
+            effect: iam.Effect.ALLOW,
+            principals: [new iam.AccountRootPrincipal()],
+            actions: [
+              'kms:Encrypt', 'kms:Decrypt', 'kms:ReEncrypt*',
+              'kms:GenerateDataKey*', 'kms:DescribeKey',
+            ],
+            resources: ['*'],
+            conditions: {
+              StringEquals: { 'kms:ViaService': `secretsmanager.${this.region}.amazonaws.com` },
+            },
+          }),
+        ],
+      }),
     });
 
     // Placeholder value; the real signed SERVICE_ROLE_KEY JWT is written by the
