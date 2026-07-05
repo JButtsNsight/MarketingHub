@@ -15,6 +15,8 @@ const CONTEXT: Record<string, string> = {
   googleSamlMetadataUrl: 'https://accounts.google.com/o/saml2/idp?idpid=C00n27oyt&metadata=true',
   adminGroup: 'supabase-admins',
   cognitoDomainPrefix: 'nsight-supabase',
+  dataApiPrivateCaArn:
+    'arn:aws:acm-pca:us-east-1:439024109088:certificate-authority/12345678-1234-1234-1234-123456789012',
 };
 
 // A tiny fixture stack that gives EdgeStack the cross-stack inputs it needs
@@ -194,16 +196,89 @@ test('internal ALB forwards to a target group on Kong port 8000', () => {
 test('internal 443 listener has NO authenticate-cognito action (machine clients)', () => {
   const { template } = makeEdge();
   const listeners = template.findResources('AWS::ElasticLoadBalancingV2::Listener');
-  const internal = Object.values(listeners).find((l: any) =>
+  const rules = template.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+
+  // Locate the internal listener by its logical id: default action is a plain
+  // forward (no auth) — that is the machine-client data path.
+  const internalEntry = Object.entries(listeners).find(([, l]: [string, any]) =>
     (l.Properties.DefaultActions ?? []).some((a: any) => a.Type === 'forward'
       && (a.TargetGroupArn || a.ForwardConfig?.TargetGroups)),
   );
-  // No listener default action anywhere should be authenticate-cognito on the data path.
-  const hasAuthDefault = Object.values(listeners).some((l: any) =>
-    (l.Properties.DefaultActions ?? []).some((a: any) => a.Type === 'authenticate-cognito'),
+  expect(internalEntry).toBeDefined();
+  const [internalLogicalId, internalListener] = internalEntry as [string, any];
+
+  // Its own default actions must not authenticate.
+  const defaultHasAuth = (internalListener.Properties.DefaultActions ?? [])
+    .some((a: any) => a.Type === 'authenticate-cognito');
+  expect(defaultHasAuth).toBe(false);
+
+  // AND no listener RULE attached to the internal listener may authenticate —
+  // guards against a future addAction() sneaking auth onto the data path.
+  const ruleHasAuth = Object.values(rules).some((r: any) => {
+    const listenerRef = r.Properties.ListenerArn?.Ref;
+    if (listenerRef !== internalLogicalId) return false;
+    return (r.Properties.Actions ?? []).some((a: any) => a.Type === 'authenticate-cognito');
+  });
+  expect(ruleHasAuth).toBe(false);
+});
+
+test('both HTTPS listeners pin a modern TLS 1.3 SSL policy (no default TLS 1.0/1.1)', () => {
+  const { template } = makeEdge();
+  const listeners = template.findResources('AWS::ElasticLoadBalancingV2::Listener');
+  const httpsListeners = Object.values(listeners).filter(
+    (l: any) => l.Properties.Protocol === 'HTTPS',
   );
-  expect(hasAuthDefault).toBe(false);
-  expect(internal).toBeDefined();
+  expect(httpsListeners.length).toBe(2);
+  for (const l of httpsListeners as any[]) {
+    expect(l.Properties.SslPolicy).toBe('ELBSecurityPolicy-TLS13-1-2-2021-06');
+  }
+});
+
+test('the Cognito auth rule sets an explicit SessionTimeout (not the 7-day default)', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::ListenerRule', {
+    Actions: Match.arrayWith([
+      Match.objectLike({
+        Type: 'authenticate-cognito',
+        AuthenticateCognitoConfig: Match.objectLike({ SessionTimeout: 43200 }),
+      }),
+    ]),
+  });
+});
+
+test('both ALBs enable S3 access logging (spec §11 audit trail)', () => {
+  const { template } = makeEdge();
+  // A dedicated log-delivery bucket exists.
+  const buckets = template.findResources('AWS::S3::Bucket');
+  expect(Object.keys(buckets).length).toBeGreaterThanOrEqual(1);
+  // Every ALB has access_logs.s3.enabled = true.
+  const albs = template.findResources('AWS::ElasticLoadBalancingV2::LoadBalancer');
+  expect(Object.keys(albs).length).toBe(2);
+  for (const alb of Object.values(albs) as any[]) {
+    const attrs = alb.Properties.LoadBalancerAttributes ?? [];
+    const enabled = attrs.some(
+      (a: any) => a.Key === 'access_logs.s3.enabled' && a.Value === 'true',
+    );
+    expect(enabled).toBe(true);
+  }
+});
+
+test('the internal data-API cert is issued from an ACM Private CA (not DNS-validated)', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::CertificateManager::Certificate', {
+    DomainName: 'supabase-api.internal.nsightcare.com',
+    CertificateAuthorityArn:
+      'arn:aws:acm-pca:us-east-1:439024109088:certificate-authority/12345678-1234-1234-1234-123456789012',
+  });
+});
+
+test('durable ACM certs are RETAINed on stack delete', () => {
+  const { template } = makeEdge();
+  const certs = template.findResources('AWS::CertificateManager::Certificate');
+  expect(Object.keys(certs).length).toBe(2);
+  for (const cert of Object.values(certs) as any[]) {
+    expect(cert.DeletionPolicy).toBe('Retain');
+  }
 });
 
 test('two Route 53 A/ALIAS records: Studio → public ALB, data API → internal ALB', () => {

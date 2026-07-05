@@ -3,6 +3,8 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
+import * as acmpca from 'aws-cdk-lib/aws-acmpca';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
@@ -45,6 +47,9 @@ export class EdgeStack extends Stack {
     const googleSamlMetadataUrl = req('googleSamlMetadataUrl');
     const adminGroup = req('adminGroup');
     const cognitoDomainPrefix = req('cognitoDomainPrefix');
+    // Internal data-API cert is issued from an ACM Private CA (spec §11) — a public
+    // DNS-validated cert cannot validate against a private hosted zone.
+    const dataApiPrivateCaArn = req('dataApiPrivateCaArn');
 
 
     // --- Task 1: ACM certificate for the Studio hostname (DNS-validated) ---
@@ -60,6 +65,8 @@ export class EdgeStack extends Stack {
       domainName: studioHostname,
       validation: acm.CertificateValidation.fromDns(publicZone),
     });
+    // Durable edge resource — never auto-delete (plan Conventions / HIPAA).
+    studioCert.applyRemovalPolicy(RemovalPolicy.RETAIN);
     // --- Task 2: Cognito user pool (identity broker for the ALB) ---
     const userPool = new cognito.UserPool(this, 'StudioUserPool', {
       userPoolName: 'nsight-supabase-studio',
@@ -116,6 +123,16 @@ export class EdgeStack extends Stack {
     this.userPoolClient = userPoolClient;
     this.userPoolDomain = userPoolDomain;
 
+    // Shared S3 bucket for ALB access logs (spec §11 'ALB access logging on';
+    // §15 audit trail). SSE-S3 (ELB log delivery does not support a CMK); TLS-only;
+    // retained so the request-level audit trail survives a stack delete.
+    const accessLogsBucket = new s3.Bucket(this, 'AlbAccessLogsBucket', {
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     // --- Task 3: Public, internet-facing ALB (WAF attaches in Task 5) ---
     (this as { alb: elbv2.ApplicationLoadBalancer }).alb = new elbv2.ApplicationLoadBalancer(this, 'PublicAlb', {
       vpc: props.vpc,
@@ -124,6 +141,8 @@ export class EdgeStack extends Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
       idleTimeout: Duration.seconds(4000), // > Realtime/Studio socket heartbeats (spec §11)
     });
+    // Per-request audit log for the Studio front door (spec §11 / §15).
+    this.alb.logAccessLogs(accessLogsBucket, 'public-alb');
 
     // HTTPS:443 with DEFAULT-DENY. Every allowed route is an explicit rule (Task 4);
     // anything unmatched hits this 403 (spec §11 default-deny).
@@ -131,6 +150,7 @@ export class EdgeStack extends Stack {
       port: 443,
       protocol: elbv2.ApplicationProtocol.HTTPS,
       certificates: [studioCert],
+      sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS, // TLS 1.3/1.2 only (spec §14 transmission security)
       defaultAction: elbv2.ListenerAction.fixedResponse(403, {
         contentType: 'text/plain',
         messageBody: 'Forbidden',
@@ -168,6 +188,9 @@ export class EdgeStack extends Stack {
         userPool: this.userPool,
         userPoolClient: this.userPoolClient,
         userPoolDomain: this.userPoolDomain,
+        // Bound the privileged Studio (PHI console) session; without this the ALB
+        // auth session defaults to 7 days (spec §11 'Set ALB auth SessionTimeout').
+        sessionTimeout: Duration.hours(12),
         next: elbv2.ListenerAction.forward([studioTargetGroup]),
       }),
     });
@@ -224,17 +247,23 @@ export class EdgeStack extends Stack {
     });
 
     // --- Task 6: Internal ALB (data API) — HTTPS:443 → Kong :8000, in-VPC only ---
-    // Internal data-API cert for the private hostname (private-CA per spec §11;
-    // swap CertificateValidation.fromDns(privateZone) for a Private CA issuance if
-    // the internal hostname isn't resolvable/validatable via the private zone).
     const privateZone = route53.HostedZone.fromHostedZoneAttributes(this, 'PrivateZone', {
       hostedZoneId: privateHostedZoneId,
       zoneName: privateHostedZoneName,
     });
-    const dataApiCert = new acm.Certificate(this, 'DataApiCert', {
+    // Internal data-API cert (spec §11): issued from an ACM Private CA, NOT public
+    // DNS validation. The hostname lives in a Route 53 PRIVATE zone; public ACM
+    // DNS validation resolves only against public DNS and would never validate
+    // (cert stuck PENDING_VALIDATION → EdgeStack deploy hangs then rolls back).
+    const dataApiPrivateCa = acmpca.CertificateAuthority.fromCertificateAuthorityArn(
+      this, 'DataApiPrivateCa', dataApiPrivateCaArn,
+    );
+    const dataApiCert = new acm.PrivateCertificate(this, 'DataApiCert', {
       domainName: dataApiHostname,
-      validation: acm.CertificateValidation.fromDns(privateZone),
+      certificateAuthority: dataApiPrivateCa,
     });
+    // Durable edge resource — never auto-delete (plan Conventions / HIPAA).
+    dataApiCert.applyRemovalPolicy(RemovalPolicy.RETAIN);
 
     // Dedicated SG for the internal ALB: 443 from in-VPC clients only.
     const internalAlbSg = new ec2.SecurityGroup(this, 'InternalAlbSg', {
@@ -252,6 +281,8 @@ export class EdgeStack extends Stack {
         vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
         idleTimeout: Duration.seconds(4000), // Realtime wss (spec §14)
       });
+    // Per-request audit log for the PHI data-API front door (spec §11 / §15).
+    this.internalAlb.logAccessLogs(accessLogsBucket, 'internal-alb');
 
     const kongTargetGroup = new elbv2.ApplicationTargetGroup(this, 'KongTargetGroup', {
       vpc: props.vpc,
@@ -272,6 +303,7 @@ export class EdgeStack extends Stack {
       port: 443,
       protocol: elbv2.ApplicationProtocol.HTTPS,
       certificates: [dataApiCert],
+      sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS, // TLS 1.3/1.2 only on the PHI path (spec §14)
       defaultAction: elbv2.ListenerAction.forward([kongTargetGroup]),
     });
 

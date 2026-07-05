@@ -12,6 +12,7 @@
     "privateHostedZoneName": "internal.nsightcare.com",
     "googleSamlMetadataUrl": "REPLACE_ME",
     "adminGroup": "supabase-admins",
-    "cognitoDomainPrefix": "nsight-supabase"
+    "cognitoDomainPrefix": "nsight-supabase",
+    "dataApiPrivateCaArn": "REPLACE_ME"
   }
 }
