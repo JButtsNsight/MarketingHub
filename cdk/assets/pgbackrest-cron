@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# pgbackrest-cron — installed to /etc/cron.d wrappers or invoked from systemd timers.
+# Runs on the host as the postgres/backup user. Full weekly, diff daily, nightly
+# pg_dump to the backup bucket. Uses the instance role for S3 (§9).
+#
+set -euo pipefail
+
+readonly STANZA="supabase"
+readonly BACKUP_BUCKET="${BACKUP_BUCKET:?BACKUP_BUCKET must be set}"
+readonly AWS_REGION="${AWS_REGION:-us-east-1}"
+readonly DB_CONTAINER="supabase-db"     # verify against the pinned bundle's service name
+readonly DUMP_PREFIX="s3://${BACKUP_BUCKET}/pg_dump"
+
+log() { echo "[pgbackrest-cron] $*" >&2; }
+die() { echo "[pgbackrest-cron][FATAL] $*" >&2; exit 1; }
+
+ensure_stanza() {
+  pgbackrest --stanza="$STANZA" stanza-create 2>/dev/null || true
+  pgbackrest --stanza="$STANZA" check || die "pgBackRest stanza check failed"
+}
+
+backup() {  # $1 = full|diff
+  local type="$1"
+  log "Starting ${type} backup."
+  pgbackrest --stanza="$STANZA" --type="$type" backup || die "${type} backup failed"
+  log "${type} backup complete."
+}
+
+nightly_pg_dump() {
+  local ts out
+  ts="$(date -u +%Y%m%dT%H%M%SZ)"
+  out="/tmp/supabase-${ts}.dump"
+  log "Nightly pg_dumpall -> ${DUMP_PREFIX}/supabase-${ts}.sql.gz"
+  # pg_dumpall via the db container; pipe compressed straight to S3 (instance role).
+  docker exec "$DB_CONTAINER" pg_dumpall -U postgres \
+    | gzip -c >"$out" || die "pg_dumpall failed"
+  aws s3 cp "$out" "${DUMP_PREFIX}/supabase-${ts}.sql.gz" \
+    --region "$AWS_REGION" --sse aws:kms || die "pg_dump upload failed"
+  rm -f "$out"
+  log "Nightly pg_dump uploaded."
+}
+
+usage() { echo "usage: $0 {stanza|full|diff|dump}" >&2; exit 2; }
+
+main() {
+  [ $# -ge 1 ] || usage
+  case "$1" in
+    stanza) ensure_stanza ;;
+    full)   ensure_stanza; backup full ;;
+    diff)   ensure_stanza; backup diff ;;
+    dump)   nightly_pg_dump ;;
+    *)      usage ;;
+  esac
+}
+
+main "$@"

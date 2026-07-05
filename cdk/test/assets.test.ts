@@ -37,6 +37,12 @@ test('render-env.sh injects AWS creds only into the storage service', () => {
   expect(renderEnv).toMatch(/STORAGE_S3_FORCE_PATH_STYLE=false/);
 });
 
+test('pgbackrest assets exist', () => {
+  const files = fs.readdirSync(assetsDir);
+  expect(files).toContain('pgbackrest.conf');
+  expect(files).toContain('pgbackrest-cron');
+});
+
 describe('shell assets parse and lint clean', () => {
   const files = shellAssets();
   // Guard: if discovery returns nothing the describe body is empty and the
