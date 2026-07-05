@@ -11,9 +11,27 @@ readonly BACKUP_BUCKET="${BACKUP_BUCKET:?BACKUP_BUCKET must be set}"
 readonly AWS_REGION="${AWS_REGION:-us-east-1}"
 readonly DB_CONTAINER="supabase-db"     # verify against the pinned bundle's service name
 readonly DUMP_PREFIX="s3://${BACKUP_BUCKET}/pg_dump"
+# pgBackRest is the PRIMARY (minute-RPO) backup tier and emits NO AWS Backup event, so a
+# silent failure is otherwise invisible until a restore is attempted (spec §9/§16). Publish
+# a custom metric so the ObservabilityStack PgBackRestFailureAlarm pages on-call.
+readonly METRIC_NAMESPACE="Supabase/Backup"
+readonly METRIC_NAME="PgBackRestJobFailed"
 
 log() { echo "[pgbackrest-cron] $*" >&2; }
-die() { echo "[pgbackrest-cron][FATAL] $*" >&2; exit 1; }
+
+# emit_metric <value> — 1 on failure, 0 on success. Never let a metric-publish problem
+# mask the underlying job result (best-effort; failure to publish is logged, not fatal).
+emit_metric() {
+  aws cloudwatch put-metric-data \
+    --namespace "$METRIC_NAMESPACE" \
+    --metric-name "$METRIC_NAME" \
+    --value "$1" \
+    --unit Count \
+    --region "$AWS_REGION" >/dev/null 2>&1 \
+    || log "WARNING: could not publish ${METRIC_NAME}=$1 to CloudWatch"
+}
+
+die() { echo "[pgbackrest-cron][FATAL] $*" >&2; emit_metric 1; exit 1; }
 
 ensure_stanza() {
   pgbackrest --stanza="$STANZA" stanza-create 2>/dev/null || true
@@ -52,6 +70,9 @@ main() {
     dump)   nightly_pg_dump ;;
     *)      usage ;;
   esac
+  # Reached only if the selected operation succeeded (die/usage exit non-zero and,
+  # for failures, publish PgBackRestJobFailed=1). Clear the alarm on a clean run.
+  emit_metric 0
 }
 
 main "$@"

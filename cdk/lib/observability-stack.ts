@@ -44,7 +44,45 @@ export class ObservabilityStack extends Stack {
       displayName: 'Supabase on-call alerts',
       masterKey: props.logsKey,
     });
+    // Audit-adjacent alerting infra — never auto-delete (Conventions / HIPAA). Losing
+    // the topic silently drops the confirmed on-call subscription and disables paging.
+    this.topic.applyRemovalPolicy(RemovalPolicy.RETAIN);
     this.topic.addSubscription(new subs.EmailSubscription(oncallEmail));
+
+    // The topic is SSE-encrypted under logsKey (reused per plan §14/§15). For a service
+    // to publish to a CMK-encrypted topic, SNS calls kms:GenerateDataKey on the CMK on
+    // that service's behalf, so the CMK key policy MUST authorize each publishing
+    // principal or the publish fails with KMS AccessDenied and the notification is
+    // SILENTLY dropped — on-call is never paged. Grant the CloudWatch-alarm,
+    // EventBridge, and Budgets principals use of the key. (CDK's SnsAction / Budget do
+    // NOT add these grants; only EventBridge's SnsTopic target does.)
+    props.logsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowSupabaseAlertPublishersToUseLogsKey',
+      principals: [
+        new iam.ServicePrincipal('cloudwatch.amazonaws.com'),
+        new iam.ServicePrincipal('events.amazonaws.com'),
+        new iam.ServicePrincipal('budgets.amazonaws.com'),
+      ],
+      actions: ['kms:Decrypt', 'kms:GenerateDataKey*'],
+      resources: ['*'],
+    }));
+
+    // AWS Budgets validates at create time that the target SNS topic's resource policy
+    // grants budgets.amazonaws.com sns:Publish; CfnBudget does not add it, so without
+    // this the Budget resource fails to create and the stack rolls back. Scoped to this
+    // account's budget by SourceAccount + SourceArn.
+    this.topic.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowBudgetsToPublish',
+      principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
+      actions: ['sns:Publish'],
+      resources: [this.topic.topicArn],
+      conditions: {
+        StringEquals: { 'aws:SourceAccount': this.account },
+        ArnLike: {
+          'aws:SourceArn': `arn:aws:budgets::${this.account}:budget/supabase-monthly-cost`,
+        },
+      },
+    }));
 
     const action = new cwActions.SnsAction(this.topic);
 
@@ -195,6 +233,85 @@ export class ObservabilityStack extends Stack {
     });
     slotLagAlarm.addAlarmAction(action);
 
+    // Postgres reachability — synthetic check (spec §16). The slot-lag Lambda connects
+    // to Postgres via Supavisor every 5 min and publishes PostgresUp=1 only on a
+    // successful connect+query; if Postgres is unreachable (or the Lambda errors) no
+    // datapoint is published, so LessThanThreshold(1) + treatMissingData BREACHING
+    // catches a dead db container on a still-"healthy" host — the §16 blind spot.
+    const pgReachabilityAlarm = new cw.Alarm(this, 'PostgresReachabilityAlarm', {
+      alarmName: 'supabase-postgres-unreachable',
+      metric: new cw.Metric({
+        namespace: 'Supabase/DB',
+        metricName: 'PostgresUp',
+        statistic: 'Minimum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 2,
+      comparisonOperator: cw.ComparisonOperator.LESS_THAN_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.BREACHING,
+    });
+    pgReachabilityAlarm.addAlarmAction(action);
+
+    // Connection saturation (spec §16): the same Lambda publishes used/max_connections
+    // as a percentage. >=80% sustained means the pool is exhausting.
+    const connSaturationAlarm = new cw.Alarm(this, 'ConnectionSaturationAlarm', {
+      alarmName: 'supabase-connection-saturation',
+      metric: new cw.Metric({
+        namespace: 'Supabase/DB',
+        metricName: 'ConnectionUtilizationPercent',
+        statistic: 'Maximum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 80,
+      evaluationPeriods: 3,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.BREACHING,
+    });
+    connSaturationAlarm.addAlarmAction(action);
+
+    // Container down / unhealthy (spec §16): ASG-style instance health is blind to a
+    // dead `db`/kong/auth container on a live host. A host cron (cdk/assets/
+    // container-health.sh, scheduled by Phase 3's bootstrap alongside the CloudWatch
+    // agent) publishes UnhealthyContainerCount = count of non-running/unhealthy compose
+    // containers. treatMissingData BREACHING makes a missing emitter fail LOUD (same
+    // pattern as the disk alarms), never silent.
+    const containerHealthAlarm = new cw.Alarm(this, 'ContainerHealthAlarm', {
+      alarmName: 'supabase-container-unhealthy',
+      metric: new cw.Metric({
+        namespace: 'Supabase/Containers',
+        metricName: 'UnhealthyContainerCount',
+        statistic: 'Maximum',
+        period: Duration.minutes(5),
+      }),
+      threshold: 1,
+      evaluationPeriods: 2,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.BREACHING,
+    });
+    containerHealthAlarm.addAlarmAction(action);
+
+    // pgBackRest is the PRIMARY, minute-RPO backup tier (spec §9); AWS Backup snapshots
+    // are secondary. AWS Backup failures are caught by the EventBridge rule above, but
+    // pgBackRest failures emit NO AWS Backup event. The host pgBackRest cron
+    // (cdk/assets/pgbackrest-cron) publishes PgBackRestJobFailed=1 on any failure (and
+    // 0 on success so the alarm can clear); alarm on it so a silent WAL-archiving /
+    // backup failure on the primary tier is detected before the next restore drill.
+    const pgBackRestAlarm = new cw.Alarm(this, 'PgBackRestFailureAlarm', {
+      alarmName: 'supabase-pgbackrest-job-failed',
+      metric: new cw.Metric({
+        namespace: 'Supabase/Backup',
+        metricName: 'PgBackRestJobFailed',
+        statistic: 'Sum',
+        period: Duration.hours(1),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      comparisonOperator: cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      treatMissingData: cw.TreatMissingData.NOT_BREACHING,
+    });
+    pgBackRestAlarm.addAlarmAction(action);
+
     // Monthly cost guardrail (spec §16/§25). Amount from context, never hardcoded.
     const budgetAmount = Number(this.node.tryGetContext('monthlyBudgetUsd'));
     if (!Number.isFinite(budgetAmount) || budgetAmount <= 0) {
@@ -236,8 +353,38 @@ export class ObservabilityStack extends Stack {
     // CloudTrail S3 data events on the PHI storage + backup buckets (spec §15) — object-level
     // access is otherwise invisible to management-event logging. Encrypted with logsKey; the
     // trail + its own bucket are RETAINed (audit-adjacent — never auto-delete).
+    // CloudTrail encrypts its log files under logsKey; the CMK key policy MUST authorize
+    // the CloudTrail service principal (kms:GenerateDataKey*/kms:DescribeKey, scoped by
+    // the trail-ARN encryption context) or CreateTrail fails with
+    // InsufficientEncryptionPolicyException and the whole stack rolls back.
+    props.logsKey.addToResourcePolicy(new iam.PolicyStatement({
+      sid: 'AllowSupabaseCloudTrailToUseLogsKey',
+      principals: [new iam.ServicePrincipal('cloudtrail.amazonaws.com')],
+      actions: ['kms:GenerateDataKey*', 'kms:DescribeKey'],
+      resources: ['*'],
+      conditions: {
+        StringLike: {
+          'kms:EncryptionContext:aws:cloudtrail:arn':
+            `arn:aws:cloudtrail:${this.region}:${this.account}:trail/*`,
+        },
+      },
+    }));
+
+    // Explicit, hardened delivery bucket (the construct's auto-created bucket sets only
+    // enforceSSL — no Block Public Access, no default encryption — on records that expose
+    // PHI object keys/access patterns). Match the LogArchiveBucket hardening.
+    const trailBucket = new s3.Bucket(this, 'PhiDataTrailBucket', {
+      bucketName: `nsight-supabase-phi-trail-${this.account}`,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: props.logsKey,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
     const trail = new cloudtrail.Trail(this, 'PhiDataTrail', {
       trailName: 'supabase-phi-data-events',
+      bucket: trailBucket,
       encryptionKey: props.logsKey,
       includeGlobalServiceEvents: true,
       isMultiRegionTrail: false, // single-region stack (spec §5)

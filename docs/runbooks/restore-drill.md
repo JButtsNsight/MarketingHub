@@ -38,7 +38,13 @@ drill records the **measured RTO** each run.
 - Terminate the drill instance; delete the throwaway data volume (NOT the backups).
 
 ## Backup-failure alarm check (spec §17)
-- Induce a controlled AWS Backup job failure (e.g. temporarily deny the backup role
-  `backup:StartBackupJob` or point a plan at a non-existent resource), confirm the
-  **`supabase-backup-job-failed` EventBridge rule** fires and on-call receives the SNS
-  email, then revert. See Task 11.
+- **AWS Backup (secondary tier):** induce a controlled AWS Backup job failure (e.g.
+  temporarily deny the backup role `backup:StartBackupJob` or point a plan at a
+  non-existent resource), confirm the **`supabase-backup-job-failed` EventBridge rule**
+  fires and on-call receives the SNS email, then revert. See Task 11.
+- **pgBackRest (primary, minute-RPO tier):** pgBackRest failures emit NO AWS Backup
+  event. The host cron (`cdk/assets/pgbackrest-cron`) publishes the
+  `Supabase/Backup` / `PgBackRestJobFailed` CloudWatch metric (1 on failure, 0 on
+  success); the **`supabase-pgbackrest-job-failed`** alarm pages on-call. Verify by
+  running the cron against an intentionally broken stanza (e.g. wrong `BACKUP_BUCKET`)
+  and confirming the metric goes to 1 and the alarm fires, then revert.

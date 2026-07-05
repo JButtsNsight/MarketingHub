@@ -9,7 +9,7 @@ import { ObservabilityStack } from '../lib/observability-stack';
 const env = { account: '439024109088', region: 'us-east-1' };
 const context = { oncallEmail: 'oncall@nsightcare.com', monthlyBudgetUsd: 550 };
 
-export function makeStack(): { t: Template; stack: ObservabilityStack } {
+export function makeStack(): { t: Template; stack: ObservabilityStack; foundation: FoundationStack } {
   const app = new App({ context });
   const foundation = new FoundationStack(app, 'Foundation', { env });
   const network = new NetworkStack(app, 'Network', { env, logsKey: foundation.logsKey });
@@ -41,7 +41,7 @@ export function makeStack(): { t: Template; stack: ObservabilityStack } {
     storageBucket: data.storageBucket,
     backupBucket: data.backupBucket,
   });
-  return { t: Template.fromStack(stack), stack };
+  return { t: Template.fromStack(stack), stack, foundation };
 }
 
 test('ObservabilityStack synthesizes', () => {
@@ -61,10 +61,64 @@ test('KMS-encrypted SNS topic with an email subscription from context', () => {
   });
 });
 
+test('on-call SNS topic is RETAINed (HIPAA audit-adjacent infra)', () => {
+  const { t } = makeStack();
+  t.hasResource('AWS::SNS::Topic', { DeletionPolicy: 'Retain' });
+});
+
+test('the logs CMK authorizes the alert publishers and CloudTrail (SSE delivery)', () => {
+  const { foundation } = makeStack();
+  const ft = Template.fromStack(foundation);
+  // CloudWatch alarms / EventBridge / Budgets must be able to SSE-encrypt when
+  // publishing to the KMS-encrypted on-call topic, or notifications are dropped.
+  ft.hasResourceProperties('AWS::KMS::Key', {
+    KeyPolicy: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Principal: Match.objectLike({
+            Service: Match.arrayWith([
+              'cloudwatch.amazonaws.com',
+              'budgets.amazonaws.com',
+            ]),
+          }),
+          Action: Match.arrayWith(['kms:Decrypt', 'kms:GenerateDataKey*']),
+        }),
+      ]),
+    }),
+  });
+  // CloudTrail must be able to encrypt log files under the same CMK, or the
+  // trail fails to create (InsufficientEncryptionPolicyException).
+  ft.hasResourceProperties('AWS::KMS::Key', {
+    KeyPolicy: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Principal: { Service: 'cloudtrail.amazonaws.com' },
+          Action: Match.arrayWith(['kms:GenerateDataKey*', 'kms:DescribeKey']),
+        }),
+      ]),
+    }),
+  });
+});
+
+test('the on-call topic policy lets AWS Budgets publish to it', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::SNS::TopicPolicy', {
+    PolicyDocument: Match.objectLike({
+      Statement: Match.arrayWith([
+        Match.objectLike({
+          Principal: { Service: 'budgets.amazonaws.com' },
+          Action: 'sns:Publish',
+        }),
+      ]),
+    }),
+  });
+});
+
 test('at least three alarms are wired to the SNS topic', () => {
   const { t } = makeStack();
-  // status-check + CPU + root-disk + data-disk + slot-lag = 5
-  t.resourceCountIs('AWS::CloudWatch::Alarm', 5);
+  // status-check + CPU + root-disk + data-disk + slot-lag + pgBackRest-failure
+  // + Postgres-reachability + connection-saturation + container-health = 9
+  t.resourceCountIs('AWS::CloudWatch::Alarm', 9);
   // every alarm actions the on-call topic
   const alarms = t.findResources('AWS::CloudWatch::Alarm');
   const topicRef = Object.keys(t.findResources('AWS::SNS::Topic'))[0];
@@ -130,6 +184,41 @@ test('alarm on the replication-slot retained-WAL custom metric', () => {
   });
 });
 
+test('alarm on pgBackRest (primary backup tier) job failures', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'PgBackRestJobFailed',
+    Namespace: 'Supabase/Backup',
+  });
+});
+
+test('alarm on Postgres reachability (synthetic check, fail-loud on missing data)', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'PostgresUp',
+    Namespace: 'Supabase/DB',
+    ComparisonOperator: 'LessThanThreshold',
+    TreatMissingData: 'breaching',
+  });
+});
+
+test('alarm on Postgres connection saturation', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'ConnectionUtilizationPercent',
+    Namespace: 'Supabase/DB',
+  });
+});
+
+test('alarm on container down / unhealthy (fail-loud on missing data)', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::CloudWatch::Alarm', {
+    MetricName: 'UnhealthyContainerCount',
+    Namespace: 'Supabase/Containers',
+    TreatMissingData: 'breaching',
+  });
+});
+
 test('monthly cost budget at the context amount with SNS + email notification', () => {
   const { t } = makeStack();
   t.hasResourceProperties('AWS::Budgets::Budget', {
@@ -164,6 +253,21 @@ test('CloudTrail trail records S3 data events on the PHI buckets', () => {
       }),
     ]),
   });
+});
+
+test('CloudTrail log bucket blocks all public access (PHI audit records)', () => {
+  const { t } = makeStack();
+  // Both the trail bucket and the archive bucket must block public access.
+  const buckets = Object.values(t.findResources('AWS::S3::Bucket'));
+  expect(buckets.length).toBeGreaterThanOrEqual(2);
+  for (const b of buckets) {
+    expect(b.Properties.PublicAccessBlockConfiguration).toEqual({
+      BlockPublicAcls: true,
+      BlockPublicPolicy: true,
+      IgnorePublicAcls: true,
+      RestrictPublicBuckets: true,
+    });
+  }
 });
 
 test('operational log group has short (90-day) retention', () => {
