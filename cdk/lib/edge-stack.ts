@@ -45,9 +45,6 @@ export class EdgeStack extends Stack {
     const adminGroup = req('adminGroup');
     const cognitoDomainPrefix = req('cognitoDomainPrefix');
 
-    // Silence unused-locals until later tasks consume them; remove as each is used.
-    void dataApiHostname;
-    void privateHostedZoneId; void privateHostedZoneName;
 
     // --- Task 1: ACM certificate for the Studio hostname (DNS-validated) ---
     // Public hosted zone (from attributes, so no live account lookup at synth).
@@ -225,6 +222,59 @@ export class EdgeStack extends Stack {
     new wafv2.CfnWebACLAssociation(this, 'StudioWebAclAssociation', {
       resourceArn: this.alb.loadBalancerArn,
       webAclArn: webAcl.attrArn,
+    });
+
+    // --- Task 6: Internal ALB (data API) — HTTPS:443 → Kong :8000, in-VPC only ---
+    // Internal data-API cert for the private hostname (private-CA per spec §11;
+    // swap CertificateValidation.fromDns(privateZone) for a Private CA issuance if
+    // the internal hostname isn't resolvable/validatable via the private zone).
+    const privateZone = route53.HostedZone.fromHostedZoneAttributes(this, 'PrivateZone', {
+      hostedZoneId: privateHostedZoneId,
+      zoneName: privateHostedZoneName,
+    });
+    const dataApiCert = new acm.Certificate(this, 'DataApiCert', {
+      domainName: dataApiHostname,
+      validation: acm.CertificateValidation.fromDns(privateZone),
+    });
+    void privateZone;
+
+    // Dedicated SG for the internal ALB: 443 from in-VPC clients only.
+    const internalAlbSg = new ec2.SecurityGroup(this, 'InternalAlbSg', {
+      vpc: props.vpc,
+      description: 'Internal data-API ALB (in-VPC clients only)',
+      allowAllOutbound: true,
+    });
+    internalAlbSg.addIngressRule(props.internalClientSg, ec2.Port.tcp(443), 'HTTPS from in-VPC clients');
+
+    (this as { internalAlb: elbv2.ApplicationLoadBalancer }).internalAlb =
+      new elbv2.ApplicationLoadBalancer(this, 'InternalAlb', {
+        vpc: props.vpc,
+        internetFacing: false, // scheme = internal
+        securityGroup: internalAlbSg,
+        vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+        idleTimeout: Duration.seconds(4000), // Realtime wss (spec §14)
+      });
+
+    const kongTargetGroup = new elbv2.ApplicationTargetGroup(this, 'KongTargetGroup', {
+      vpc: props.vpc,
+      port: 8000,
+      protocol: elbv2.ApplicationProtocol.HTTP, // Kong proxy is HTTP on :8000; ALB terminates TLS
+      targetType: elbv2.TargetType.INSTANCE,
+      targets: [new elbv2Targets.InstanceTarget(props.instance, 8000)],
+      healthCheck: {
+        path: '/', // Kong returns a status on / — verify against the pinned tag
+        healthyHttpCodes: '200,404', // Kong root often 404s without a matching route
+        interval: Duration.seconds(30),
+      },
+    });
+
+    // Data-API listener: plain forward to Kong. NO authenticate-cognito — machine
+    // clients authenticate with Supabase JWTs, not browser SSO (spec §11).
+    this.internalAlb.addListener('InternalHttpsListener', {
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+      certificates: [dataApiCert],
+      defaultAction: elbv2.ListenerAction.forward([kongTargetGroup]),
     });
   }
 }

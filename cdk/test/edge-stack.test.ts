@@ -167,3 +167,41 @@ test('a REGIONAL WebACL with managed + rate-based rules is associated to the pub
   });
   template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
 });
+
+test('EdgeStack exports both ALBs after full build', () => {
+  const { stack } = makeEdge();
+  expect(stack.alb).toBeDefined();
+  expect(stack.internalAlb).toBeDefined();
+});
+
+test('internal ALB is scheme=internal', () => {
+  const { template } = makeEdge();
+  // Two ALBs total; the internal one is scheme "internal".
+  template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 2);
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internal',
+  });
+});
+
+test('internal ALB forwards to a target group on Kong port 8000', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', {
+    Port: 8000,
+    TargetType: 'instance',
+  });
+});
+
+test('internal 443 listener has NO authenticate-cognito action (machine clients)', () => {
+  const { template } = makeEdge();
+  const listeners = template.findResources('AWS::ElasticLoadBalancingV2::Listener');
+  const internal = Object.values(listeners).find((l: any) =>
+    (l.Properties.DefaultActions ?? []).some((a: any) => a.Type === 'forward'
+      && (a.TargetGroupArn || a.ForwardConfig?.TargetGroups)),
+  );
+  // No listener default action anywhere should be authenticate-cognito on the data path.
+  const hasAuthDefault = Object.values(listeners).some((l: any) =>
+    (l.Properties.DefaultActions ?? []).some((a: any) => a.Type === 'authenticate-cognito'),
+  );
+  expect(hasAuthDefault).toBe(false);
+  expect(internal).toBeDefined();
+});
