@@ -293,3 +293,14 @@ test('two Route 53 A/ALIAS records: Studio → public ALB, data API → internal
     Type: 'A',
   });
 });
+
+test('host SG is opened on Kong :8000 from the internal ALB SG (data path would break otherwise)', () => {
+  const { template } = makeEdge();
+  // Standalone ingress owned by EdgeStack: source must be the internal ALB SG, port 8000.
+  template.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
+    FromPort: 8000,
+    ToPort: 8000,
+    IpProtocol: 'tcp',
+    SourceSecurityGroupId: { 'Fn::GetAtt': [Match.stringLikeRegexp('InternalAlbSg'), 'GroupId'] },
+  });
+});

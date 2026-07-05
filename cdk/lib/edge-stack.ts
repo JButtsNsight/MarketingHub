@@ -307,6 +307,22 @@ export class EdgeStack extends Stack {
       defaultAction: elbv2.ListenerAction.forward([kongTargetGroup]),
     });
 
+    // The data path is client -> internal ALB -> Kong :8000 on the host. The host SG
+    // (ec2Sg, Phase 1) only allows :8000 from internalClientSg, so without this the ALB
+    // (its own InternalAlbSg) cannot reach Kong and every data-API request fails at the
+    // host SG. Add the ingress as a standalone resource OWNED BY EdgeStack, referencing
+    // the host SG id imported from the compute side (an edge that already exists) and the
+    // local InternalAlbSg — using instance.connections.allowFrom() here would place the
+    // rule on the host SG in NetworkStack and force a Network->Edge dependency cycle (spec §6/§11).
+    new ec2.CfnSecurityGroupIngress(this, 'KongFromInternalAlb', {
+      groupId: props.instance.connections.securityGroups[0].securityGroupId,
+      sourceSecurityGroupId: internalAlbSg.securityGroupId,
+      ipProtocol: 'tcp',
+      fromPort: 8000,
+      toPort: 8000,
+      description: 'Internal data-API ALB to Kong :8000',
+    });
+
     // --- Task 7: Route 53 A/ALIAS records (spec §11 private-hosted-zone DNS) ---
     // Studio → public ALB (public zone); data API → internal ALB (private zone).
     // External-DNS (Cloudflare) alternative: omit these and CNAME the hostnames to
