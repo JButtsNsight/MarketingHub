@@ -1,5 +1,5 @@
 import { App } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Template, Match } from 'aws-cdk-lib/assertions';
 import { FoundationStack } from '../lib/foundation-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
@@ -47,4 +47,16 @@ export function makeStack(): { t: Template; stack: ObservabilityStack } {
 test('ObservabilityStack synthesizes', () => {
   const { t } = makeStack();
   expect(t).toBeDefined();
+});
+
+test('KMS-encrypted SNS topic with an email subscription from context', () => {
+  const { t } = makeStack();
+  t.resourceCountIs('AWS::SNS::Topic', 1);
+  t.hasResourceProperties('AWS::SNS::Topic', {
+    KmsMasterKeyId: Match.anyValue(), // encrypted with logsKey
+  });
+  t.hasResourceProperties('AWS::SNS::Subscription', {
+    Protocol: 'email',
+    Endpoint: 'oncall@nsightcare.com',
+  });
 });

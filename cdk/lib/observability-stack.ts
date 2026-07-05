@@ -5,6 +5,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as backup from 'aws-cdk-lib/aws-backup';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -21,7 +22,16 @@ export class ObservabilityStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, props);
-    // Constructs are added in Tasks 1–9.
-    void props;
+
+    const oncallEmail = this.node.tryGetContext('oncallEmail') as string;
+    if (!oncallEmail) {
+      throw new Error('ObservabilityStack requires the "oncallEmail" context value.');
+    }
+
+    (this as { topic: sns.Topic }).topic = new sns.Topic(this, 'OnCallTopic', {
+      displayName: 'Supabase on-call alerts',
+      masterKey: props.logsKey,
+    });
+    this.topic.addSubscription(new subs.EmailSubscription(oncallEmail));
   }
 }
