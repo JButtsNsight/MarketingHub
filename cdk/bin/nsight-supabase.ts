@@ -6,6 +6,7 @@ import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
 import { ComputeStack } from '../lib/compute-stack';
 import { EdgeStack } from '../lib/edge-stack';
+import { ObservabilityStack } from '../lib/observability-stack';
 
 const app = new App();
 const env = {
@@ -41,6 +42,17 @@ new EdgeStack(app, 'SupabaseEdge', {
   albSg: network.albSg,
   internalClientSg: network.internalClientSg,
   instance: compute.instance,
+});
+
+new ObservabilityStack(app, 'SupabaseObservability', {
+  env,
+  instance: compute.instance,
+  backupVault: data.backupVault,
+  logsKey: foundation.logsKey,
+  vpc: network.vpc,
+  internalClientSg: network.internalClientSg,
+  storageBucket: data.storageBucket,
+  backupBucket: data.backupBucket,
 });
 
 app.synth();

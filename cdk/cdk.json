@@ -13,6 +13,8 @@
     "googleSamlMetadataUrl": "REPLACE_ME",
     "adminGroup": "supabase-admins",
     "cognitoDomainPrefix": "nsight-supabase",
-    "dataApiPrivateCaArn": "REPLACE_ME"
+    "dataApiPrivateCaArn": "REPLACE_ME",
+    "oncallEmail": "oncall@nsightcare.com",
+    "monthlyBudgetUsd": 550
   }
 }

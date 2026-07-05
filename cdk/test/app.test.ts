@@ -16,6 +16,11 @@ test('synth includes EdgeStack', () => {
   expect(out).not.toMatch(/Error|Exception/i);
 });
 
+test('cdk synth includes the ObservabilityStack', () => {
+  const out = execSync('npx cdk synth SupabaseObservability --quiet 2>&1', { cwd: process.cwd() }).toString();
+  expect(out).not.toMatch(/Error|Exception/i);
+});
+
 test('DataStack synthesizes with the full contract exported', () => {
   // Reuses the app synth; asserts DataStack template contains the crown-jewel key,
   // both buckets, and the vault (a fast structural smoke test).
