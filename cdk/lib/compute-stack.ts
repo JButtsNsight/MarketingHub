@@ -7,6 +7,8 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as fs from 'fs';
+import * as path from 'path';
 
 export interface ComputeStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
@@ -117,6 +119,44 @@ export class ComputeStack extends Stack {
 
     this.instanceRole = role;
 
+    // --- Host-side assets staged onto the instance via user-data (spec §7) ---
+    const assetDir = path.join(__dirname, '..', 'assets');
+    const readAsset = (f: string) => fs.readFileSync(path.join(assetDir, f), 'utf8');
+
+    const userData = ec2.UserData.forLinux();
+    // Export the exact ARNs/names the bootstrap requires (fail-loud if unset).
+    userData.addCommands(
+      'set -euo pipefail',
+      'install -d -m 0755 /opt/supabase',
+      'install -d -m 0750 /etc/pgbackrest',
+      `export APP_CONFIG_SECRET_ARN='${props.appConfigSecret.secretArn}'`,
+      `export SERVICE_ROLE_SECRET_ARN='${props.serviceRoleSecret.secretArn}'`,
+      `export STORAGE_CREDS_SECRET_ARN='${props.storageCredsSecret.secretArn}'`,
+      `export SMTP_SECRET_ARN='${props.smtpSecret.secretArn}'`,
+      `export STORAGE_BUCKET='${props.storageBucket.bucketName}'`,
+      `export BACKUP_BUCKET='${props.backupBucket.bucketName}'`,
+    );
+    // Stage the host-side assets by writing them verbatim (quoted heredoc) to disk.
+    const stage = (name: string, dest: string, mode: string) => {
+      const marker = `NSIGHT_EOF_${name.replace(/[^A-Z0-9]/gi, '_').toUpperCase()}`;
+      userData.addCommands(
+        `cat >'${dest}' <<'${marker}'`,
+        readAsset(name),
+        marker,
+        `chmod ${mode} '${dest}'`,
+      );
+    };
+    stage('render-env.sh', '/opt/supabase/render-env.sh', '0750');
+    stage('docker-compose.override.yml', '/opt/supabase/docker-compose.override.yml', '0644');
+    stage('pgbackrest.conf', '/etc/pgbackrest/pgbackrest.conf', '0640');
+    stage('pgbackrest-cron', '/usr/local/bin/pgbackrest-cron', '0750');
+    stage('bootstrap.sh', '/opt/supabase/bootstrap.sh', '0700');
+    // Substitute the pgbackrest.conf placeholders with the real bucket/region.
+    userData.addCommands(
+      'sed -i "s|__BACKUP_BUCKET__|${BACKUP_BUCKET}|; s|__AWS_REGION__|us-east-1|" /etc/pgbackrest/pgbackrest.conf',
+      '/opt/supabase/bootstrap.sh',
+    );
+
     // --- The Supabase host (spec §7): single m6i.xlarge, AL2023, private subnet ---
     const dataVolumeDeviceName = '/dev/sdf'; // Nitro renames to /dev/nvme1n1 on AL2023
 
@@ -127,6 +167,7 @@ export class ComputeStack extends Stack {
       instanceType: ec2.InstanceType.of(ec2.InstanceClass.M6I, ec2.InstanceSize.XLARGE),
       machineImage: ec2.MachineImage.latestAmazonLinux2023(),
       role,
+      userData,
       // IMDSv2 enforced (HttpTokens: required) with hop-limit 1. Using the individual
       // metadata-option props (not requireImdsv2) because this CDK version forbids
       // combining requireImdsv2 with metadata options.

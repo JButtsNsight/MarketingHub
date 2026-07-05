@@ -149,6 +149,19 @@ test('the data volume carries the supabase:backup=true tag (Phase 2 BackupSelect
   expect(json).toContain('supabase:backup');
 });
 
+test('instance user-data references the bootstrap and exports the secret ARNs', () => {
+  const t = makeCompute();
+  // UserData is base64-encoded in the launch template. Assert the decoded form
+  // contains our exported vars + the bootstrap invocation.
+  const template = t.toJSON();
+  const json = JSON.stringify(template);
+  // The user-data is a Fn::Base64 of a joined string; the var names appear in the
+  // (unencoded) Fn::Join parts.
+  expect(json).toContain('APP_CONFIG_SECRET_ARN');
+  expect(json).toContain('STORAGE_CREDS_SECRET_ARN');
+  expect(json).toContain('bootstrap.sh');
+});
+
 test('auto-recovery alarm on StatusCheckFailed_System with an EC2 recover action', () => {
   const t = makeCompute();
   t.hasResourceProperties('AWS::CloudWatch::Alarm', {
