@@ -120,3 +120,26 @@ test('public 443 listener DEFAULT action is a 403 fixed response (default-deny)'
     ]),
   });
 });
+
+test('Studio target group targets the instance on port 3000 with a health check', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', {
+    Port: 3000,
+    Protocol: 'HTTP',
+    TargetType: 'instance',
+    HealthCheckPath: '/api/profile', // a real Studio route that returns 200/302
+  });
+});
+
+test('a listener RULE authenticates via Cognito then forwards to the Studio target group', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::ListenerRule', {
+    Conditions: Match.arrayWith([
+      Match.objectLike({ Field: 'host-header' }),
+    ]),
+    Actions: Match.arrayWith([
+      Match.objectLike({ Type: 'authenticate-cognito', Order: 1 }),
+      Match.objectLike({ Type: 'forward', Order: 2 }),
+    ]),
+  });
+});

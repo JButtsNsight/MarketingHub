@@ -5,6 +5,8 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as elbv2Targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
+import * as actions from 'aws-cdk-lib/aws-elasticloadbalancingv2-actions';
 
 export interface EdgeStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
@@ -116,7 +118,6 @@ export class EdgeStack extends Stack {
     this.userPool = userPool;
     this.userPoolClient = userPoolClient;
     this.userPoolDomain = userPoolDomain;
-    void this.userPool; void this.userPoolClient; void this.userPoolDomain;
 
     // --- Task 3: Public, internet-facing ALB (WAF attaches in Task 5) ---
     (this as { alb: elbv2.ApplicationLoadBalancer }).alb = new elbv2.ApplicationLoadBalancer(this, 'PublicAlb', {
@@ -141,6 +142,37 @@ export class EdgeStack extends Stack {
 
     // Stash for Task 4.
     this.publicListener = publicListener;
-    void this.publicListener;
+
+    // --- Task 4: Studio target group → EC2 host :3000 with a real health check ---
+    const studioTargetGroup = new elbv2.ApplicationTargetGroup(this, 'StudioTargetGroup', {
+      vpc: props.vpc,
+      port: 3000,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.INSTANCE,
+      targets: [new elbv2Targets.InstanceTarget(props.instance, 3000)],
+      healthCheck: {
+        path: '/api/profile',
+        healthyHttpCodes: '200,302',
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(10),
+      },
+      deregistrationDelay: Duration.seconds(30), // shorten recreate downtime (spec §22)
+    });
+
+    // Authenticated rule: authenticate-cognito wraps the forward-to-Studio action.
+    // Covers all Studio routes so nothing slips past the default-deny (spec §11).
+    this.publicListener.addAction('StudioAuthenticatedRule', {
+      priority: 10,
+      conditions: [
+        elbv2.ListenerCondition.hostHeaders([studioHostname]),
+        elbv2.ListenerCondition.pathPatterns(['/', '/api/*', '/assets/*', '/_next/*', '/project/*']),
+      ],
+      action: new actions.AuthenticateCognitoAction({
+        userPool: this.userPool,
+        userPoolClient: this.userPoolClient,
+        userPoolDomain: this.userPoolDomain,
+        next: elbv2.ListenerAction.forward([studioTargetGroup]),
+      }),
+    });
   }
 }
