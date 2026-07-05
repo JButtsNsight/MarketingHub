@@ -95,3 +95,28 @@ test('app client uses OAuth code flow with the Studio idpresponse callback', () 
     SupportedIdentityProviders: Match.arrayWith(['GoogleSAML']),
   });
 });
+
+test('public ALB is internet-facing with a raised idle timeout', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internet-facing',
+    Type: 'application',
+    LoadBalancerAttributes: Match.arrayWith([
+      Match.objectLike({ Key: 'idle_timeout.timeout_seconds', Value: '4000' }),
+    ]),
+  });
+});
+
+test('public 443 listener DEFAULT action is a 403 fixed response (default-deny)', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
+    Port: 443,
+    Protocol: 'HTTPS',
+    DefaultActions: Match.arrayWith([
+      Match.objectLike({
+        Type: 'fixed-response',
+        FixedResponseConfig: Match.objectLike({ StatusCode: '403' }),
+      }),
+    ]),
+  });
+});
