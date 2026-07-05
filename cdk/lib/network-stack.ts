@@ -40,6 +40,11 @@ export class NetworkStack extends Stack {
       Ecr: ec2.InterfaceVpcEndpointAwsService.ECR,
       EcrDocker: ec2.InterfaceVpcEndpointAwsService.ECR_DOCKER,
       Ssm: ec2.InterfaceVpcEndpointAwsService.SSM,
+      // ssmmessages carries Session Manager's interactive control/data channel
+      // (distinct from the ssm API endpoint); without it, SSM Session Manager —
+      // the sole host-access path per spec §13 — egresses via NAT/internet,
+      // violating §6's "AWS-API traffic never traverses NAT/internet" guarantee.
+      SsmMessages: ec2.InterfaceVpcEndpointAwsService.SSM_MESSAGES,
     };
     for (const [id, service] of Object.entries(interfaceEndpoints)) {
       this.vpc.addInterfaceEndpoint(`${id}Endpoint`, {

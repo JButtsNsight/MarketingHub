@@ -25,9 +25,16 @@ test('public and private subnets across two AZs (4 subnets total)', () => {
 
 test('has an S3 gateway endpoint and the required interface endpoints', () => {
   const t = makeStacks();
-  // 1 gateway (S3) + 6 interface endpoints
-  t.resourceCountIs('AWS::EC2::VPCEndpoint', 7);
+  // 1 gateway (S3) + 7 interface endpoints
+  t.resourceCountIs('AWS::EC2::VPCEndpoint', 8);
   t.hasResourceProperties('AWS::EC2::VPCEndpoint', { VpcEndpointType: 'Gateway' });
+  // Pin the exact interface-service list (spec §6) so swapping or dropping a
+  // required endpoint (e.g. ssmmessages) fails the suite rather than passing on count alone.
+  for (const svc of ['secretsmanager', 'kms', 'logs', 'ecr.api', 'ecr.dkr', 'ssm', 'ssmmessages']) {
+    t.hasResourceProperties('AWS::EC2::VPCEndpoint', {
+      ServiceName: `com.amazonaws.us-east-1.${svc}`,
+    });
+  }
 });
 
 test('VPC flow logs go to an encrypted, retained log group', () => {
@@ -35,7 +42,11 @@ test('VPC flow logs go to an encrypted, retained log group', () => {
   t.resourceCountIs('AWS::EC2::FlowLog', 1);
   t.hasResource('AWS::Logs::LogGroup', {
     DeletionPolicy: 'Retain',
-    Properties: { RetentionInDays: 90 },
+    Properties: {
+      RetentionInDays: 90,
+      // Assert the group is KMS-encrypted (spec §14) — dropping encryptionKey must fail here.
+      KmsKeyId: Match.anyValue(),
+    },
   });
 });
 
@@ -43,6 +54,8 @@ test('EC2 SG allows Studio :3000 from the ALB SG only', () => {
   const t = makeStacks();
   t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
     FromPort: 3000, ToPort: 3000, IpProtocol: 'tcp',
+    // The source must be the ALB SG only — not anyIpv4 or another SG (spec §6).
+    SourceSecurityGroupId: { 'Fn::GetAtt': [Match.stringLikeRegexp('AlbSg'), 'GroupId'] },
   });
 });
 
@@ -51,6 +64,8 @@ test('EC2 SG allows Kong :8000 and Supavisor :5432/:6543 from internal clients',
   for (const p of [8000, 5432, 6543]) {
     t.hasResourceProperties('AWS::EC2::SecurityGroupIngress', {
       FromPort: p, ToPort: p, IpProtocol: 'tcp',
+      // These PHI-bearing data-API ports must be sourced from the internal-client SG only (spec §6).
+      SourceSecurityGroupId: { 'Fn::GetAtt': [Match.stringLikeRegexp('InternalClientSg'), 'GroupId'] },
     });
   }
 });
