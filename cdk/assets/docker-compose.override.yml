@@ -1,0 +1,40 @@
+# cdk/assets/docker-compose.override.yml
+# Overlay on the pinned Supabase bundle's docker-compose.yml.
+# VERIFY every key against the pinned tag's .env.example (§5, §10).
+services:
+  studio:
+    # Studio reachable on :3000 (ALB targets this; SG allows :3000 from ALB only).
+    ports:
+      - "3000:3000"
+    # If the pinned tag declares `depends_on: analytics`, null it out so the front
+    # door does not hang (analytics/vector is NOT enabled — §5).
+    depends_on: {}
+
+  kong:
+    # Proxy :8000 stays reachable (SG-gated from internal clients). Kong Admin
+    # (:8001/:8444) and Manager (:8002) bind to loopback ONLY — never in any SG/ALB
+    # target (§6, §11). Verified unreachable in §17.
+    ports:
+      - "8000:8000/tcp"
+      - "127.0.0.1:8001:8001/tcp"
+      - "127.0.0.1:8444:8444/tcp"
+      - "127.0.0.1:8002:8002/tcp"
+    depends_on: {}
+
+  storage:
+    # S3 backend against the dedicated, bucket-scoped bucket. Creds are injected via
+    # the env-file ONLY for this service (render-env.sh), never the instance role.
+    environment:
+      STORAGE_BACKEND: s3
+      STORAGE_S3_BUCKET: ${STORAGE_S3_BUCKET}
+      STORAGE_S3_REGION: ${STORAGE_S3_REGION}
+      STORAGE_S3_FORCE_PATH_STYLE: "false"     # real S3, not MinIO
+      AWS_ACCESS_KEY_ID: ${STORAGE_AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${STORAGE_AWS_SECRET_ACCESS_KEY}
+      AWS_DEFAULT_REGION: ${STORAGE_S3_REGION}
+      # NOTE: omit STORAGE_S3_ENDPOINT entirely for real S3 (§10).
+
+  functions:
+    # Edge Functions dir lives on the persistent data volume (§7).
+    volumes:
+      - /mnt/pgdata/functions:/home/deno/functions:rw

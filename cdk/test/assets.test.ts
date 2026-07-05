@@ -17,6 +17,26 @@ test('at least the bootstrap asset exists', () => {
   expect(files).toContain('bootstrap.sh');
 });
 
+test('compose override binds Kong Admin to 127.0.0.1 only', () => {
+  const override = fs.readFileSync(
+    path.join(assetsDir, 'docker-compose.override.yml'), 'utf8',
+  );
+  // Kong Admin (8001) and Manager (8002) must be loopback-bound; the proxy (8000)
+  // is NOT bound to loopback (it is reached via the SG from internal clients).
+  expect(override).toMatch(/127\.0\.0\.1:8001/);
+  expect(override).toMatch(/127\.0\.0\.1:8444/);
+  expect(override).toMatch(/127\.0\.0\.1:8002/);
+});
+
+test('render-env.sh injects AWS creds only into the storage service', () => {
+  const renderEnv = fs.readFileSync(
+    path.join(assetsDir, 'render-env.sh'), 'utf8',
+  );
+  // Storage-scoped keys present; a comment documents the omit-for-others rule.
+  expect(renderEnv).toMatch(/STORAGE_BACKEND=s3/);
+  expect(renderEnv).toMatch(/STORAGE_S3_FORCE_PATH_STYLE=false/);
+});
+
 describe('shell assets parse and lint clean', () => {
   const files = shellAssets();
   // Guard: if discovery returns nothing the describe body is empty and the
