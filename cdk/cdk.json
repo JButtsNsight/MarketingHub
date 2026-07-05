@@ -1,0 +1,8 @@
+{
+  "app": "npx ts-node --prefer-ts-exts bin/nsight-supabase.ts",
+  "context": {
+    "@aws-cdk/core:newStyleStackSynthesis": true,
+    "account": "439024109088",
+    "region": "us-east-1"
+  }
+}
