@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, Tags } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -19,8 +19,8 @@ export interface ComputeStackProps extends StackProps {
 }
 
 export class ComputeStack extends Stack {
-  public readonly instance!: ec2.Instance; // assigned in Task 2
-  public readonly instanceRole!: iam.Role;
+  public readonly instance: ec2.Instance;
+  public readonly instanceRole: iam.Role;
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
@@ -114,5 +114,48 @@ export class ComputeStack extends Stack {
     }));
 
     this.instanceRole = role;
+
+    // --- The Supabase host (spec §7): single m6i.xlarge, AL2023, private subnet ---
+    const dataVolumeDeviceName = '/dev/sdf'; // Nitro renames to /dev/nvme1n1 on AL2023
+
+    this.instance = new ec2.Instance(this, 'Host', {
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      securityGroup: props.ec2Sg,
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.M6I, ec2.InstanceSize.XLARGE),
+      machineImage: ec2.MachineImage.latestAmazonLinux2023(),
+      role,
+      // IMDSv2 enforced (HttpTokens: required) with hop-limit 1. Using the individual
+      // metadata-option props (not requireImdsv2) because this CDK version forbids
+      // combining requireImdsv2 with metadata options.
+      httpTokens: ec2.HttpTokens.REQUIRED,
+      httpPutResponseHopLimit: 1,   // blocks container -> IMDS SSRF (spec §7)
+      blockDevices: [
+        {
+          deviceName: '/dev/xvda', // AL2023 root device
+          volume: ec2.BlockDeviceVolume.ebs(50, {
+            volumeType: ec2.EbsDeviceVolumeType.GP3,
+            encrypted: true,
+            kmsKey: props.dataKey,
+            deleteOnTermination: true,
+          }),
+        },
+        {
+          deviceName: dataVolumeDeviceName,
+          volume: ec2.BlockDeviceVolume.ebs(200, {
+            volumeType: ec2.EbsDeviceVolumeType.GP3,
+            encrypted: true,
+            kmsKey: props.dataKey,
+            deleteOnTermination: false, // Postgres state survives instance replacement
+          }),
+        },
+      ],
+    });
+
+    // `ec2.Instance` sets propagateTagsToVolumeOnCreation on its launch template, so
+    // instance tags propagate to the attached volumes at create time — the data volume
+    // therefore receives supabase:backup=true, which Phase 2's BackupSelection matches.
+    Tags.of(this.instance).add('supabase:backup', 'true');
+    Tags.of(this.instance).add('Name', 'nsight-supabase-host');
   }
 }

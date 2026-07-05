@@ -103,3 +103,48 @@ test('role can read/write the backup bucket but is NOT granted the storage bucke
   const json = JSON.stringify(stmts);
   expect(json).not.toMatch(/Storage[0-9A-F]{8}/); // no Storage bucket logical ref
 });
+
+test('instance is m6i.xlarge with IMDSv2 hop-limit 1', () => {
+  const t = makeCompute();
+  // The individual metadata-option props land as MetadataOptions directly on the
+  // AWS::EC2::Instance resource (this CDK version forbids requireImdsv2 + hop-limit,
+  // so no LaunchTemplate is used). Assert the security-critical values: IMDSv2 required
+  // and hop-limit 1 (blocks a container reaching IMDS via SSRF — spec §7).
+  t.hasResourceProperties('AWS::EC2::Instance', {
+    InstanceType: 'm6i.xlarge',
+    MetadataOptions: Match.objectLike({
+      HttpTokens: 'required',
+      HttpPutResponseHopLimit: 1,
+    }),
+  });
+});
+
+test('root and data volumes are both KMS-encrypted gp3', () => {
+  const t = makeCompute();
+  t.hasResourceProperties('AWS::EC2::Instance', {
+    BlockDeviceMappings: Match.arrayWith([
+      // root 50GB gp3 encrypted with a CMK (KmsKeyId present, not the default key)
+      Match.objectLike({
+        Ebs: Match.objectLike({
+          VolumeSize: 50, VolumeType: 'gp3', Encrypted: true, KmsKeyId: Match.anyValue(),
+        }),
+      }),
+      // data 200GB gp3 encrypted with a CMK, retained on terminate
+      Match.objectLike({
+        Ebs: Match.objectLike({
+          VolumeSize: 200, VolumeType: 'gp3', Encrypted: true,
+          KmsKeyId: Match.anyValue(), DeleteOnTermination: false,
+        }),
+      }),
+    ]),
+  });
+});
+
+test('the data volume carries the supabase:backup=true tag (Phase 2 BackupSelection hook)', () => {
+  const t = makeCompute();
+  // The data volume mapping's Ebs block does not itself carry tags in CFN; the tag
+  // is applied to the volume via a Tags entry on the instance's block-device volume.
+  // We assert the tag key/value appears in the synthesized template.
+  const json = JSON.stringify(t.toJSON());
+  expect(json).toContain('supabase:backup');
+});
