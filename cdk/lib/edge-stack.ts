@@ -7,6 +7,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as elbv2Targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import * as actions from 'aws-cdk-lib/aws-elasticloadbalancingv2-actions';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 
 export interface EdgeStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
@@ -173,6 +174,57 @@ export class EdgeStack extends Stack {
         userPoolDomain: this.userPoolDomain,
         next: elbv2.ListenerAction.forward([studioTargetGroup]),
       }),
+    });
+
+    // --- Task 5: AWS WAFv2 in front of the public ALB (spec §11) ---
+    const webAcl = new wafv2.CfnWebACL(this, 'StudioWebAcl', {
+      scope: 'REGIONAL',
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        sampledRequestsEnabled: true,
+        cloudWatchMetricsEnabled: true,
+        metricName: 'nsight-supabase-studio-waf',
+      },
+      rules: [
+        {
+          name: 'AWSCommon',
+          priority: 0,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: { vendorName: 'AWS', name: 'AWSManagedRulesCommonRuleSet' },
+          },
+          visibilityConfig: {
+            sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: 'AWSCommon',
+          },
+        },
+        {
+          name: 'AWSKnownBadInputs',
+          priority: 1,
+          overrideAction: { none: {} },
+          statement: {
+            managedRuleGroupStatement: { vendorName: 'AWS', name: 'AWSManagedRulesKnownBadInputsRuleSet' },
+          },
+          visibilityConfig: {
+            sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: 'AWSKnownBadInputs',
+          },
+        },
+        {
+          name: 'RateLimit',
+          priority: 2,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: { limit: 2000, aggregateKeyType: 'IP' },
+          },
+          visibilityConfig: {
+            sampledRequestsEnabled: true, cloudWatchMetricsEnabled: true, metricName: 'RateLimit',
+          },
+        },
+      ],
+    });
+
+    new wafv2.CfnWebACLAssociation(this, 'StudioWebAclAssociation', {
+      resourceArn: this.alb.loadBalancerArn,
+      webAclArn: webAcl.attrArn,
     });
   }
 }

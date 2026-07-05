@@ -143,3 +143,27 @@ test('a listener RULE authenticates via Cognito then forwards to the Studio targ
     ]),
   });
 });
+
+test('a REGIONAL WebACL with managed + rate-based rules is associated to the public ALB', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::WAFv2::WebACL', {
+    Scope: 'REGIONAL',
+    DefaultAction: { Allow: {} },
+    Rules: Match.arrayWith([
+      Match.objectLike({
+        Statement: Match.objectLike({
+          ManagedRuleGroupStatement: Match.objectLike({
+            VendorName: 'AWS',
+            Name: 'AWSManagedRulesCommonRuleSet',
+          }),
+        }),
+      }),
+      Match.objectLike({
+        Statement: Match.objectLike({
+          RateBasedStatement: Match.objectLike({ AggregateKeyType: 'IP' }),
+        }),
+      }),
+    ]),
+  });
+  template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
+});
