@@ -165,3 +165,31 @@ test('CloudTrail trail records S3 data events on the PHI buckets', () => {
     ]),
   });
 });
+
+test('operational log group has short (90-day) retention', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::Logs::LogGroup', {
+    RetentionInDays: 90,
+  });
+});
+
+test('7-year archive bucket has Object Lock and a Glacier lifecycle transition', () => {
+  const { t } = makeStack();
+  t.hasResourceProperties('AWS::S3::Bucket', {
+    ObjectLockEnabled: true,
+    LifecycleConfiguration: Match.objectLike({
+      Rules: Match.arrayWith([
+        Match.objectLike({
+          Transitions: Match.arrayWith([
+            Match.objectLike({ StorageClass: 'GLACIER' }),
+          ]),
+        }),
+      ]),
+    }),
+  });
+});
+
+test('a subscription filter ships the log group to the archive', () => {
+  const { t } = makeStack();
+  t.resourceCountIs('AWS::Logs::SubscriptionFilter', 1);
+});

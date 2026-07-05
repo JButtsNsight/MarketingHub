@@ -15,6 +15,9 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as path from 'path';
 import * as budgets from 'aws-cdk-lib/aws-budgets';
 import * as cloudtrail from 'aws-cdk-lib/aws-cloudtrail';
+import * as logs from 'aws-cdk-lib/aws-logs';
+import * as logsDest from 'aws-cdk-lib/aws-logs-destinations';
+import * as firehose from 'aws-cdk-lib/aws-kinesisfirehose';
 
 export interface ObservabilityStackProps extends StackProps {
   readonly instance: ec2.Instance;
@@ -252,5 +255,55 @@ export class ObservabilityStack extends Stack {
         includeManagementEvents: true,
       },
     );
+
+    // --- Log tiering (spec §15): short-retention operational CW group + a 7-yr,
+    // Object-Locked, Glacier-tiered S3 archive fed by a subscription filter. ---
+
+    // 7-year compliance archive: Object-Locked, Glacier-tiered, KMS-encrypted, retained.
+    const archiveBucket = new s3.Bucket(this, 'LogArchiveBucket', {
+      bucketName: `nsight-supabase-log-archive-${this.account}`,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: props.logsKey,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      versioned: true,
+      objectLockEnabled: true,
+      objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2557)), // 7 yr
+      lifecycleRules: [
+        {
+          id: 'to-glacier-then-retain-7yr',
+          transitions: [
+            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(90) },
+          ],
+          expiration: Duration.days(2557),
+        },
+      ],
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Operational log group with SHORT retention (spec §15: 30–90 d for operability).
+    const opsLogGroup = new logs.LogGroup(this, 'SupabaseOpsLogGroup', {
+      logGroupName: '/nsight/supabase/app',
+      retention: logs.RetentionDays.THREE_MONTHS, // 90 days
+      encryptionKey: props.logsKey,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Firehose → S3 archive (the durable long-term tier).
+    const archiveStream = new firehose.DeliveryStream(this, 'LogArchiveStream', {
+      destination: new firehose.S3Bucket(archiveBucket, {
+        dataOutputPrefix: 'cw-logs/!{timestamp:yyyy/MM/dd}/',
+        errorOutputPrefix: 'cw-logs-errors/!{firehose:error-output-type}/!{timestamp:yyyy/MM/dd}/',
+        bufferingInterval: Duration.minutes(5),
+        encryptionKey: props.logsKey,
+      }),
+    });
+
+    // Subscription filter: everything in the ops group flows to the archive.
+    new logs.SubscriptionFilter(this, 'OpsToArchive', {
+      logGroup: opsLogGroup,
+      destination: new logsDest.FirehoseDestination(archiveStream),
+      filterPattern: logs.FilterPattern.allEvents(),
+    });
   }
 }
