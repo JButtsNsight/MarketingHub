@@ -57,3 +57,11 @@ test('missing required context fails loud', () => {
   expect(() => new EdgeStack(app, 'Edge', { env, vpc, albSg, internalClientSg, instance }))
     .toThrow(/required context/);
 });
+
+test('creates an ACM certificate for the Studio hostname', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::CertificateManager::Certificate', {
+    DomainName: 'supabase-studio.nsightcare.com',
+    ValidationMethod: 'DNS',
+  });
+});
