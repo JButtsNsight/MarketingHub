@@ -1,9 +1,10 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Stack, StackProps, RemovalPolicy } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as route53 from 'aws-cdk-lib/aws-route53';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
 
 export interface EdgeStackProps extends StackProps {
   readonly vpc: ec2.IVpc;
@@ -15,6 +16,10 @@ export interface EdgeStackProps extends StackProps {
 export class EdgeStack extends Stack {
   public readonly alb!: elbv2.ApplicationLoadBalancer;
   public readonly internalAlb!: elbv2.ApplicationLoadBalancer;
+
+  private userPool!: cognito.UserPool;
+  private userPoolClient!: cognito.UserPoolClient;
+  private userPoolDomain!: cognito.UserPoolDomain;
 
   constructor(scope: Construct, id: string, props: EdgeStackProps) {
     super(scope, id, props);
@@ -38,8 +43,7 @@ export class EdgeStack extends Stack {
 
     // Silence unused-locals until later tasks consume them; remove as each is used.
     void dataApiHostname;
-    void privateHostedZoneId; void privateHostedZoneName; void googleSamlMetadataUrl;
-    void adminGroup; void cognitoDomainPrefix;
+    void privateHostedZoneId; void privateHostedZoneName;
 
     // --- Task 1: ACM certificate for the Studio hostname (DNS-validated) ---
     // Public hosted zone (from attributes, so no live account lookup at synth).
@@ -55,5 +59,62 @@ export class EdgeStack extends Stack {
       validation: acm.CertificateValidation.fromDns(publicZone),
     });
     void studioCert; void publicZone;
+
+    // --- Task 2: Cognito user pool (identity broker for the ALB) ---
+    const userPool = new cognito.UserPool(this, 'StudioUserPool', {
+      userPoolName: 'nsight-supabase-studio',
+      selfSignUpEnabled: false, // federated-only; no local self-service signups
+      signInAliases: { email: true },
+      removalPolicy: RemovalPolicy.RETAIN, // HIPAA — never auto-delete identities
+    });
+
+    // Hosted-UI domain — required for authenticate-cognito.
+    const userPoolDomain = userPool.addDomain('StudioUserPoolDomain', {
+      cognitoDomain: { domainPrefix: cognitoDomainPrefix },
+    });
+
+    // Google Workspace SAML IdP (metadata URL from context).
+    const samlProviderName = 'GoogleSAML';
+    const samlIdp = new cognito.CfnUserPoolIdentityProvider(this, 'GoogleSamlIdp', {
+      userPoolId: userPool.userPoolId,
+      providerName: samlProviderName,
+      providerType: 'SAML',
+      providerDetails: {
+        MetadataURL: googleSamlMetadataUrl,
+        IDPSignout: 'true',
+      },
+      attributeMapping: {
+        email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+      },
+    });
+
+    // App client: OAuth authorization-code flow, callback = Studio /oauth2/idpresponse.
+    const userPoolClient = userPool.addClient('StudioClient', {
+      generateSecret: true, // ALB authenticate-cognito requires a client secret
+      supportedIdentityProviders: [
+        cognito.UserPoolClientIdentityProvider.custom(samlProviderName),
+      ],
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
+        callbackUrls: [`https://${studioHostname}/oauth2/idpresponse`],
+      },
+    });
+    // The client references the IdP by name; enforce create ordering.
+    userPoolClient.node.addDependency(samlIdp);
+
+    // Admin group — the authorization boundary. Google admin group → Cognito group
+    // → gates the ALB authenticate-cognito rule (spec §11).
+    new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
+      userPoolId: userPool.userPoolId,
+      groupName: adminGroup,
+      description: 'Supabase Studio administrators (gates the ALB authenticate-cognito rule)',
+    });
+
+    // Stash for Task 3/4 (authenticate-cognito action needs pool + client + domain).
+    this.userPool = userPool;
+    this.userPoolClient = userPoolClient;
+    this.userPoolDomain = userPoolDomain;
+    void this.userPool; void this.userPoolClient; void this.userPoolDomain;
   }
 }

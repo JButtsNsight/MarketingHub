@@ -1,5 +1,5 @@
 import { App, Stack } from 'aws-cdk-lib';
-import { Template } from 'aws-cdk-lib/assertions';
+import { Template, Match } from 'aws-cdk-lib/assertions';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import { EdgeStack } from '../lib/edge-stack';
 
@@ -63,5 +63,35 @@ test('creates an ACM certificate for the Studio hostname', () => {
   template.hasResourceProperties('AWS::CertificateManager::Certificate', {
     DomainName: 'supabase-studio.nsightcare.com',
     ValidationMethod: 'DNS',
+  });
+});
+
+test('creates a Cognito user pool, SAML IdP, hosted-UI domain, and admin group', () => {
+  const { template } = makeEdge();
+  template.resourceCountIs('AWS::Cognito::UserPool', 1);
+  template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
+
+  // Google SAML IdP wired to the metadata URL from context.
+  template.hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
+    ProviderType: 'SAML',
+    ProviderName: 'GoogleSAML',
+    ProviderDetails: Match.objectLike({
+      MetadataURL: 'https://accounts.google.com/o/saml2/idp?idpid=C00n27oyt&metadata=true',
+    }),
+  });
+
+  // Admin Cognito group (authorization, not just authentication).
+  template.hasResourceProperties('AWS::Cognito::UserPoolGroup', {
+    GroupName: 'supabase-admins',
+  });
+});
+
+test('app client uses OAuth code flow with the Studio idpresponse callback', () => {
+  const { template } = makeEdge();
+  template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+    AllowedOAuthFlows: Match.arrayWith(['code']),
+    AllowedOAuthFlowsUserPoolClient: true,
+    CallbackURLs: Match.arrayWith(['https://supabase-studio.nsightcare.com/oauth2/idpresponse']),
+    SupportedIdentityProviders: Match.arrayWith(['GoogleSAML']),
   });
 });
