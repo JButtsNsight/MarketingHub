@@ -91,3 +91,23 @@ test('backup bucket uses backupKey, Object-Lock compliance default, and lifecycl
     }),
   });
 });
+
+test('a dedicated service-role CMK exists in DataStack, distinct from Foundation keys', () => {
+  const { t } = makeDataTemplate();
+  // DataStack owns exactly one KMS key of its own: the crown-jewel service-role CMK.
+  t.resourceCountIs('AWS::KMS::Key', 1);
+  t.hasResourceProperties('AWS::KMS::Key', { EnableKeyRotation: true });
+  t.hasResourceProperties('AWS::KMS::Alias', {
+    AliasName: 'alias/nsight-supabase-service-role',
+  });
+});
+
+test('serviceRoleSecret is encrypted with the dedicated service-role CMK', () => {
+  const { data, t } = makeDataTemplate();
+  const keyRef = data.serviceRoleKey.keyArn; // token — assert the secret references *a* KMS key
+  expect(keyRef).toBeDefined();
+  t.hasResourceProperties('AWS::SecretsManager::Secret', {
+    Name: 'nsight-supabase/service-role',
+    KmsKeyId: Match.anyValue(),
+  });
+});

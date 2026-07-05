@@ -2,6 +2,7 @@ import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 export interface DataStackProps extends StackProps {
   readonly dataKey: kms.IKey;
@@ -12,6 +13,8 @@ export interface DataStackProps extends StackProps {
 export class DataStack extends Stack {
   public readonly storageBucket: s3.Bucket;
   public readonly backupBucket: s3.Bucket;
+  public readonly serviceRoleKey: kms.Key;
+  public readonly serviceRoleSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -54,6 +57,25 @@ export class DataStack extends Stack {
           noncurrentVersionExpiration: Duration.days(2555),
         },
       ],
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // §12 — crown-jewel key segregation. service_role gets its OWN CMK,
+    // separate from Foundation's secretsKey used for everything else.
+    this.serviceRoleKey = new kms.Key(this, 'ServiceRoleKey', {
+      alias: 'alias/nsight-supabase-service-role',
+      description: 'Dedicated CMK for the service_role (BYPASSRLS) crown-jewel secret',
+      enableKeyRotation: true,
+      removalPolicy: RemovalPolicy.RETAIN,
+    });
+
+    // Placeholder value; the real signed SERVICE_ROLE_KEY JWT is written by the
+    // custom resource in Task 4 (never distributed to app clients — §12).
+    this.serviceRoleSecret = new secretsmanager.Secret(this, 'ServiceRoleSecret', {
+      secretName: 'nsight-supabase/service-role',
+      description: 'Supabase service_role JWT (BYPASSRLS). Crown jewel — server-side/admin only.',
+      encryptionKey: this.serviceRoleKey,
+      secretObjectValue: {}, // populated at deploy time by JwtSigner custom resource
       removalPolicy: RemovalPolicy.RETAIN,
     });
   }
