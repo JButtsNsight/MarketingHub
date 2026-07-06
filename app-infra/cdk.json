@@ -11,6 +11,8 @@
     "adminGroup": "marketinghub-admins",
     "marketingGroup": "marketing",
     "cognitoDomainPrefix": "nsight-marketinghub",
-    "appImageTag": "REPLACE_ME"
+    "appImageTag": "REPLACE_ME",
+    "supabaseUrl": "REPLACE_ME",
+    "supabaseServiceRoleSecretArn": "arn:aws:secretsmanager:us-east-1:439024109088:secret:REPLACE_ME-000000"
   }
 }

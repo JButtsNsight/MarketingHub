@@ -10,6 +10,7 @@ import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 
 /** The container port the Next.js standalone server listens on (PORT=3000). */
 const APP_PORT = 3000;
@@ -49,6 +50,8 @@ export class AppStack extends Stack {
     const marketingGroup = req('marketingGroup');
     const cognitoDomainPrefix = req('cognitoDomainPrefix');
     const appImageTag = req('appImageTag');
+    const supabaseUrl = req('supabaseUrl');
+    const supabaseServiceRoleSecretArn = req('supabaseServiceRoleSecretArn');
 
     // --- Networking: dedicated VPC (public ALB tier + private app tier) ---
     const vpc = new ec2.Vpc(this, 'AppVpc', {
@@ -167,17 +170,42 @@ export class AppStack extends Stack {
     // --- ECS Fargate service (private subnets) ---
     const cluster = new ecs.Cluster(this, 'AppCluster', { vpc });
 
+    // The Supabase service-role key — the ONLY secret the app holds. Imported by
+    // its COMPLETE ARN so IAM grants (below) resolve to that exact ARN with no
+    // "-??????" partial-ARN wildcard; the key never appears in the task def as
+    // plaintext (it is delivered via `ecs.Secret`, i.e. a `ValueFrom` ref).
+    const supabaseServiceRoleSecret = secretsmanager.Secret.fromSecretCompleteArn(
+      this,
+      'SupabaseServiceRoleSecret',
+      supabaseServiceRoleSecretArn,
+    );
+
     const taskDef = new ecs.FargateTaskDefinition(this, 'AppTaskDef', {
       cpu: 512,
       memoryLimitMiB: 1024,
     });
-    taskDef.addContainer('app', {
+    const appContainer = taskDef.addContainer('app', {
       image: ecs.ContainerImage.fromRegistry(appImageTag),
       portMappings: [{ containerPort: APP_PORT }],
       environment: {
         PORT: String(APP_PORT),
         NEXT_PUBLIC_APP_NAME: 'MarketingHub',
         COGNITO_LOGOUT_URL: cognitoLogoutUrl,
+        // Supabase PostgREST + Storage endpoint (public URL of the self-hosted
+        // backend). The service-role KEY is a secret (below), never env.
+        SUPABASE_URL: supabaseUrl,
+        // The app's auth layer queries the ALB public-key endpoint at
+        // public-keys.auth.elb.<region>.amazonaws.com and reads AWS_REGION /
+        // ALB_REGION to pick the host. Both set to this stack's region.
+        AWS_REGION: this.region,
+        ALB_REGION: this.region,
+      },
+      secrets: {
+        // Delivered to the container from Secrets Manager at task start; adding
+        // it here makes CDK grant the task EXECUTION role read on the exact ARN.
+        SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
+          supabaseServiceRoleSecret,
+        ),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
     });
@@ -205,6 +233,12 @@ export class AppStack extends Stack {
       },
     );
     this.alb.logAccessLogs(accessLogsBucket, 'public-alb');
+
+    // REQUIRED for auth: the app verifies the ALB `x-amzn-oidc-data` JWT and
+    // asserts its `signer` equals ALB_ARN — a token arriving with ALB_ARN unset
+    // makes getUser() throw (fail-loud). Set now that the ALB exists (a Ref to
+    // this same stack's load balancer, so no cross-stack dependency).
+    appContainer.addEnvironment('ALB_ARN', this.alb.loadBalancerArn);
 
     // Target group → Fargate service on the container port. IP target type
     // because Fargate uses awsvpc networking. Health check hits the
