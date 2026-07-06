@@ -158,6 +158,13 @@ you changed CDK inputs.
    - `/templates/new` → upload a text template → redirected to its detail/preview.
    - It appears in the grid; search by a word in its name finds it; open the preview.
    - An email template shows subject + a sandboxed HTML preview.
+   - **Large body (>8 KB) — the WAF regression guard:** upload an email template
+     whose HTML `body` is well over 8 KB (e.g. paste a real marketing email, or
+     duplicate a block until the body exceeds ~15 KB). It MUST create successfully
+     (201, redirect to detail). A `403` here means CommonRuleSet's
+     `SizeRestrictions_BODY` / `CrossSiteScripting_BODY` are blocking the upload at
+     the WAF edge — confirm the `ruleActionOverrides` (both set to `Count`) survived
+     on the `AWSCommon` rule in `app-stack.ts` (see §7).
 4. **Storage:** uploading with a file persists `storage_path`; the file downloads via
    a signed URL (never a public bucket URL).
 5. **Sign-out:** `/logout` clears the ALB session and redirects via the Cognito
@@ -186,3 +193,13 @@ you changed CDK inputs.
   from the task definition.
 - WAFv2 (CommonRuleSet + KnownBadInputs + IP rate limit) is REGIONAL and associated
   to the ALB; the rate limit is 2000 req/5 min per IP.
+- **CommonRuleSet body-rule overrides (do NOT remove):** the `AWSCommon` managed
+  rule carries a `ruleActionOverrides` block setting `SizeRestrictions_BODY` and
+  `CrossSiteScripting_BODY` to `Count`. The core feature POSTs the whole template
+  HTML inline in the request body (`POST /api/templates`); real email HTML exceeds
+  the 8 KB body-inspection limit and trips the XSS body signature, so at their
+  default `Block` these two rules 403 legitimate uploads at the edge before they
+  reach Fargate. Count keeps them logged/metered without blocking. This is safe:
+  stored HTML is only ever rendered in a locked `<iframe sandbox="">` preview, never
+  executed. Every other CommonRuleSet rule stays at Block. The §5 smoke test's >8 KB
+  upload is the regression guard for this.

@@ -336,6 +336,30 @@ test('a REGIONAL WebACL with managed + rate-based rules is associated to the ALB
   template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
 });
 
+test('CommonRuleSet overrides the body-size/XSS body rules to Count so large HTML email templates upload', () => {
+  // POST /api/templates carries the ENTIRE template HTML inline in the JSON
+  // body; realistic marketing email HTML routinely exceeds 8 KB and contains
+  // markup that trips CrossSiteScripting_BODY. Left at their default Block
+  // action, CommonRuleSet's SizeRestrictions_BODY / CrossSiteScripting_BODY
+  // would 403 the app's core upload at the WAF edge. Override BOTH to Count.
+  const { template } = makeApp();
+  template.hasResourceProperties('AWS::WAFv2::WebACL', {
+    Rules: Match.arrayWith([
+      Match.objectLike({
+        Statement: Match.objectLike({
+          ManagedRuleGroupStatement: Match.objectLike({
+            Name: 'AWSManagedRulesCommonRuleSet',
+            RuleActionOverrides: Match.arrayWith([
+              Match.objectLike({ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }),
+              Match.objectLike({ Name: 'CrossSiteScripting_BODY', ActionToUse: { Count: {} } }),
+            ]),
+          }),
+        }),
+      }),
+    ]),
+  });
+});
+
 test('a Route53 A/ALIAS record points the app hostname at the ALB', () => {
   const { template } = makeApp();
   template.hasResourceProperties('AWS::Route53::RecordSet', {

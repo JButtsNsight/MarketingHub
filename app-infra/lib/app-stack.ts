@@ -298,7 +298,27 @@ export class AppStack extends Stack {
           priority: 0,
           overrideAction: { none: {} },
           statement: {
-            managedRuleGroupStatement: { vendorName: 'AWS', name: 'AWSManagedRulesCommonRuleSet' },
+            managedRuleGroupStatement: {
+              vendorName: 'AWS',
+              name: 'AWSManagedRulesCommonRuleSet',
+              // Scoped overrides for the app's CORE data path. POST /api/templates
+              // sends the ENTIRE template inline in the JSON body, so realistic
+              // marketing/email HTML (routinely >8 KB, full of markup) would be
+              // 403'd at the WAF edge by two CommonRuleSet rules if left at their
+              // default Block. Downgrade JUST these two to Count (still logged +
+              // metered, never blocking):
+              //   - SizeRestrictions_BODY: blocks any body over the 8 KB inspected
+              //     limit — kills legitimate large campaign HTML uploads.
+              //   - CrossSiteScripting_BODY: matches <script>/on*/javascript: in the
+              //     body — false-positives on legit email markup. This adds no real
+              //     protection here: stored HTML is only ever rendered in a locked
+              //     `<iframe sandbox="">` preview (TemplatePreview.tsx), never executed.
+              // Every OTHER CommonRuleSet rule keeps its default Block action.
+              ruleActionOverrides: [
+                { name: 'SizeRestrictions_BODY', actionToUse: { count: {} } },
+                { name: 'CrossSiteScripting_BODY', actionToUse: { count: {} } },
+              ],
+            },
           },
           visibilityConfig: {
             sampledRequestsEnabled: true,
