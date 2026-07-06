@@ -24,10 +24,10 @@ create table if not exists marketinghub.templates (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   search tsvector generated always as (
-    setweight(to_tsvector('english', coalesce(name, '')), 'A') ||
-    setweight(to_tsvector('english', array_to_string(tags, ' ')), 'B') ||
-    setweight(to_tsvector('english', coalesce(category, '')), 'B') ||
-    setweight(to_tsvector('english', coalesce(body, '')), 'C')
+    setweight(to_tsvector('english'::regconfig, coalesce(name, '')), 'A') ||
+    setweight(to_tsvector('english'::regconfig, array_to_string(tags, ' ')), 'B') ||
+    setweight(to_tsvector('english'::regconfig, coalesce(category, '')), 'B') ||
+    setweight(to_tsvector('english'::regconfig, coalesce(body, '')), 'C')
   ) stored
 );
 
