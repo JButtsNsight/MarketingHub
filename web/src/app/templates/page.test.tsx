@@ -2,10 +2,19 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import type { Template } from "@/lib/templates/schema";
 
-const h = vi.hoisted(() => ({ searchTemplates: vi.fn() }));
+const h = vi.hoisted(() => ({
+  searchTemplates: vi.fn(),
+  requireMarketingUser: vi.fn(),
+}));
 
 vi.mock("@/lib/templates/repo", () => ({
   searchTemplates: h.searchTemplates,
+}));
+// The page is gated server-side on the marketing group; stub the gate so these
+// render tests focus on the page body (the gate itself is unit-tested in
+// requireMarketingUser.test.ts).
+vi.mock("@/lib/requireMarketingUser", () => ({
+  requireMarketingUser: h.requireMarketingUser,
 }));
 // SearchBar/FilterChips use next/navigation client hooks; stub them for the
 // server-component render.
@@ -34,7 +43,21 @@ function tpl(id: string, name: string): Template {
 }
 
 describe("templates/page.tsx (server component)", () => {
-  beforeEach(() => h.searchTemplates.mockReset());
+  beforeEach(() => {
+    h.searchTemplates.mockReset();
+    h.requireMarketingUser.mockReset();
+    h.requireMarketingUser.mockResolvedValue({
+      email: "amy@nsight.example",
+      name: "Amy",
+      groups: ["marketing"],
+    });
+  });
+
+  test("enforces the marketing group gate before reading templates", async () => {
+    h.searchTemplates.mockResolvedValue([]);
+    await TemplatesPage({ searchParams: Promise.resolve({}) });
+    expect(h.requireMarketingUser).toHaveBeenCalled();
+  });
 
   test("reads q/category/type from searchParams and calls the repo", async () => {
     h.searchTemplates.mockResolvedValue([tpl("a", "Alpha")]);
@@ -52,6 +75,15 @@ describe("templates/page.tsx (server component)", () => {
       type: "email",
     });
     expect(screen.getByRole("link", { name: /alpha/i })).toBeInTheDocument();
+    // filtered/searched view labels the count as matches, not the library total.
+    expect(screen.getByText(/1 result/i)).toBeInTheDocument();
+  });
+
+  test("labels the count as 'total' when browsing with no filters", async () => {
+    h.searchTemplates.mockResolvedValue([tpl("a", "Alpha"), tpl("b", "Beta")]);
+    const ui = await TemplatesPage({ searchParams: Promise.resolve({}) });
+    render(ui);
+    expect(screen.getByText(/2 total/i)).toBeInTheDocument();
   });
 
   test("renders an empty state when there are no results", async () => {

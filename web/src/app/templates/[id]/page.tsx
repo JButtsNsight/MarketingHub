@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getTemplate } from "@/lib/templates/repo";
 import { TemplatePreview } from "@/components/templates/TemplatePreview";
 import { categoryColorVar } from "@/components/templates/categoryColor";
@@ -23,6 +24,10 @@ export default async function TemplateDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
+  // Server-side group gate: mirrors the API handlers so this read page can't be
+  // viewed by an authenticated employee outside the `marketing` Cognito group.
+  await requireMarketingUser();
+
   const { id } = await params;
   const template = await getTemplate(id);
   if (!template) notFound();

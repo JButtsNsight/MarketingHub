@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { searchTemplates } from "@/lib/templates/repo";
 import { TEMPLATE_TYPES, type TemplateType } from "@/lib/templates/schema";
 import { SearchBar } from "@/components/templates/SearchBar";
@@ -35,19 +36,31 @@ export default async function TemplatesPage({
 }: {
   searchParams: Promise<RawParams>;
 }) {
+  // Server-side group gate: mirrors the API handlers so this read page can't be
+  // browsed by an authenticated employee outside the `marketing` Cognito group.
+  await requireMarketingUser();
+
   const params = await searchParams;
   const q = one(params.q);
   const category = one(params.category) || undefined;
   const type = coerceType(one(params.type));
 
   const templates = await searchTemplates(q, { category, type });
+  const filtered = Boolean(q || category || type);
 
   return (
     <section className="templates-page">
       <div className="page-head">
         <h1>Templates</h1>
         <div className="page-head-right">
-          <span className="count mono">{templates.length} total</span>
+          <span className="count mono">
+            {templates.length}{" "}
+            {filtered
+              ? templates.length === 1
+                ? "result"
+                : "results"
+              : "total"}
+          </span>
           <Link className="btn-primary" href="/templates/new">
             Upload
           </Link>
