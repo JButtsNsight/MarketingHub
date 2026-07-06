@@ -42,7 +42,7 @@ export class ComputeStack extends Stack {
     // --- Instance role (spec §13, §21): exact-ARN scoped, SSM-only host access ---
     const role = new iam.Role(this, 'InstanceRole', {
       assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: 'Supabase host role — SSM, scoped secrets, backup bucket, CW Logs',
+      description: 'Supabase host role - SSM, scoped secrets, backup bucket, CW Logs',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
       ],
