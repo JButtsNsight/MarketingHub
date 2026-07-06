@@ -43,4 +43,21 @@ describe('2026-07-05-templates.sql migration', () => {
     expect(sql).toMatch(/storage\.buckets/);
     expect(sql).toMatch(/false/);
   });
+
+  test('grants schema + table privileges to service_role (the sole app role)', () => {
+    // Without USAGE on the freshly-created schema, service_role hits
+    // `42501 permission denied for schema marketinghub` on every PostgREST query.
+    expect(sql).toMatch(/grant\s+usage\s+on\s+schema\s+marketinghub\s+to\s+service_role/i);
+    expect(sql).toMatch(/grant\s+all(\s+privileges)?\s+on\s+all\s+tables\s+in\s+schema\s+marketinghub\s+to\s+service_role/i);
+    // Future tables in the schema also flow to service_role.
+    expect(sql).toMatch(/alter\s+default\s+privileges\s+in\s+schema\s+marketinghub[\s\S]*grant\s+all(\s+privileges)?\s+on\s+tables\s+to\s+service_role/i);
+  });
+
+  test('enables deny-by-default RLS so the exposed schema passes the RLS gate (spec §12)', () => {
+    expect(sql).toMatch(/alter\s+table\s+marketinghub\.templates\s+enable\s+row\s+level\s+security/i);
+    expect(sql).toMatch(/alter\s+table\s+marketinghub\.templates\s+force\s+row\s+level\s+security/i);
+    // an explicit restrictive deny-all policy for anon/authenticated
+    expect(sql).toMatch(/create\s+policy[\s\S]*on\s+marketinghub\.templates/i);
+    expect(sql).toMatch(/using\s*\(\s*false\s*\)/i);
+  });
 });

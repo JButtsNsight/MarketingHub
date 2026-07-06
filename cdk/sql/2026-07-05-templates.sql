@@ -44,6 +44,50 @@ create index if not exists templates_tags_idx
   on marketinghub.templates using gin (tags);
 
 -- ---------------------------------------------------------------------------
+-- PRIVILEGES — service_role is the ONLY role that touches this schema.
+-- A freshly-created custom schema grants NOTHING automatically: Supabase's
+-- default-privilege setup covers only public/storage/graphql_public, and
+-- service_role is BYPASSRLS but NOT a superuser and NOT the owner of these
+-- objects (the migration runs as postgres). Without these grants every
+-- PostgREST query fails with `42501 permission denied for schema marketinghub`.
+-- All grants are idempotent (safe to re-run).
+-- ---------------------------------------------------------------------------
+grant usage on schema marketinghub to service_role;
+grant all privileges on all tables in schema marketinghub to service_role;
+-- Any future tables created in this schema by the migration role also flow to service_role.
+alter default privileges in schema marketinghub
+  grant all privileges on tables to service_role;
+
+-- ---------------------------------------------------------------------------
+-- DENY-BY-DEFAULT RLS (spec §12) — `marketinghub` is exposed to PostgREST
+-- (PGRST_DB_SCHEMAS, see docker-compose.override.yml), so the deny-by-default
+-- RLS deploy gate covers this table. The application path is service_role
+-- (BYPASSRLS) and is UNAFFECTED; anon/authenticated must get ZERO rows.
+-- ENABLE + FORCE RLS with an explicit RESTRICTIVE deny-all policy. FORCE does
+-- not apply to the superuser postgres role, so migrations/pg_dump are unaffected.
+-- ---------------------------------------------------------------------------
+alter table marketinghub.templates enable row level security;
+alter table marketinghub.templates force row level security;
+
+-- Idempotent (DROP-free) policy creation — safe to re-run.
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'marketinghub'
+      and tablename  = 'templates'
+      and policyname = 'templates_deny_all'
+  ) then
+    create policy templates_deny_all on marketinghub.templates
+      as restrictive
+      for all
+      to anon, authenticated
+      using (false)
+      with check (false);
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------------
 -- PRIVATE STORAGE BUCKET (deploy runbook — created on first deploy)
 -- ---------------------------------------------------------------------------
 -- The `campaign-templates` bucket is PRIVATE (public = false). Files are served
