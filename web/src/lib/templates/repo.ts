@@ -151,7 +151,12 @@ export async function searchTemplates(
 
   let query = templates()
     .select("*")
-    .textSearch("search", term, { type: "websearch" });
+    // `config: 'english'` pins the query dictionary to the one the generated
+    // `search` column uses (to_tsvector('english', ...)); without it PostgREST
+    // resolves against the server default_text_search_config and stemmed
+    // matches can silently miss. Order newest-first to match the browse path.
+    .textSearch("search", term, { type: "websearch", config: "english" })
+    .order("created_at", { ascending: false });
   if (filters.category) query = query.eq("category", filters.category);
   if (filters.type) query = query.eq("type", filters.type);
 

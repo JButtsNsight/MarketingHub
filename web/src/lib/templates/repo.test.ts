@@ -150,11 +150,15 @@ describe("templates repo", () => {
 
     await searchTemplates("spring sale");
 
+    // config pinned to 'english' so the tsquery matches the english-generated
+    // `search` tsvector regardless of the server default_text_search_config.
     expect(calls.textSearch).toEqual([
       "search",
       "spring sale",
-      { type: "websearch" },
+      { type: "websearch", config: "english" },
     ]);
+    // search results are ordered newest-first, matching the browse path.
+    expect(calls.order?.[0]).toBe("created_at");
   });
 
   test("searchTemplates with a blank query falls back to a plain list (no textSearch)", async () => {
