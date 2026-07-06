@@ -22,7 +22,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }

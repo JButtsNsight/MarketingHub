@@ -24,7 +24,7 @@ const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');v
 export default async function RootLayout({ children }: { children: ReactNode }) {
   // Identity comes from the ALB Cognito front door (x-amzn-oidc-data header),
   // resolved server-side. Absent only in local/dev or on the login fallback.
-  const user = getUser(await headers());
+  const user = await getUser(await headers());
 
   return (
     // suppressHydrationWarning: the pre-paint themeBootstrap script mutates

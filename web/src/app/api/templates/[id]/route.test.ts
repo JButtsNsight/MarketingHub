@@ -1,4 +1,22 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+// @vitest-environment node
+// The route calls the verified (jose ES256) auth path; node env avoids the
+// jsdom cross-realm Uint8Array mismatch that breaks WebCrypto sign/verify.
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import {
+  clearAlbEnv,
+  initAlbKeys,
+  installAlbKeyFetch,
+  setAlbEnv,
+  signAlbToken,
+} from "@/lib/__test__/albToken";
 
 const h = vi.hoisted(() => ({ getTemplate: vi.fn() }));
 
@@ -8,19 +26,28 @@ vi.mock("@/lib/templates/repo", () => ({
 
 import { GET } from "./route";
 
-function oidcHeader(payload: Record<string, unknown>): string {
-  const seg = (o: unknown) =>
-    Buffer.from(JSON.stringify(o)).toString("base64url");
-  return `${seg({ typ: "JWT" })}.${seg(payload)}.sig`;
-}
+let marketingToken: string;
+
+beforeAll(async () => {
+  await initAlbKeys();
+  marketingToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+});
+
+beforeEach(() => {
+  setAlbEnv();
+  installAlbKeyFetch();
+  h.getTemplate.mockReset();
+});
+
+afterEach(() => {
+  clearAlbEnv();
+});
 
 function marketingHeaders(): HeadersInit {
-  return {
-    "x-amzn-oidc-data": oidcHeader({
-      email: "amy@nsight.example",
-      "cognito:groups": ["marketing"],
-    }),
-  };
+  return { "x-amzn-oidc-data": marketingToken };
 }
 
 function ctx(id: string) {
@@ -28,8 +55,6 @@ function ctx(id: string) {
 }
 
 describe("GET /api/templates/[id]", () => {
-  beforeEach(() => h.getTemplate.mockReset());
-
   test("401 when unauthenticated", async () => {
     const req = new Request("http://x/api/templates/t1");
     const res = await GET(req, ctx("t1"));

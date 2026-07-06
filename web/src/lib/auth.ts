@@ -1,18 +1,23 @@
 import "server-only";
 
+import { decodeProtectedHeader, importSPKI, jwtVerify } from "jose";
+
 /**
  * App identity from the ALB Cognito front door.
  *
  * The app is ONLY reachable through the ALB, whose HTTPS:443 listener default
  * action is `authenticate-cognito` (Google Workspace SAML). On every
- * authenticated request the ALB injects `x-amzn-oidc-data` — a signed JWT whose
- * payload carries the Cognito claims (email, name, `cognito:groups`).
+ * authenticated request the ALB injects `x-amzn-oidc-data` — a JWS (ES256)
+ * whose payload carries the Cognito claims (email, name, `cognito:groups`).
  *
- * For v1 we TRUST that header rather than verifying the ALB signature: the only
- * network path to the app is through the ALB (the Fargate service SG accepts the
- * container port from the ALB SG alone), so an unsigned/forged header cannot
- * reach the app from outside. Signature verification via the ALB public-key
- * endpoint is a documented hardening follow-up.
+ * We VERIFY that token's signature before trusting any claim. AWS signs it with
+ * an EC key whose public half is published (PEM) at
+ * `https://public-keys.auth.elb.<region>.amazonaws.com/<kid>`, where `<kid>` and
+ * the signing ALB's ARN (`signer`) live in the JWS protected header. We fetch
+ * the key for the token's `kid`, verify the ES256 signature (and `exp`), and
+ * assert `signer` matches our own ALB ARN — so a forged or replayed header
+ * cannot spoof `email`/`cognito:groups` even if a request reaches the container
+ * off the ALB path.
  *
  * This module is server-only (imported from Route Handlers / server components).
  * The group gate (`requireUser`) is therefore enforced SERVER-SIDE — the browser
@@ -62,21 +67,6 @@ function readHeader(headers: HeaderSource, name: string): string | null {
   return value ?? null;
 }
 
-/** base64url-decode a JWT segment to its JSON object, or null if it is not valid. */
-function decodeSegment(segment: string): Record<string, unknown> | null {
-  try {
-    const b64 = segment.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), "=");
-    const json = Buffer.from(padded, "base64").toString("utf8");
-    const parsed = JSON.parse(json);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 /** Normalize the `cognito:groups` claim (array OR serialized string) to string[]. */
 function parseGroups(claim: unknown): string[] {
   if (Array.isArray(claim)) {
@@ -93,19 +83,77 @@ function parseGroups(claim: unknown): string[] {
   return [];
 }
 
+/** Imported (verified) EC public key, keyed by the ALB `kid`. */
+type PublicKey = Awaited<ReturnType<typeof importSPKI>>;
+const keyCache = new Map<string, PublicKey>();
+
+/** The AWS region whose ALB public-key endpoint to query. */
+function albRegion(): string {
+  return process.env.ALB_REGION || process.env.AWS_REGION || "us-east-1";
+}
+
 /**
- * Decode the current user from the ALB OIDC-data header. Returns null when the
- * header is absent, malformed, or carries no email (i.e. not authenticated).
+ * Fetch + import (once, then cache) the EC public key AWS published for `kid`,
+ * from `https://public-keys.auth.elb.<region>.amazonaws.com/<kid>`.
  */
-export function getUser(headers: HeaderSource): AppUser | null {
+async function albPublicKey(kid: string): Promise<PublicKey> {
+  const cached = keyCache.get(kid);
+  if (cached) return cached;
+
+  const url = `https://public-keys.auth.elb.${albRegion()}.amazonaws.com/${kid}`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`ALB public key fetch failed for kid ${kid}: ${res.status}`);
+  }
+  const pem = await res.text();
+  const key = await importSPKI(pem, "ES256");
+  keyCache.set(kid, key);
+  return key;
+}
+
+/**
+ * Resolve the current user from the ALB `x-amzn-oidc-data` header, VERIFYING the
+ * ES256 signature (and `exp`) and asserting the token's `signer` is our ALB
+ * before trusting any claim.
+ *
+ * Returns null when the header is absent (local/dev, or the login fallback),
+ * malformed, fails verification, is signed by an unexpected ALB, or carries no
+ * email — all treated as "not authenticated" (never a 500).
+ *
+ * THROWS only for a fail-loud misconfiguration: a token is present but `ALB_ARN`
+ * (the expected signer) is not configured, so we cannot know which ALB to trust.
+ */
+export async function getUser(headers: HeaderSource): Promise<AppUser | null> {
   const raw = readHeader(headers, OIDC_DATA_HEADER);
   if (!raw) return null;
 
-  const parts = raw.split(".");
-  if (parts.length < 2) return null;
+  const expectedSigner = process.env.ALB_ARN;
+  if (!expectedSigner) {
+    throw new Error(
+      "ALB_ARN is not configured: refusing to trust an unverified " +
+        "x-amzn-oidc-data token. Set ALB_ARN to the front-door ALB ARN.",
+    );
+  }
 
-  const claims = decodeSegment(parts[1]);
-  if (!claims) return null;
+  let kid: string | undefined;
+  try {
+    kid = decodeProtectedHeader(raw).kid;
+  } catch {
+    return null; // not a well-formed JWS
+  }
+  if (!kid) return null;
+
+  let claims: Record<string, unknown>;
+  try {
+    const key = await albPublicKey(kid);
+    const { payload, protectedHeader } = await jwtVerify(raw, key, {
+      algorithms: ["ES256"],
+    });
+    if (protectedHeader.signer !== expectedSigner) return null;
+    claims = payload as Record<string, unknown>;
+  } catch {
+    return null; // bad signature, expired, unknown key, fetch failure, etc.
+  }
 
   const email = typeof claims.email === "string" ? claims.email : null;
   if (!email) return null;
@@ -123,8 +171,11 @@ export function getUser(headers: HeaderSource): AppUser | null {
  * `AuthError` (401 if unauthenticated, 403 if the required Cognito group is
  * missing). Callers map the status to their HTTP response.
  */
-export function requireUser(headers: HeaderSource, group?: string): AppUser {
-  const user = getUser(headers);
+export async function requireUser(
+  headers: HeaderSource,
+  group?: string,
+): Promise<AppUser> {
+  const user = await getUser(headers);
   if (!user) throw new AuthError(401, "Not authenticated");
   if (group && !user.groups.includes(group)) {
     throw new AuthError(403, `Requires Cognito group: ${group}`);

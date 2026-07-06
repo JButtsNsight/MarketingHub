@@ -1,4 +1,22 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+// @vitest-environment node
+// Exercises the verified (jose ES256) auth path via requireUser; node env avoids
+// the jsdom cross-realm Uint8Array mismatch that breaks WebCrypto sign/verify.
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import {
+  clearAlbEnv,
+  initAlbKeys,
+  installAlbKeyFetch,
+  setAlbEnv,
+  signAlbToken,
+} from "./__test__/albToken";
 
 const h = vi.hoisted(() => ({
   headerValue: null as string | null,
@@ -18,20 +36,24 @@ vi.mock("next/navigation", () => ({ redirect: h.redirect }));
 
 import { requireMarketingUser } from "./requireMarketingUser";
 
-/** Build a minimal ALB `x-amzn-oidc-data` JWT with the given claims. */
-function oidcToken(claims: Record<string, unknown>): string {
-  const payload = Buffer.from(JSON.stringify(claims)).toString("base64url");
-  return `header.${payload}.sig`;
-}
+beforeAll(async () => {
+  await initAlbKeys();
+});
+
+beforeEach(() => {
+  setAlbEnv();
+  installAlbKeyFetch();
+  h.headerValue = null;
+  h.redirect.mockClear();
+});
+
+afterEach(() => {
+  clearAlbEnv();
+});
 
 describe("requireMarketingUser (page gate)", () => {
-  beforeEach(() => {
-    h.headerValue = null;
-    h.redirect.mockClear();
-  });
-
   test("returns the user when they are in the marketing group", async () => {
-    h.headerValue = oidcToken({
+    h.headerValue = await signAlbToken({
       email: "amy@nsight.example",
       "cognito:groups": ["marketing"],
     });
@@ -41,7 +63,7 @@ describe("requireMarketingUser (page gate)", () => {
   });
 
   test("redirects to /login when authenticated but NOT in the marketing group", async () => {
-    h.headerValue = oidcToken({
+    h.headerValue = await signAlbToken({
       email: "bob@nsight.example",
       "cognito:groups": ["viewers"],
     });

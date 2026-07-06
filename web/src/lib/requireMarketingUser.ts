@@ -21,7 +21,9 @@ export const MARKETING_GROUP = "marketing";
  */
 export async function requireMarketingUser(): Promise<AppUser> {
   try {
-    return requireUser(await headers(), MARKETING_GROUP);
+    // `await` is required: without it a rejected requireUser() promise would
+    // escape this try/catch and skip the /login redirect below.
+    return await requireUser(await headers(), MARKETING_GROUP);
   } catch (err) {
     if (err instanceof AuthError) redirect("/login");
     throw err;

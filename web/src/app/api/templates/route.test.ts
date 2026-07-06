@@ -1,4 +1,22 @@
-import { beforeEach, describe, expect, test, vi } from "vitest";
+// @vitest-environment node
+// The route calls the verified (jose ES256) auth path; node env avoids the
+// jsdom cross-realm Uint8Array mismatch that breaks WebCrypto sign/verify.
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest";
+import {
+  clearAlbEnv,
+  initAlbKeys,
+  installAlbKeyFetch,
+  setAlbEnv,
+  signAlbToken,
+} from "@/lib/__test__/albToken";
 
 // Mock the server-only repo; the route is the unit under test.
 const h = vi.hoisted(() => ({
@@ -15,20 +33,37 @@ vi.mock("@/lib/templates/repo", () => ({
 
 import { GET, POST } from "./route";
 
-/** Build a valid ALB x-amzn-oidc-data JWT (header.payload.sig; payload trusted). */
-function oidcHeader(payload: Record<string, unknown>): string {
-  const seg = (o: unknown) =>
-    Buffer.from(JSON.stringify(o)).toString("base64url");
-  return `${seg({ typ: "JWT", alg: "ES256" })}.${seg(payload)}.sig`;
-}
+let marketingToken: string;
+let viewersToken: string;
+
+beforeAll(async () => {
+  await initAlbKeys();
+  marketingToken = await signAlbToken({
+    email: "amy@nsight.example",
+    name: "Amy",
+    "cognito:groups": ["marketing"],
+  });
+  viewersToken = await signAlbToken({
+    email: "bob@nsight.example",
+    "cognito:groups": ["viewers"],
+  });
+});
+
+beforeEach(() => {
+  setAlbEnv();
+  installAlbKeyFetch();
+  h.createTemplate.mockReset();
+  h.listTemplates.mockReset();
+  h.searchTemplates.mockReset();
+});
+
+afterEach(() => {
+  clearAlbEnv();
+});
 
 function marketingHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": oidcHeader({
-      email: "amy@nsight.example",
-      name: "Amy",
-      "cognito:groups": ["marketing"],
-    }),
+    "x-amzn-oidc-data": marketingToken,
     "content-type": "application/json",
   };
 }
@@ -42,12 +77,6 @@ const validBody = {
 };
 
 describe("POST /api/templates", () => {
-  beforeEach(() => {
-    h.createTemplate.mockReset();
-    h.listTemplates.mockReset();
-    h.searchTemplates.mockReset();
-  });
-
   test("401 when unauthenticated (no ALB header)", async () => {
     const req = new Request("http://x/api/templates", {
       method: "POST",
@@ -63,10 +92,7 @@ describe("POST /api/templates", () => {
     const req = new Request("http://x/api/templates", {
       method: "POST",
       headers: {
-        "x-amzn-oidc-data": oidcHeader({
-          email: "bob@nsight.example",
-          "cognito:groups": ["viewers"],
-        }),
+        "x-amzn-oidc-data": viewersToken,
         "content-type": "application/json",
       },
       body: JSON.stringify(validBody),
@@ -130,12 +156,6 @@ describe("POST /api/templates", () => {
 });
 
 describe("GET /api/templates", () => {
-  beforeEach(() => {
-    h.createTemplate.mockReset();
-    h.listTemplates.mockReset();
-    h.searchTemplates.mockReset();
-  });
-
   test("401 when unauthenticated", async () => {
     const req = new Request("http://x/api/templates");
     const res = await GET(req);

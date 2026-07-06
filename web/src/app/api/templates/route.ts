@@ -61,7 +61,7 @@ function fileFrom(payload: unknown, body: string): TemplateFile | undefined {
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
-    user = requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -92,7 +92,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
