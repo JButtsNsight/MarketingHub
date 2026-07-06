@@ -11,6 +11,7 @@ import * as route53Targets from 'aws-cdk-lib/aws-route53-targets';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 /** The container port the Next.js standalone server listens on (PORT=3000). */
 const APP_PORT = 3000;
@@ -163,6 +164,22 @@ export class AppStack extends Stack {
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
     });
+
+    // The image comes from private ECR via ContainerImage.fromRegistry(<ecr-uri>),
+    // which (unlike fromEcrRepository) does NOT auto-grant the execution role ECR
+    // pull rights — so Fargate would fail with CannotPullContainerError. Grant the
+    // standard ECR pull set (GetAuthorizationToken must be resource '*').
+    taskDef.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'ecr:GetAuthorizationToken',
+          'ecr:BatchCheckLayerAvailability',
+          'ecr:GetDownloadUrlForLayer',
+          'ecr:BatchGetImage',
+        ],
+        resources: ['*'],
+      }),
+    );
 
     const service = new ecs.FargateService(this, 'AppService', {
       cluster,
