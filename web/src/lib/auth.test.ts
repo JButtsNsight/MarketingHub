@@ -41,6 +41,7 @@ afterEach(() => {
   clearAlbEnv();
   delete process.env.ALB_REGION;
   delete process.env.AWS_REGION;
+  delete process.env.PREVIEW_AUTH;
 });
 
 describe("getUser (verified)", () => {
@@ -201,6 +202,57 @@ describe("getUser (verified)", () => {
     // sanity: the served PEM is what importSPKI consumes
     expect(albPublicPem()).toContain("BEGIN PUBLIC KEY");
     expect(TEST_ALB_ARN).toContain("loadbalancer");
+  });
+});
+
+describe("getUser (internal-preview shim, default OFF)", () => {
+  // The no-SAML private deployment fronts the app with an INTERNAL HTTP:80 ALB
+  // that carries no `x-amzn-oidc-data` token. When PREVIEW_AUTH is a non-empty
+  // string, getUser returns a stub user in that group WITHOUT reading/verifying
+  // any token and WITHOUT needing ALB_ARN. When unset/empty, behaviour above is
+  // unchanged.
+  it("returns a stub marketing user with NO token and NO ALB_ARN when PREVIEW_AUTH is set", async () => {
+    clearAlbEnv(); // preview needs no expected-signer config
+    process.env.PREVIEW_AUTH = "marketing";
+    const user = await getUser(headersWith()); // no x-amzn-oidc-data header
+    expect(user).toEqual<AppUser>({
+      email: "preview@nsightcare.com",
+      name: "Preview User",
+      groups: ["marketing"],
+    });
+  });
+
+  it("puts the PREVIEW_AUTH value into the stub user's groups", async () => {
+    process.env.PREVIEW_AUTH = "custom-group";
+    expect((await getUser(headersWith()))?.groups).toEqual(["custom-group"]);
+  });
+
+  it("ignores any incoming token entirely (no verification) when PREVIEW_AUTH is set", async () => {
+    clearAlbEnv();
+    process.env.PREVIEW_AUTH = "marketing";
+    // A garbage token neither throws nor nulls — the shim short-circuits first.
+    expect((await getUser(headersWith("garbage")))?.email).toBe(
+      "preview@nsightcare.com",
+    );
+  });
+
+  it("treats an EMPTY PREVIEW_AUTH as OFF (verification path unchanged)", async () => {
+    process.env.PREVIEW_AUTH = ""; // empty string is not "set"
+    expect(await getUser(headersWith())).toBeNull();
+  });
+
+  it("requireUser works on top of the stub (marketing group present)", async () => {
+    clearAlbEnv();
+    process.env.PREVIEW_AUTH = "marketing";
+    const user = await requireUser(headersWith(), "marketing");
+    expect(user.email).toBe("preview@nsightcare.com");
+  });
+
+  it("requireUser 403s on the stub when a different group is required", async () => {
+    process.env.PREVIEW_AUTH = "marketing";
+    await expect(
+      requireUser(headersWith(), "marketinghub-admins"),
+    ).rejects.toMatchObject({ status: 403 });
   });
 });
 

@@ -2,6 +2,7 @@
   "app": "npx ts-node --prefer-ts-exts bin/marketinghub-app.ts",
   "context": {
     "@aws-cdk/core:newStyleStackSynthesis": true,
+    "previewMode": false,
     "account": "439024109088",
     "region": "us-east-1",
     "appHostname": "marketinghub.nsightcare.com",

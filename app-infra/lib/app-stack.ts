@@ -18,22 +18,38 @@ const APP_PORT = 3000;
 /**
  * MarketingHub application front-door stack.
  *
- * Reuses the EdgeStack (Supabase Phase 4) front-door pattern: a public,
- * internet-facing ALB whose HTTPS:443 listener is gated by `authenticate-cognito`
- * federated to the NSight Google Workspace SAML app. Unlike EdgeStack (which
- * authenticates a host+path rule and default-denies everything else), here the
- * WHOLE app is authenticated via the listener DEFAULT action, with a single
- * unauthenticated `/api/health` path exception for the ALB health check.
+ * TWO selectable front doors, chosen by the boolean `previewMode` context flag:
  *
- * The app itself runs as an ECS Fargate service in private subnets; its security
- * group only accepts traffic from the ALB security group. WAFv2 (REGIONAL) sits
- * in front, and Route53 aliases the hostname to the ALB.
+ *   • previewMode OFF (DEFAULT — production): a public, internet-facing ALB whose
+ *     HTTPS:443 listener DEFAULT action is `authenticate-cognito` federated to the
+ *     NSight Google Workspace SAML app (the WHOLE app is authenticated, with a
+ *     single unauthenticated `/api/health` path exception for the ALB health
+ *     check). WAFv2 (REGIONAL) sits in front, ACM issues the cert, and Route53
+ *     aliases the hostname to the ALB.
+ *
+ *   • previewMode ON (internal preview): an INTERNAL ALB in the private subnets
+ *     whose HTTP:80 listener forwards straight to the service — NO Cognito/SAML,
+ *     NO ACM cert, NO WAF, NO Route53. The app's `PREVIEW_AUTH` shim (see
+ *     web/src/lib/auth.ts) stands in for the missing ALB identity, so this private
+ *     deployment needs no DNS or SAML wiring at all.
+ *
+ * In BOTH modes the app runs as an ECS Fargate service in the imported Supabase
+ * private subnets; its security group only accepts the container port from the
+ * ALB security group.
  */
 export class AppStack extends Stack {
   public readonly alb!: elbv2.ApplicationLoadBalancer;
 
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+
+    // Explicit, default-OFF toggle between the two front doors. Accepts a real
+    // boolean (`previewMode: true` in cdk.json context) or the string 'true'
+    // (CLI `-c previewMode=true`); anything else — including absent — is
+    // production. Both production and preview remain selectable.
+    const previewMode =
+      this.node.tryGetContext('previewMode') === true ||
+      this.node.tryGetContext('previewMode') === 'true';
 
     // Fail loud on any missing pre-deploy context value (mirrors EdgeStack).
     const req = (k: string): string => {
@@ -42,24 +58,22 @@ export class AppStack extends Stack {
       return v;
     };
 
-    const appHostname = req('appHostname');
-    const hostedZoneId = req('hostedZoneId');
-    const hostedZoneName = req('hostedZoneName');
-    const googleSamlMetadataUrl = req('googleSamlMetadataUrl');
-    const adminGroup = req('adminGroup');
-    const marketingGroup = req('marketingGroup');
-    const cognitoDomainPrefix = req('cognitoDomainPrefix');
+    // Context required in BOTH modes.
     const appImageTag = req('appImageTag');
     const supabaseUrl = req('supabaseUrl');
     const supabaseServiceRoleSecretArn = req('supabaseServiceRoleSecretArn');
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
-    // CfnOutputs). Comma-separated lists are split into string[].
+    // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
+    // are ONLY needed by the production internet-facing ALB — preview places its
+    // INTERNAL ALB in the private subnets, so they are not required in preview mode.
     const supabaseVpcId = req('supabaseVpcId');
     const supabaseVpcAzs = req('supabaseVpcAzs').split(',');
-    const supabasePublicSubnetIds = req('supabasePublicSubnetIds').split(',');
     const supabasePrivateSubnetIds = req('supabasePrivateSubnetIds').split(',');
     const supabaseInternalClientSgId = req('supabaseInternalClientSgId');
+    const supabasePublicSubnetIds = previewMode
+      ? undefined
+      : req('supabasePublicSubnetIds').split(',');
 
     // --- Networking: run INSIDE the Supabase VPC (do NOT create one) ---
     // The app's data path is Fargate task -> Supabase internal data-API ALB, whose SG
@@ -84,11 +98,158 @@ export class AppStack extends Stack {
       { mutable: false },
     );
 
-    // The imported PUBLIC subnets host the internet-facing ALB; the imported PRIVATE
-    // subnets host the Fargate service. Selected by id off the imported VPC so the
+    // The imported PRIVATE subnets host the Fargate service in BOTH modes (and the
+    // INTERNAL ALB in preview mode). Selected by id off the imported VPC so the
     // synthesized template pins the exact Supabase subnet ids.
-    const publicSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PUBLIC });
     const privateSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS });
+
+    // --- Security groups: ALB and app service (ALB-only ingress) ---
+    // The ALB SG's ingress differs by mode (443 public vs 80 internal) and is added
+    // in the per-mode branch below.
+    const albSg = new ec2.SecurityGroup(this, 'AlbSg', {
+      vpc,
+      description: 'MarketingHub ALB',
+      allowAllOutbound: true,
+    });
+
+    const serviceSg = new ec2.SecurityGroup(this, 'ServiceSg', {
+      vpc,
+      description: 'MarketingHub Fargate service (ALB-only ingress)',
+      allowAllOutbound: true,
+    });
+    // Same-stack ingress (BOTH modes): the app tier only accepts the container port
+    // from the ALB SG. Both SGs are owned by THIS stack, so this does not mutate any
+    // upstream stack's policy (no cross-stack dependency cycle).
+    serviceSg.addIngressRule(albSg, ec2.Port.tcp(APP_PORT), 'App container port from ALB only');
+
+    // --- ECS Fargate service (private subnets, BOTH modes) ---
+    const cluster = new ecs.Cluster(this, 'AppCluster', { vpc });
+
+    // The Supabase service-role key — the ONLY secret the app holds. Imported by
+    // its COMPLETE ARN so IAM grants resolve to that exact ARN with no "-??????"
+    // partial-ARN wildcard; the key never appears in the task def as plaintext
+    // (it is delivered via `ecs.Secret`, i.e. a `ValueFrom` ref).
+    const supabaseServiceRoleSecret = secretsmanager.Secret.fromSecretCompleteArn(
+      this,
+      'SupabaseServiceRoleSecret',
+      supabaseServiceRoleSecretArn,
+    );
+
+    const taskDef = new ecs.FargateTaskDefinition(this, 'AppTaskDef', {
+      cpu: 512,
+      memoryLimitMiB: 1024,
+    });
+    const appContainer = taskDef.addContainer('app', {
+      image: ecs.ContainerImage.fromRegistry(appImageTag),
+      portMappings: [{ containerPort: APP_PORT }],
+      environment: {
+        PORT: String(APP_PORT),
+        NEXT_PUBLIC_APP_NAME: 'MarketingHub',
+        // Supabase PostgREST + Storage endpoint (public URL of the self-hosted
+        // backend). The service-role KEY is a secret (below), never env.
+        SUPABASE_URL: supabaseUrl,
+        // The app's auth layer queries the ALB public-key endpoint at
+        // public-keys.auth.elb.<region>.amazonaws.com and reads AWS_REGION /
+        // ALB_REGION to pick the host. Both set to this stack's region.
+        AWS_REGION: this.region,
+        ALB_REGION: this.region,
+      },
+      secrets: {
+        // Delivered to the container from Secrets Manager at task start; adding
+        // it here makes CDK grant the task EXECUTION role read on the exact ARN.
+        SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
+          supabaseServiceRoleSecret,
+        ),
+      },
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
+    });
+
+    const service = new ecs.FargateService(this, 'AppService', {
+      cluster,
+      taskDefinition: taskDef,
+      desiredCount: 2,
+      // serviceSg accepts the container port from the ALB SG (above); internalClientSg
+      // membership is what grants the tasks reachability to the Supabase internal
+      // data-API ALB (and, via the private hosted zone, its DNS).
+      securityGroups: [serviceSg, internalClientSg],
+      vpcSubnets: privateSubnets,
+      assignPublicIp: false,
+      minHealthyPercent: 50,
+      circuitBreaker: { rollback: true }, // fail a bad rollout fast instead of hanging ~3h
+    });
+
+    // Target group → Fargate service on the container port (BOTH modes). IP target
+    // type because Fargate uses awsvpc networking. Health check hits /api/health.
+    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'AppTargetGroup', {
+      vpc,
+      port: APP_PORT,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targetType: elbv2.TargetType.IP,
+      targets: [service.loadBalancerTarget({ containerName: 'app', containerPort: APP_PORT })],
+      healthCheck: {
+        path: '/api/health',
+        healthyHttpCodes: '200',
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(10),
+      },
+      deregistrationDelay: Duration.seconds(30),
+    });
+
+    if (previewMode) {
+      // ===================== INTERNAL PREVIEW FRONT DOOR =====================
+      // An INTERNAL ALB in the private subnets, plain HTTP:80 forwarding straight
+      // to the service. NO Cognito/SAML, NO ACM cert, NO WAF, NO Route53 — the
+      // app's PREVIEW_AUTH shim supplies identity, so this private deployment
+      // needs no DNS or SAML wiring.
+      albSg.addIngressRule(
+        ec2.Peer.anyIpv4(),
+        ec2.Port.tcp(80),
+        'HTTP to the INTERNAL ALB (no public IP; reachable only within the VPC/VPN/peering)',
+      );
+
+      (this as { alb: elbv2.ApplicationLoadBalancer }).alb = new elbv2.ApplicationLoadBalancer(
+        this,
+        'PublicAlb',
+        {
+          vpc,
+          internetFacing: false, // INTERNAL — private IPs only
+          securityGroup: albSg,
+          vpcSubnets: privateSubnets,
+        },
+      );
+
+      // Plain HTTP:80 → target group. No authenticate-cognito, no cert, no HTTPS.
+      this.alb.addListener('PreviewHttpListener', {
+        port: 80,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        defaultAction: elbv2.ListenerAction.forward([targetGroup]),
+      });
+
+      // The app's preview auth shim treats every request as this group. No ALB
+      // identity token is issued in this mode, so ALB_ARN is intentionally NOT set
+      // (the shim needs no token).
+      appContainer.addEnvironment('PREVIEW_AUTH', 'marketing');
+
+      return;
+    }
+
+    // ===================== PRODUCTION COGNITO FRONT DOOR =====================
+    // (previewMode OFF) Public, internet-facing ALB whose HTTPS:443 listener DEFAULT
+    // action authenticates the WHOLE app via Cognito (Google Workspace SAML), fronted
+    // by WAFv2, cert from ACM, aliased in Route53.
+
+    const appHostname = req('appHostname');
+    const hostedZoneId = req('hostedZoneId');
+    const hostedZoneName = req('hostedZoneName');
+    const googleSamlMetadataUrl = req('googleSamlMetadataUrl');
+    const adminGroup = req('adminGroup');
+    const marketingGroup = req('marketingGroup');
+    const cognitoDomainPrefix = req('cognitoDomainPrefix');
+
+    // The imported PUBLIC subnets host the internet-facing ALB.
+    const publicSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PUBLIC });
+
+    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS from the internet');
 
     // --- ACM certificate for the app hostname (public DNS validation) ---
     const publicZone = route53.HostedZone.fromHostedZoneAttributes(this, 'PublicZone', {
@@ -176,81 +337,6 @@ export class AppStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
-    // --- Security groups: ALB (public 443) and app service (ALB-only) ---
-    const albSg = new ec2.SecurityGroup(this, 'AlbSg', {
-      vpc,
-      description: 'MarketingHub public ALB',
-      allowAllOutbound: true,
-    });
-    albSg.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS from the internet');
-
-    const serviceSg = new ec2.SecurityGroup(this, 'ServiceSg', {
-      vpc,
-      description: 'MarketingHub Fargate service (ALB-only ingress)',
-      allowAllOutbound: true,
-    });
-    // Same-stack ingress: the app tier only accepts the container port from the
-    // ALB SG. Both SGs are owned by THIS stack, so this does not mutate any
-    // upstream stack's policy (no cross-stack dependency cycle).
-    serviceSg.addIngressRule(albSg, ec2.Port.tcp(APP_PORT), 'App container port from ALB only');
-
-    // --- ECS Fargate service (private subnets) ---
-    const cluster = new ecs.Cluster(this, 'AppCluster', { vpc });
-
-    // The Supabase service-role key — the ONLY secret the app holds. Imported by
-    // its COMPLETE ARN so IAM grants (below) resolve to that exact ARN with no
-    // "-??????" partial-ARN wildcard; the key never appears in the task def as
-    // plaintext (it is delivered via `ecs.Secret`, i.e. a `ValueFrom` ref).
-    const supabaseServiceRoleSecret = secretsmanager.Secret.fromSecretCompleteArn(
-      this,
-      'SupabaseServiceRoleSecret',
-      supabaseServiceRoleSecretArn,
-    );
-
-    const taskDef = new ecs.FargateTaskDefinition(this, 'AppTaskDef', {
-      cpu: 512,
-      memoryLimitMiB: 1024,
-    });
-    const appContainer = taskDef.addContainer('app', {
-      image: ecs.ContainerImage.fromRegistry(appImageTag),
-      portMappings: [{ containerPort: APP_PORT }],
-      environment: {
-        PORT: String(APP_PORT),
-        NEXT_PUBLIC_APP_NAME: 'MarketingHub',
-        COGNITO_LOGOUT_URL: cognitoLogoutUrl,
-        // Supabase PostgREST + Storage endpoint (public URL of the self-hosted
-        // backend). The service-role KEY is a secret (below), never env.
-        SUPABASE_URL: supabaseUrl,
-        // The app's auth layer queries the ALB public-key endpoint at
-        // public-keys.auth.elb.<region>.amazonaws.com and reads AWS_REGION /
-        // ALB_REGION to pick the host. Both set to this stack's region.
-        AWS_REGION: this.region,
-        ALB_REGION: this.region,
-      },
-      secrets: {
-        // Delivered to the container from Secrets Manager at task start; adding
-        // it here makes CDK grant the task EXECUTION role read on the exact ARN.
-        SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
-          supabaseServiceRoleSecret,
-        ),
-      },
-      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
-    });
-
-    const service = new ecs.FargateService(this, 'AppService', {
-      cluster,
-      taskDefinition: taskDef,
-      desiredCount: 2,
-      // serviceSg accepts the container port from the ALB SG (below); internalClientSg
-      // membership is what grants the tasks reachability to the Supabase internal
-      // data-API ALB (and, via the private hosted zone, its DNS).
-      securityGroups: [serviceSg, internalClientSg],
-      vpcSubnets: privateSubnets,
-      assignPublicIp: false,
-      minHealthyPercent: 50,
-      circuitBreaker: { rollback: true }, // fail a bad rollout fast instead of hanging ~3h
-    });
-
     // --- Public, internet-facing ALB ---
     (this as { alb: elbv2.ApplicationLoadBalancer }).alb = new elbv2.ApplicationLoadBalancer(
       this,
@@ -269,24 +355,8 @@ export class AppStack extends Stack {
     // makes getUser() throw (fail-loud). Set now that the ALB exists (a Ref to
     // this same stack's load balancer, so no cross-stack dependency).
     appContainer.addEnvironment('ALB_ARN', this.alb.loadBalancerArn);
-
-    // Target group → Fargate service on the container port. IP target type
-    // because Fargate uses awsvpc networking. Health check hits the
-    // unauthenticated /api/health route.
-    const targetGroup = new elbv2.ApplicationTargetGroup(this, 'AppTargetGroup', {
-      vpc,
-      port: APP_PORT,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targetType: elbv2.TargetType.IP,
-      targets: [service.loadBalancerTarget({ containerName: 'app', containerPort: APP_PORT })],
-      healthCheck: {
-        path: '/api/health',
-        healthyHttpCodes: '200',
-        interval: Duration.seconds(30),
-        timeout: Duration.seconds(10),
-      },
-      deregistrationDelay: Duration.seconds(30),
-    });
+    // The app's /logout route redirects here after expiring the ALB session cookie.
+    appContainer.addEnvironment('COGNITO_LOGOUT_URL', cognitoLogoutUrl);
 
     // HTTPS:443 — DEFAULT action authenticates the WHOLE app via Cognito, then
     // forwards. Modern TLS only (RECOMMENDED_TLS).

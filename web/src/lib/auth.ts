@@ -124,6 +124,25 @@ async function albPublicKey(kid: string): Promise<PublicKey> {
  * (the expected signer) is not configured, so we cannot know which ALB to trust.
  */
 export async function getUser(headers: HeaderSource): Promise<AppUser | null> {
+  // --- TEMPORARY internal-preview shim (default OFF) --------------------------
+  // For the no-SAML private deployment (the `previewMode` infra: an INTERNAL
+  // HTTP:80 ALB with NO authenticate-cognito), no `x-amzn-oidc-data` token ever
+  // arrives, so real verification could never succeed. When PREVIEW_AUTH is a
+  // non-empty string, short-circuit to a stub user in that group WITHOUT reading
+  // or verifying any token and WITHOUT requiring ALB_ARN. When PREVIEW_AUTH is
+  // unset/empty, this branch is skipped and behaviour is unchanged (real ES256
+  // jwtVerify + signer/exp checks, fail-loud on a token with ALB_ARN unset).
+  // Remove this shim once the Cognito front door is the only deployment path.
+  const previewGroup = process.env.PREVIEW_AUTH;
+  if (previewGroup) {
+    return {
+      email: "preview@nsightcare.com",
+      name: "Preview User",
+      groups: [previewGroup],
+    };
+  }
+  // ----------------------------------------------------------------------------
+
   const raw = readHeader(headers, OIDC_DATA_HEADER);
   if (!raw) return null;
 

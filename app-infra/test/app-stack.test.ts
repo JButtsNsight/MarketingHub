@@ -40,6 +40,25 @@ function makeApp() {
   return { stack, template: Template.fromStack(stack) };
 }
 
+/** Context keys ONLY needed by the production Cognito/DNS front door. */
+const PRODUCTION_ONLY_CONTEXT_KEYS = [
+  'appHostname',
+  'hostedZoneId',
+  'hostedZoneName',
+  'googleSamlMetadataUrl',
+  'adminGroup',
+  'marketingGroup',
+  'cognitoDomainPrefix',
+  'supabasePublicSubnetIds',
+];
+
+/** Instantiate the stack with the `previewMode` toggle ON. */
+function makePreviewApp(context: Record<string, unknown> = { ...CONTEXT, previewMode: true }) {
+  const app = new App({ context });
+  const stack = new AppStack(app, 'AppPreview', { env });
+  return { stack, template: Template.fromStack(stack) };
+}
+
 test('missing required context fails loud', () => {
   const app = new App(); // no context
   expect(() => new AppStack(app, 'App', { env })).toThrow(/required context/);
@@ -418,4 +437,154 @@ test('a Route53 A/ALIAS record points the app hostname at the ALB', () => {
     Name: 'marketinghub.nsightcare.com.',
     Type: 'A',
   });
+});
+
+test('non-preview (default): the task does NOT carry a PREVIEW_AUTH env var', () => {
+  const { template } = makeApp();
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const td of Object.values(taskDefs) as any[]) {
+    for (const c of td.Properties.ContainerDefinitions ?? []) {
+      for (const e of c.Environment ?? []) {
+        expect(e.Name).not.toBe('PREVIEW_AUTH');
+      }
+    }
+  }
+});
+
+// ---------------------------------------------------------------------------
+// previewMode === true: private/internal deployment with NO Cognito/SAML/DNS.
+// Selectable via the `previewMode` context toggle; the production front door
+// (all assertions above) is unchanged when the toggle is off/absent.
+// ---------------------------------------------------------------------------
+
+test('preview: the ALB is INTERNAL (not internet-facing)', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1);
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internal',
+    Type: 'application',
+  });
+});
+
+test('preview: a string "true" also enables preview mode', () => {
+  const { template } = makePreviewApp({ ...CONTEXT, previewMode: 'true' });
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internal',
+  });
+});
+
+test('preview: the listener is plain HTTP:80 forwarding to the target group (no auth, no HTTPS)', () => {
+  const { template } = makePreviewApp();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
+    Port: 80,
+    Protocol: 'HTTP',
+    DefaultActions: Match.arrayWith([Match.objectLike({ Type: 'forward' })]),
+  });
+  // No listener anywhere may authenticate via Cognito in preview mode.
+  const listeners = template.findResources('AWS::ElasticLoadBalancingV2::Listener');
+  for (const l of Object.values(listeners) as any[]) {
+    for (const a of l.Properties.DefaultActions ?? []) {
+      expect(a.Type).not.toBe('authenticate-cognito');
+    }
+  }
+});
+
+test('preview: ZERO Cognito user pool / SAML IdP / app client / groups', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::Cognito::UserPool', 0);
+  template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
+  template.resourceCountIs('AWS::Cognito::UserPoolClient', 0);
+  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
+});
+
+test('preview: ZERO WAFv2 WebACL and ZERO ACM certificate', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::WAFv2::WebACL', 0);
+  template.resourceCountIs('AWS::WAFv2::WebACLAssociation', 0);
+  template.resourceCountIs('AWS::CertificateManager::Certificate', 0);
+});
+
+test('preview: ZERO Route53 record', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::Route53::RecordSet', 0);
+});
+
+test('preview: the task carries PREVIEW_AUTH=marketing and NO ALB_ARN', () => {
+  const { template } = makePreviewApp();
+  hasEnv(template, 'PREVIEW_AUTH', 'marketing');
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const td of Object.values(taskDefs) as any[]) {
+    for (const c of td.Properties.ContainerDefinitions ?? []) {
+      for (const e of c.Environment ?? []) {
+        // preview auth needs no token, so no expected-signer ALB_ARN is set.
+        expect(e.Name).not.toBe('ALB_ARN');
+      }
+    }
+  }
+});
+
+test('preview: SUPABASE_URL + region envs and the service-role SECRET are still present', () => {
+  const { template } = makePreviewApp();
+  hasEnv(template, 'SUPABASE_URL', 'https://supabase.marketinghub.nsightcare.com');
+  hasEnv(template, 'AWS_REGION', 'us-east-1');
+  template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Secrets: Match.arrayWith([
+          Match.objectLike({
+            Name: 'SUPABASE_SERVICE_ROLE_KEY',
+            ValueFrom: SERVICE_ROLE_SECRET_ARN,
+          }),
+        ]),
+      }),
+    ]),
+  });
+});
+
+test('preview: the Fargate service stays in the PRIVATE subnets with public IP disabled and the internalClientSg', () => {
+  const { template } = makePreviewApp();
+  template.hasResourceProperties('AWS::ECS::Service', {
+    LaunchType: 'FARGATE',
+    DesiredCount: 2,
+    NetworkConfiguration: Match.objectLike({
+      AwsvpcConfiguration: Match.objectLike({
+        AssignPublicIp: 'DISABLED',
+        Subnets: Match.arrayWith(SUPABASE_PRIVATE_SUBNET_IDS),
+        SecurityGroups: Match.arrayWith([SUPABASE_INTERNAL_CLIENT_SG_ID]),
+      }),
+    }),
+  });
+});
+
+test('preview: the internal ALB is placed in the imported Supabase PRIVATE subnets', () => {
+  const { template } = makePreviewApp();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internal',
+    Subnets: Match.arrayWith(SUPABASE_PRIVATE_SUBNET_IDS),
+  });
+});
+
+test('preview: the service SG still only accepts :3000 FROM the ALB SG', () => {
+  const { template } = makePreviewApp();
+  const ingresses = template.findResources('AWS::EC2::SecurityGroupIngress');
+  const inline = template.findResources('AWS::EC2::SecurityGroup');
+  const fromAlb =
+    Object.values(ingresses).some((r: any) =>
+      r.Properties.SourceSecurityGroupId && r.Properties.FromPort === 3000,
+    ) ||
+    Object.values(inline).some((sg: any) =>
+      (sg.Properties.SecurityGroupIngress ?? []).some(
+        (r: any) => r.SourceSecurityGroupId && r.FromPort === 3000,
+      ),
+    );
+  expect(fromAlb).toBe(true);
+});
+
+test('preview: synthesizes with NO Google-SAML/Cognito/DNS context supplied', () => {
+  const minimal: Record<string, unknown> = { ...CONTEXT, previewMode: true };
+  for (const k of PRODUCTION_ONLY_CONTEXT_KEYS) delete minimal[k];
+  const app = new App({ context: minimal });
+  expect(() =>
+    Template.fromStack(new AppStack(app, 'AppPreviewMinimal', { env })),
+  ).not.toThrow();
 });
