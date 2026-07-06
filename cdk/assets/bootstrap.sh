@@ -41,6 +41,15 @@ require_imds() {
   [ -n "$tok" ] || die "Empty IMDSv2 token"
   log "IMDSv2 reachable."
 }
+host_private_ip() {  # prints the host's private IPv4 (for the in-VPC service URLs)
+  local tok ip
+  tok="$(imds_token)" || die "IMDSv2 token request failed while reading local-ipv4"
+  ip="$(curl -fsS -H "X-aws-ec2-metadata-token: $tok" \
+        "http://169.254.169.254/latest/meta-data/local-ipv4")" \
+    || die "could not read local-ipv4 from IMDS"
+  [ -n "$ip" ] || die "empty local-ipv4 from IMDS"
+  printf '%s' "$ip"
+}
 
 # ---- 2. Docker + compose plugin + deps (AL2023) ----------------------------------
 install_docker() {
@@ -122,13 +131,20 @@ render_env() {
   set +x  # never trace secret handling
   install -d -m 0755 "$APP_DIR"
   local envfile="${APP_DIR}/.env"
+  local envexample="${APP_DIR}/.env.example"   # the bundle's authoritative base (see fetch_bundle)
   umask 077
-  # render-env.sh maps the Secrets Manager JSON -> compose env (see Task 5).
+  # The effective .env is the bundle's .env.example (every var the pinned compose file
+  # references, with sane defaults) with ONLY our managed values overridden. .env.example
+  # is copied into APP_DIR by fetch_bundle, which MUST run before render_env (see main()).
+  [ -f "$envexample" ] || die ".env.example base missing at $envexample — fetch_bundle must run first"
+  # render-env.sh maps the Secrets Manager JSON -> compose env overrides (see Task 5).
+  local host_ip; host_ip="$(host_private_ip)"
   APP_CONFIG_JSON="$(fetch_secret_json "$APP_CONFIG_SECRET_ARN")" \
   SERVICE_ROLE_JSON="$(fetch_secret_json "$SERVICE_ROLE_SECRET_ARN")" \
   STORAGE_CREDS_JSON="$(fetch_secret_json "$STORAGE_CREDS_SECRET_ARN")" \
   SMTP_JSON="$(fetch_secret_json "$SMTP_SECRET_ARN")" \
   STORAGE_BUCKET="$STORAGE_BUCKET" AWS_REGION="$AWS_REGION" \
+  ENV_EXAMPLE="$envexample" HOST_PRIVATE_IP="$host_ip" \
     bash "${APP_DIR}/render-env.sh" >"$envfile"
   chown root:root "$envfile"
   chmod 600 "$envfile"
@@ -264,8 +280,10 @@ main() {
   case "$PGDATA_DIR" in "${DATA_MOUNT}"/*) : ;; *) die "PGDATA must live on the data volume";; esac
   install -d -m 0755 "$FUNCTIONS_DIR"
 
-  render_env
+  # fetch_bundle MUST precede render_env: render-env.sh builds the compose .env from the
+  # bundle's own docker/.env.example (staged into APP_DIR by fetch_bundle) as its base.
   fetch_bundle
+  render_env
   compose_up
 
   # Activate the §9 backup machinery: WAL archiving (PITR), scheduled full/diff base
