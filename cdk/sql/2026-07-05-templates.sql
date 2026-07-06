@@ -11,6 +11,18 @@ create schema if not exists marketinghub;
 -- gen_random_uuid() comes from pgcrypto (present by default on Supabase Postgres).
 create extension if not exists pgcrypto;
 
+-- GENERATED-column expressions must be IMMUTABLE, but to_tsvector() with a
+-- cast-resolved config ('english'::regconfig) is only STABLE. Bake the
+-- (stable-in-practice) English config into an IMMUTABLE wrapper and use that.
+create or replace function marketinghub.templates_search(
+  p_name text, p_tags text[], p_category text, p_body text
+) returns tsvector language sql immutable as $$
+  select setweight(to_tsvector('english'::regconfig, coalesce(p_name, '')), 'A')
+      || setweight(to_tsvector('english'::regconfig, array_to_string(coalesce(p_tags, '{}'::text[]), ' ')), 'B')
+      || setweight(to_tsvector('english'::regconfig, coalesce(p_category, '')), 'B')
+      || setweight(to_tsvector('english'::regconfig, coalesce(p_body, '')), 'C')
+$$;
+
 create table if not exists marketinghub.templates (
   id           uuid primary key default gen_random_uuid(),
   name         text not null,
@@ -24,10 +36,7 @@ create table if not exists marketinghub.templates (
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   search tsvector generated always as (
-    setweight(to_tsvector('english'::regconfig, coalesce(name, '')), 'A') ||
-    setweight(to_tsvector('english'::regconfig, array_to_string(tags, ' ')), 'B') ||
-    setweight(to_tsvector('english'::regconfig, coalesce(category, '')), 'B') ||
-    setweight(to_tsvector('english'::regconfig, coalesce(body, '')), 'C')
+    marketinghub.templates_search(name, tags, category, body)
   ) stored
 );
 
