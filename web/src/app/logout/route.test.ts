@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildLogoutResponse } from "./route";
+import { buildLogoutResponse } from "./buildResponse";
 
 const LOGOUT_URL =
   "https://nsight-marketinghub.auth.us-east-1.amazoncognito.com/logout?client_id=abc&logout_uri=https%3A%2F%2Fmarketinghub.nsightcare.com%2F";

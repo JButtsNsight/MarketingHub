@@ -11,7 +11,7 @@ import { UploadForm } from "./UploadForm";
 import { TEMPLATE_CATEGORIES } from "@/lib/templates/schema";
 
 function mockFetch(status: number, body: unknown) {
-  const fn = vi.fn(() =>
+  const fn = vi.fn((_url: string, _init?: RequestInit) =>
     Promise.resolve({
       ok: status >= 200 && status < 300,
       status,
