@@ -63,6 +63,11 @@ export class AppStack extends Stack {
     const appImageTag = req('appImageTag');
     const supabaseUrl = req('supabaseUrl');
     const supabaseServiceRoleSecretArn = req('supabaseServiceRoleSecretArn');
+    // The service-role secret is encrypted with its own dedicated CMK. Because we
+    // import the secret by ARN (fromSecretCompleteArn), CDK grants GetSecretValue but
+    // does NOT know the CMK, so it can't grant kms:Decrypt — Fargate then fails with
+    // "Access to KMS is not allowed". Pass the CMK ARN and grant Decrypt explicitly.
+    const supabaseSecretsKmsKeyArn = req('supabaseSecretsKmsKeyArn');
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
     // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
@@ -178,6 +183,15 @@ export class AppStack extends Stack {
           'ecr:BatchGetImage',
         ],
         resources: ['*'],
+      }),
+    );
+    // Decrypt the service-role secret's dedicated CMK (the key policy delegates
+    // Decrypt to account IAM via kms:ViaService=secretsmanager, which is how
+    // GetSecretValue decrypts) — otherwise the task can't read the mounted secret.
+    taskDef.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:Decrypt'],
+        resources: [supabaseSecretsKmsKeyArn],
       }),
     );
 

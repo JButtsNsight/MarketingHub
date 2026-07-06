@@ -16,6 +16,8 @@ const CONTEXT: Record<string, string> = {
   supabaseUrl: 'https://supabase.marketinghub.nsightcare.com',
   supabaseServiceRoleSecretArn:
     'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/supabase-service-role-AbCdEf',
+  supabaseSecretsKmsKeyArn:
+    'arn:aws:kms:us-east-1:439024109088:key/00000000-1111-2222-3333-444444444444',
   // The app runs INSIDE the Supabase VPC (created by the Supabase NetworkStack) and
   // joins its `internalClientSg` — the only path to the private data-API ALB + its
   // private DNS. These come from the NetworkStack CfnOutputs; no VPC is created here.
