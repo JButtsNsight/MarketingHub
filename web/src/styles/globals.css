@@ -427,6 +427,168 @@ input[type="file"].control {
   margin: 0;
 }
 
+.page-head-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+/* ── Browse toolbar (search + filters) ── */
+.templates-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+.search-bar {
+  --r: 10px;
+  padding: 0;
+  max-width: 460px;
+}
+.search-bar input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-family: var(--fu);
+  font-size: 14px;
+  color: var(--ink);
+  padding: 10px 13px;
+}
+.search-bar input:focus {
+  outline: none;
+}
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+}
+.filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Shared chip: a category pill tinted by its --chip data-pool color. */
+.chip {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--chip, var(--accent)) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chip, var(--accent)) 34%, transparent);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+.filter-chip {
+  cursor: pointer;
+}
+.filter-chip.on {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--chip, var(--accent)) 26%, transparent);
+  border-color: color-mix(in srgb, var(--chip, var(--accent)) 60%, transparent);
+}
+.type-chip {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 999px;
+  padding: 4px 13px;
+  cursor: pointer;
+}
+.type-chip.on {
+  color: var(--canvas);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+/* ── Template grid + card ── */
+.tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(248px, 1fr));
+  gap: 16px;
+}
+.tpl-card {
+  --r: 14px;
+  padding: 16px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: transform 0.12s ease;
+}
+.tpl-card:hover {
+  transform: translateY(-2px);
+}
+.tpl-card-link {
+  color: inherit;
+}
+.tpl-card-link:hover {
+  text-decoration: none;
+}
+.tpl-name {
+  font-family: var(--fd);
+  font-size: 18px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.tpl-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tpl-type-badge {
+  font-family: var(--fu);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 2px 7px;
+}
+.tpl-tags {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tpl-tag {
+  font-family: var(--fu);
+  font-size: 11.5px;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.tpl-date {
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-top: auto;
+}
+
+/* ── Empty state ── */
+.empty-state {
+  --r: 16px;
+  padding: 42px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.empty-state p {
+  font-family: var(--fu);
+  color: var(--muted);
+  max-width: 440px;
+  margin: 0 0 8px;
+}
+
 /* Accessible focus */
 :focus-visible {
   outline: none;
