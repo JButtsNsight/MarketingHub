@@ -97,6 +97,39 @@ a:hover {
   z-index: 1;
 }
 
+/* ── Segmented control (theme / skin toggle) ── */
+.theme-skin-toggle {
+  display: inline-flex;
+  gap: 10px;
+}
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border-radius: 11px;
+  --r: 11px;
+}
+.seg-btn {
+  font-family: var(--fu);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  background: none;
+  border: none;
+  padding: 8px 15px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--hair);
+}
+.seg-btn:hover:not(.on) {
+  color: var(--ink);
+}
+.seg-btn.on {
+  background: var(--ink);
+  color: var(--canvas);
+}
+
 /* Accessible focus */
 :focus-visible {
   outline: none;
