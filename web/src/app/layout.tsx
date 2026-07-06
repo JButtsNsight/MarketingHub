@@ -20,7 +20,15 @@ const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');v
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en" data-theme={DEFAULT_THEME} data-skin={DEFAULT_SKIN}>
+    // suppressHydrationWarning: the pre-paint themeBootstrap script mutates
+    // data-theme/data-skin from localStorage, so a returning non-default user's
+    // <html> attributes intentionally differ from the server-rendered defaults.
+    <html
+      lang="en"
+      data-theme={DEFAULT_THEME}
+      data-skin={DEFAULT_SKIN}
+      suppressHydrationWarning
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
