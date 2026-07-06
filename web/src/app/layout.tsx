@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { headers } from "next/headers";
 // Fonts bundled locally via @fontsource (the CDN is blocked on the network).
 import "@fontsource/marcellus/400.css";
 import "@fontsource/dm-sans/400.css";
@@ -8,6 +9,8 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "../styles/globals.css";
 import { AppShell } from "@/components/AppShell";
+import { UserMenu } from "@/components/UserMenu";
+import { getUser } from "@/lib/auth";
 import { DEFAULT_SKIN, DEFAULT_THEME } from "@/lib/theme";
 
 export const metadata = {
@@ -18,7 +21,11 @@ export const metadata = {
 // Restore the persisted theme/skin before first paint to avoid a flash.
 const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');var s=localStorage.getItem('mh-skin');var e=document.documentElement;e.dataset.theme=(t==='light'||t==='dark')?t:'${DEFAULT_THEME}';e.dataset.skin=(s==='glass'||s==='flat')?s:'${DEFAULT_SKIN}';}catch(_){document.documentElement.dataset.theme='${DEFAULT_THEME}';document.documentElement.dataset.skin='${DEFAULT_SKIN}';}})();`;
 
-export default function RootLayout({ children }: { children: ReactNode }) {
+export default async function RootLayout({ children }: { children: ReactNode }) {
+  // Identity comes from the ALB Cognito front door (x-amzn-oidc-data header),
+  // resolved server-side. Absent only in local/dev or on the login fallback.
+  const user = getUser(await headers());
+
   return (
     // suppressHydrationWarning: the pre-paint themeBootstrap script mutates
     // data-theme/data-skin from localStorage, so a returning non-default user's
@@ -33,7 +40,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body>
-        <AppShell>{children}</AppShell>
+        <AppShell user={user ? <UserMenu email={user.email} /> : undefined}>
+          {children}
+        </AppShell>
       </body>
     </html>
   );

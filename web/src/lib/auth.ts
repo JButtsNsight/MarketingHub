@@ -27,9 +27,14 @@ export interface AppUser {
   groups: string[];
 }
 
-/** Anything header-like: a Fetch `Headers` or a plain record (Node req headers). */
+/** The structural shape of a Fetch `Headers` / Next `ReadonlyHeaders`. */
+export interface HeadersGetter {
+  get(name: string): string | null;
+}
+
+/** Anything header-like: a `Headers`/`ReadonlyHeaders`, or a plain record. */
 export type HeaderSource =
-  | Headers
+  | HeadersGetter
   | Record<string, string | string[] | undefined>;
 
 /** Thrown by `requireUser`; `status` maps to the HTTP response a caller returns. */
@@ -44,8 +49,8 @@ export class AuthError extends Error {
 }
 
 function readHeader(headers: HeaderSource, name: string): string | null {
-  if (typeof (headers as Headers).get === "function") {
-    return (headers as Headers).get(name);
+  if (typeof (headers as HeadersGetter).get === "function") {
+    return (headers as HeadersGetter).get(name);
   }
   const record = headers as Record<string, string | string[] | undefined>;
   // Node lower-cases header keys; check the canonical name first, then any case.
