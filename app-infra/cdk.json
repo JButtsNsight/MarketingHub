@@ -13,6 +13,11 @@
     "cognitoDomainPrefix": "nsight-marketinghub",
     "appImageTag": "REPLACE_ME",
     "supabaseUrl": "REPLACE_ME",
-    "supabaseServiceRoleSecretArn": "arn:aws:secretsmanager:us-east-1:439024109088:secret:REPLACE_ME-000000"
+    "supabaseServiceRoleSecretArn": "arn:aws:secretsmanager:us-east-1:439024109088:secret:REPLACE_ME-000000",
+    "supabaseVpcId": "vpc-REPLACE_ME",
+    "supabaseVpcAzs": "us-east-1a,us-east-1b",
+    "supabasePublicSubnetIds": "subnet-REPLACE_ME1,subnet-REPLACE_ME2",
+    "supabasePrivateSubnetIds": "subnet-REPLACE_ME3,subnet-REPLACE_ME4",
+    "supabaseInternalClientSgId": "sg-REPLACE_ME"
   }
 }

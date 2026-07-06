@@ -16,10 +16,23 @@ const CONTEXT: Record<string, string> = {
   supabaseUrl: 'https://supabase.marketinghub.nsightcare.com',
   supabaseServiceRoleSecretArn:
     'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/supabase-service-role-AbCdEf',
+  // The app runs INSIDE the Supabase VPC (created by the Supabase NetworkStack) and
+  // joins its `internalClientSg` — the only path to the private data-API ALB + its
+  // private DNS. These come from the NetworkStack CfnOutputs; no VPC is created here.
+  supabaseVpcId: 'vpc-0a1b2c3d4e5f60718',
+  supabaseVpcAzs: 'us-east-1a,us-east-1b',
+  supabasePublicSubnetIds: 'subnet-0aaaa1111bbbb2221,subnet-0aaaa1111bbbb2222',
+  supabasePrivateSubnetIds: 'subnet-0cccc3333dddd4441,subnet-0cccc3333dddd4442',
+  supabaseInternalClientSgId: 'sg-0123456789abcdef0',
 };
 
 /** The exact secret ARN the task consumes — IAM must be scoped to THIS, no wildcard. */
 const SERVICE_ROLE_SECRET_ARN = CONTEXT.supabaseServiceRoleSecretArn;
+
+/** The imported Supabase networking the app must attach to (from NetworkStack outputs). */
+const SUPABASE_PRIVATE_SUBNET_IDS = CONTEXT.supabasePrivateSubnetIds.split(',');
+const SUPABASE_PUBLIC_SUBNET_IDS = CONTEXT.supabasePublicSubnetIds.split(',');
+const SUPABASE_INTERNAL_CLIENT_SG_ID = CONTEXT.supabaseInternalClientSgId;
 
 function makeApp() {
   const app = new App({ context: CONTEXT });
@@ -274,6 +287,45 @@ test('a Fargate service runs desiredCount 2 with public IPs disabled (private su
     NetworkConfiguration: Match.objectLike({
       AwsvpcConfiguration: Match.objectLike({ AssignPublicIp: 'DISABLED' }),
     }),
+  });
+});
+
+test('the AppStack creates NO VPC and NO NAT gateway — it runs inside the imported Supabase VPC', () => {
+  const { template } = makeApp();
+  template.resourceCountIs('AWS::EC2::VPC', 0);
+  template.resourceCountIs('AWS::EC2::NatGateway', 0);
+});
+
+test('the Fargate service is placed in the imported Supabase PRIVATE subnets', () => {
+  const { template } = makeApp();
+  template.hasResourceProperties('AWS::ECS::Service', {
+    NetworkConfiguration: Match.objectLike({
+      AwsvpcConfiguration: Match.objectLike({
+        // Imported subnet ids appear as literal strings (not a Ref to a local subnet).
+        Subnets: Match.arrayWith(SUPABASE_PRIVATE_SUBNET_IDS),
+      }),
+    }),
+  });
+});
+
+test('the Fargate service joins the imported Supabase internalClientSg (data-API reachability)', () => {
+  const { template } = makeApp();
+  // The imported SG id is a literal string in the awsvpc SecurityGroups list — that
+  // membership is what lets the tasks reach the Supabase internal data-API ALB.
+  template.hasResourceProperties('AWS::ECS::Service', {
+    NetworkConfiguration: Match.objectLike({
+      AwsvpcConfiguration: Match.objectLike({
+        SecurityGroups: Match.arrayWith([SUPABASE_INTERNAL_CLIENT_SG_ID]),
+      }),
+    }),
+  });
+});
+
+test('the public ALB is placed in the imported Supabase PUBLIC subnets', () => {
+  const { template } = makeApp();
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internet-facing',
+    Subnets: Match.arrayWith(SUPABASE_PUBLIC_SUBNET_IDS),
   });
 });
 

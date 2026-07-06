@@ -1,4 +1,4 @@
-import { Stack, StackProps, RemovalPolicy } from 'aws-cdk-lib';
+import { Stack, StackProps, RemovalPolicy, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as kms from 'aws-cdk-lib/aws-kms';
@@ -84,5 +84,30 @@ export class NetworkStack extends Stack {
     this.ec2Sg.addIngressRule(this.internalClientSg, ec2.Port.tcp(6543), 'Supavisor transaction pooler');
     // NOTE: Kong Admin :8001/:8444 and Kong Manager :8002 are intentionally NOT exposed
     // (loopback-only on the host per spec §11). Do not add ingress rules for them.
+
+    // Exports so a SEPARATE app stack (e.g. MarketingHub's AppStack) can run INSIDE
+    // this VPC and join `internalClientSg` — the only path to the internal data-API
+    // ALB and its private-zone DNS. These are read-only CfnOutputs (no resource impact)
+    // that operators copy into the app's `supabase*` context keys. Stable exportNames.
+    new CfnOutput(this, 'VpcIdOutput', {
+      value: this.vpc.vpcId,
+      description: 'Supabase VPC id (app context: supabaseVpcId)',
+      exportName: 'SupabaseVpcId',
+    });
+    new CfnOutput(this, 'PublicSubnetIdsOutput', {
+      value: this.vpc.publicSubnets.map((s) => s.subnetId).join(','),
+      description: 'Supabase public subnet ids, internet-facing ALB tier (app context: supabasePublicSubnetIds)',
+      exportName: 'SupabasePublicSubnetIds',
+    });
+    new CfnOutput(this, 'PrivateSubnetIdsOutput', {
+      value: this.vpc.privateSubnets.map((s) => s.subnetId).join(','),
+      description: 'Supabase private (with-egress) subnet ids, Fargate tier (app context: supabasePrivateSubnetIds)',
+      exportName: 'SupabasePrivateSubnetIds',
+    });
+    new CfnOutput(this, 'InternalClientSgIdOutput', {
+      value: this.internalClientSg.securityGroupId,
+      description: 'Supabase internal-client SG id — in-VPC clients of the data API (app context: supabaseInternalClientSgId)',
+      exportName: 'SupabaseInternalClientSgId',
+    });
   }
 }

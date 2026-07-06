@@ -13,6 +13,17 @@ app talks to the self-hosted MarketingHub Supabase backend (PostgREST + Storage)
 with the `service_role` key; Cognito is the sole auth authority. App-layer authz is
 the `marketing` Cognito group, enforced server-side.
 
+**Networking — the app runs INSIDE the Supabase VPC.** `AppStack` does **not** create
+its own VPC/NAT. It imports the Supabase VPC + subnets and makes its Fargate tasks
+members of the Supabase `internalClientSg` (the SG the NetworkStack describes as
+"in-VPC clients of the Supabase data API"). That membership is the ONLY thing that
+lets the tasks reach the internal data-API ALB (whose SG admits `internalClientSg`
+only) and resolve the private data-API hostname (`SUPABASE_URL`, in the Supabase
+private hosted zone). This removes any need for VPC peering / PrivateLink between a
+separate app VPC and the Supabase VPC. The public ALB lives in the imported public
+subnets; the Fargate service (private subnets) also keeps its own `ServiceSg`, which
+accepts container port `:3000` from the ALB SG only.
+
 ---
 
 ## 1. Prerequisites (must all be true before deploying)
@@ -62,6 +73,21 @@ the `marketing` Cognito group, enforced server-side.
   create the validation CNAME in the hosted zone (CDK does this automatically when
   the zone is a Route53 zone in this account). The cert is `RETAIN`ed.
 
+### 1.5 Supabase VPC networking (the app runs inside it)
+- The Supabase `SupabaseNetwork` stack (in `cdk/`) is deployed. Capture its
+  CloudFormation Outputs — they feed the five `supabase*` networking context keys in
+  §3:
+  - `SupabaseVpcId` → `supabaseVpcId`
+  - `SupabasePublicSubnetIds` → `supabasePublicSubnetIds` (internet-facing ALB tier)
+  - `SupabasePrivateSubnetIds` → `supabasePrivateSubnetIds` (Fargate tier)
+  - `SupabaseInternalClientSgId` → `supabaseInternalClientSgId`
+  - `supabaseVpcAzs` = the AZ names those subnets sit in (e.g. `us-east-1a,us-east-1b`).
+- The Fargate tasks join `internalClientSg`, so **no VPC peering or PrivateLink is
+  needed** — the tasks reach the internal data-API ALB and resolve `SUPABASE_URL`
+  (the private data-API hostname) directly within the Supabase VPC. `SUPABASE_URL`
+  must therefore be the **private** data-API hostname (Supabase private hosted zone),
+  not a public URL.
+
 ---
 
 ## 2. Build and push the container image
@@ -103,11 +129,22 @@ Edit `app-infra/cdk.json` (or pass `-c key=value` on the CLI) and replace every
 | `marketingGroup` | `marketing` |
 | `cognitoDomainPrefix` | `nsight-marketinghub` (Hosted-UI domain) |
 | `appImageTag` | the pushed image ref, e.g. `…/marketinghub-web:v1` |
-| `supabaseUrl` | public Supabase URL the app calls (PostgREST + Storage) |
+| `supabaseUrl` | private data-API URL the app calls (PostgREST + Storage); resolves only in the Supabase private hosted zone (§1.5) |
 | `supabaseServiceRoleSecretArn` | the **complete** Secrets Manager ARN (§1.2) |
+| `supabaseVpcId` | Supabase VPC id — from NetworkStack output `SupabaseVpcId` (§1.5) |
+| `supabaseVpcAzs` | comma-separated AZ names for the VPC, e.g. `us-east-1a,us-east-1b` (the AZs of the subnets below) |
+| `supabasePublicSubnetIds` | comma-separated public subnet ids (internet-facing ALB tier) — from NetworkStack output `SupabasePublicSubnetIds` |
+| `supabasePrivateSubnetIds` | comma-separated private (with-egress) subnet ids (Fargate tier) — from NetworkStack output `SupabasePrivateSubnetIds` |
+| `supabaseInternalClientSgId` | Supabase `internalClientSg` id — from NetworkStack output `SupabaseInternalClientSgId` (§1.5) |
 
 `AppStack` fails loud on any missing context, so a blank value stops synth before
-deploy.
+deploy. The five `supabase*` networking keys make the app run **inside the Supabase
+VPC** — read them straight from the Supabase NetworkStack CloudFormation Outputs:
+```
+aws cloudformation describe-stacks --stack-name SupabaseNetwork --region us-east-1 \
+  --query "Stacks[0].Outputs[?starts_with(ExportName,'Supabase')].{Export:ExportName,Value:OutputValue}" \
+  --output table
+```
 
 `AppStack` injects into the task definition automatically:
 - env `SUPABASE_URL`, `NEXT_PUBLIC_APP_NAME=MarketingHub`, `COGNITO_LOGOUT_URL`,

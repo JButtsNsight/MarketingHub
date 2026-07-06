@@ -53,15 +53,42 @@ export class AppStack extends Stack {
     const supabaseUrl = req('supabaseUrl');
     const supabaseServiceRoleSecretArn = req('supabaseServiceRoleSecretArn');
 
-    // --- Networking: dedicated VPC (public ALB tier + private app tier) ---
-    const vpc = new ec2.Vpc(this, 'AppVpc', {
-      maxAzs: 2,
-      natGateways: 1,
-      subnetConfiguration: [
-        { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
-        { name: 'app', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 24 },
-      ],
+    // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
+    // CfnOutputs). Comma-separated lists are split into string[].
+    const supabaseVpcId = req('supabaseVpcId');
+    const supabaseVpcAzs = req('supabaseVpcAzs').split(',');
+    const supabasePublicSubnetIds = req('supabasePublicSubnetIds').split(',');
+    const supabasePrivateSubnetIds = req('supabasePrivateSubnetIds').split(',');
+    const supabaseInternalClientSgId = req('supabaseInternalClientSgId');
+
+    // --- Networking: run INSIDE the Supabase VPC (do NOT create one) ---
+    // The app's data path is Fargate task -> Supabase internal data-API ALB, whose SG
+    // only admits the Supabase `internalClientSg`, and the data-API hostname
+    // (`SUPABASE_URL`) resolves only in the Supabase PRIVATE hosted zone. Both require
+    // the tasks to live in the Supabase VPC — so we import it (no VPC/NAT of our own;
+    // fromVpcAttributes needs no account lookup at synth).
+    const vpc = ec2.Vpc.fromVpcAttributes(this, 'SupabaseVpc', {
+      vpcId: supabaseVpcId,
+      availabilityZones: supabaseVpcAzs,
+      publicSubnetIds: supabasePublicSubnetIds,
+      privateSubnetIds: supabasePrivateSubnetIds,
     });
+
+    // Membership in this SG is what grants the tasks reachability to the Supabase
+    // internal data-API ALB (its ingress admits internalClientSg only). Imported
+    // immutable — this stack must never mutate the upstream NetworkStack's SG.
+    const internalClientSg = ec2.SecurityGroup.fromSecurityGroupId(
+      this,
+      'InternalClientSg',
+      supabaseInternalClientSgId,
+      { mutable: false },
+    );
+
+    // The imported PUBLIC subnets host the internet-facing ALB; the imported PRIVATE
+    // subnets host the Fargate service. Selected by id off the imported VPC so the
+    // synthesized template pins the exact Supabase subnet ids.
+    const publicSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PUBLIC });
+    const privateSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS });
 
     // --- ACM certificate for the app hostname (public DNS validation) ---
     const publicZone = route53.HostedZone.fromHostedZoneAttributes(this, 'PublicZone', {
@@ -214,8 +241,11 @@ export class AppStack extends Stack {
       cluster,
       taskDefinition: taskDef,
       desiredCount: 2,
-      securityGroups: [serviceSg],
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      // serviceSg accepts the container port from the ALB SG (below); internalClientSg
+      // membership is what grants the tasks reachability to the Supabase internal
+      // data-API ALB (and, via the private hosted zone, its DNS).
+      securityGroups: [serviceSg, internalClientSg],
+      vpcSubnets: privateSubnets,
       assignPublicIp: false,
       minHealthyPercent: 50,
       circuitBreaker: { rollback: true }, // fail a bad rollout fast instead of hanging ~3h
@@ -229,7 +259,7 @@ export class AppStack extends Stack {
         vpc,
         internetFacing: true,
         securityGroup: albSg,
-        vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+        vpcSubnets: publicSubnets,
       },
     );
     this.alb.logAccessLogs(accessLogsBucket, 'public-alb');
