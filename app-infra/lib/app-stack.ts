@@ -163,8 +163,11 @@ export class AppStack extends Stack {
       secrets: {
         // Delivered to the container from Secrets Manager at task start; adding
         // it here makes CDK grant the task EXECUTION role read on the exact ARN.
+        // The secret is JSON ({"SERVICE_ROLE_KEY":"<jwt>"}), so extract that field —
+        // without it the container gets the whole JSON blob and PostgREST 401s.
         SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
           supabaseServiceRoleSecret,
+          'SERVICE_ROLE_KEY',
         ),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
