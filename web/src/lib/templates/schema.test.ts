@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { TemplateInputSchema } from "./schema.ts";
+import { TemplateInputSchema } from "./schema";
 
 const validText = {
   name: "Spring Promo",

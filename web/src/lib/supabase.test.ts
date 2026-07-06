@@ -24,20 +24,20 @@ describe("lib/supabase server client", () => {
 
   test("throws (fail-loud) when SUPABASE_URL is missing", async () => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = "svc-key";
-    const { getServiceClient } = await import("./supabase.ts");
+    const { getServiceClient } = await import("./supabase");
     expect(() => getServiceClient()).toThrow(/SUPABASE_URL/);
   });
 
   test("throws (fail-loud) when SUPABASE_SERVICE_ROLE_KEY is missing", async () => {
     process.env.SUPABASE_URL = "https://mh.supabase.example.com";
-    const { getServiceClient } = await import("./supabase.ts");
+    const { getServiceClient } = await import("./supabase");
     expect(() => getServiceClient()).toThrow(/SUPABASE_SERVICE_ROLE_KEY/);
   });
 
   test("returns a Supabase client when both env vars are set", async () => {
     process.env.SUPABASE_URL = "https://mh.supabase.example.com";
     process.env.SUPABASE_SERVICE_ROLE_KEY = "svc-key";
-    const { getServiceClient } = await import("./supabase.ts");
+    const { getServiceClient } = await import("./supabase");
     const client = getServiceClient();
     expect(client).toBeDefined();
     expect(typeof client.from).toBe("function");
