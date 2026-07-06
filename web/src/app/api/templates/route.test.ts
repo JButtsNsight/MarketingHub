@@ -104,6 +104,29 @@ describe("POST /api/templates", () => {
       email: "amy@nsight.example",
     });
   });
+
+  test("passes an uploaded file through to Storage when a filename is present", async () => {
+    h.createTemplate.mockResolvedValue({ id: "new-id", ...validBody });
+    const req = new Request("http://x/api/templates", {
+      method: "POST",
+      headers: marketingHeaders(),
+      body: JSON.stringify({
+        ...validBody,
+        type: "email",
+        subject: "Hi",
+        body: "<h1>Hi</h1>",
+        filename: "welcome.html",
+      }),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(201);
+    const file = h.createTemplate.mock.calls[0][2];
+    expect(file).toMatchObject({
+      filename: "welcome.html",
+      content: "<h1>Hi</h1>",
+      contentType: "text/html",
+    });
+  });
 });
 
 describe("GET /api/templates", () => {

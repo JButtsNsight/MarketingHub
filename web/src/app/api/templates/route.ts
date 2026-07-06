@@ -4,6 +4,7 @@ import {
   listTemplates,
   searchTemplates,
   type ListFilters,
+  type TemplateFile,
 } from "@/lib/templates/repo";
 import { TemplateInputSchema, TEMPLATE_TYPES } from "@/lib/templates/schema";
 import type { TemplateType } from "@/lib/templates/schema";
@@ -35,6 +36,28 @@ function coerceType(value: string | null): TemplateType | undefined {
     : undefined;
 }
 
+/** Map a filename extension to the content type stored with the upload. */
+function contentTypeFor(filename: string): string {
+  const ext = filename.toLowerCase().split(".").pop();
+  if (ext === "html") return "text/html";
+  if (ext === "eml") return "message/rfc822";
+  return "text/plain";
+}
+
+/**
+ * If the request carried a `filename`, package the (already-validated) body as
+ * a raw file so `createTemplate` persists it to Storage. The metadata body and
+ * the stored file are the same content — the file is the downloadable artifact.
+ */
+function fileFrom(payload: unknown, body: string): TemplateFile | undefined {
+  const filename =
+    payload && typeof (payload as { filename?: unknown }).filename === "string"
+      ? (payload as { filename: string }).filename
+      : null;
+  if (!filename) return undefined;
+  return { filename, content: body, contentType: contentTypeFor(filename) };
+}
+
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
@@ -58,7 +81,12 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const template = await createTemplate(parsed.data, { email: user.email });
+  const file = fileFrom(payload, parsed.data.body);
+  const template = await createTemplate(
+    parsed.data,
+    { email: user.email },
+    file,
+  );
   return Response.json({ id: template.id, template }, { status: 201 });
 }
 
