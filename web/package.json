@@ -14,9 +14,12 @@
     "@fontsource/dm-sans": "^5.1.0",
     "@fontsource/ibm-plex-mono": "^5.1.0",
     "@fontsource/marcellus": "^5.1.0",
+    "@supabase/supabase-js": "^2.110.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "server-only": "^0.0.1",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@testing-library/dom": "^10.4.0",
