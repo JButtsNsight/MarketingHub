@@ -1,0 +1,30 @@
+# Rebuilt inside the image; never copy the host's.
+node_modules
+.next
+out
+
+# VCS / editor / OS noise
+.git
+.gitignore
+.DS_Store
+
+# Tests + local tooling are not needed in the image (and keep the build context
+# small / deterministic). e2e drives a running container, not the build.
+test
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+playwright.config.ts
+playwright-report
+test-results
+coverage
+vitest.config.ts
+vitest.setup.ts
+
+# Build metadata / secrets
+*.tsbuildinfo
+.env
+.env.*
+Dockerfile
+.dockerignore

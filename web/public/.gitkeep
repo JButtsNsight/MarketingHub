@@ -1,0 +1,3 @@
+# Keeps the public/ dir present so the Docker `COPY /app/public` layer resolves.
+# Fonts are bundled from @fontsource (node_modules) into the build, so there are
+# no font files here yet; drop any future static assets (favicon, images) here.
