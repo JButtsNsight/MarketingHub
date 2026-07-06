@@ -7,7 +7,7 @@
 set -euo pipefail
 
 # ---- Tunables (the Supabase bundle is PINNED; PG17 per spec §22) ----------------
-readonly SUPABASE_REF="v2.30.4"                 # pin the bundle tag/release (PG17)
+readonly SUPABASE_REF="v1.26.05"                # pin the bundle tag/release (latest real supabase/supabase tag; v2.30.4 did not exist)
 readonly SUPABASE_REPO="https://github.com/supabase/supabase.git"
 readonly APP_DIR="/opt/supabase"                # compose project lives here (root vol)
 readonly DATA_MOUNT="/mnt/pgdata"               # the dedicated EBS data volume
