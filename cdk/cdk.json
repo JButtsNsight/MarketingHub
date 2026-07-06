@@ -15,6 +15,7 @@
     "cognitoDomainPrefix": "nsight-supabase",
     "dataApiPrivateCaArn": "REPLACE_ME",
     "oncallEmail": "oncall@nsightcare.com",
-    "monthlyBudgetUsd": 550
+    "monthlyBudgetUsd": 550,
+    "previewMode": false
   }
 }

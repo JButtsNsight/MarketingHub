@@ -3,21 +3,30 @@ import { Construct } from 'constructs';
 import * as kms from 'aws-cdk-lib/aws-kms';
 import * as iam from 'aws-cdk-lib/aws-iam';
 
+export interface FoundationStackProps extends StackProps {
+  // Tear-downable "preview" profile (default false). When true the CMKs use a
+  // DESTROY removal policy so a preview stack can be fully deleted; rotation and
+  // key policies are unchanged. Production (preview absent/false) keeps RETAIN.
+  readonly preview?: boolean;
+}
+
 export class FoundationStack extends Stack {
   public readonly dataKey: kms.Key;
   public readonly backupKey: kms.Key;
   public readonly logsKey: kms.Key;
   public readonly secretsKey: kms.Key;
 
-  constructor(scope: Construct, id: string, props: StackProps) {
+  constructor(scope: Construct, id: string, props: FoundationStackProps) {
     super(scope, id, props);
+
+    const keyRemovalPolicy = props.preview ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;
 
     const mkKey = (logicalId: string, alias: string, description: string) =>
       new kms.Key(this, logicalId, {
         alias,
         description,
         enableKeyRotation: true,
-        removalPolicy: RemovalPolicy.RETAIN,
+        removalPolicy: keyRemovalPolicy,
       });
 
     this.dataKey = mkKey('DataKey', 'alias/nsight-supabase-data',

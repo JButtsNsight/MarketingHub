@@ -1,4 +1,4 @@
-import { Stack, StackProps, Tags, Duration } from 'aws-cdk-lib';
+import { Stack, StackProps, Tags, Duration, CfnOutput } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -20,6 +20,12 @@ export interface ComputeStackProps extends StackProps {
   readonly serviceRoleSecret: secretsmanager.ISecret;
   readonly storageCredsSecret: secretsmanager.ISecret;
   readonly smtpSecret: secretsmanager.ISecret;
+  // Tear-downable "preview" profile (default false). When true: the data EBS volume is
+  // deleted on instance termination, the bootstrap is told to SKIP_BACKUPS (no
+  // pgBackRest/WAL — the riskiest first-boot step, and the backup vault doesn't exist in
+  // preview), and the host's private IP is exported so the app can reach Kong in-VPC
+  // over HTTP (SUPABASE_URL=http://<ip>:8000).
+  readonly preview?: boolean;
 }
 
 export class ComputeStack extends Stack {
@@ -28,6 +34,10 @@ export class ComputeStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ComputeStackProps) {
     super(scope, id, props);
+
+    // Tear-downable preview: skip the riskiest first-boot backup wiring and let the
+    // data volume delete on termination. Production (default) is unchanged.
+    const preview = props.preview === true;
 
     // --- Instance role (spec §13, §21): exact-ARN scoped, SSM-only host access ---
     const role = new iam.Role(this, 'InstanceRole', {
@@ -135,6 +145,13 @@ export class ComputeStack extends Stack {
       `export STORAGE_BUCKET='${props.storageBucket.bucketName}'`,
       `export BACKUP_BUCKET='${props.backupBucket.bucketName}'`,
     );
+    // Preview: tell bootstrap.sh to skip pgBackRest/WAL/cron setup (the backup vault
+    // does not exist in preview and this is the riskiest first-boot step). Flows through
+    // user-data exactly like the other bootstrap env vars above; bootstrap reads it from
+    // the rendered environment and setup_backups returns early when it is non-empty.
+    if (preview) {
+      userData.addCommands(`export SKIP_BACKUPS='1'`);
+    }
     // Stage the host-side assets OUT-OF-BAND via S3 (aws-s3-assets), then download them
     // on the host. They are NOT inlined into user-data: the five assets total ~16 KB and
     // inlining them (plus wrapper/heredoc overhead) blows past EC2's 16 KB user-data hard
@@ -200,7 +217,11 @@ export class ComputeStack extends Stack {
             volumeType: ec2.EbsDeviceVolumeType.GP3,
             encrypted: true,
             kmsKey: props.dataKey,
-            deleteOnTermination: false, // Postgres state survives instance replacement
+            // Production: Postgres state survives instance replacement (RETAIN-equivalent).
+            // Preview: the whole stack is tear-downable, so the data volume is deleted on
+            // termination (inline block devices have no separate removalPolicy — this is
+            // the deletion control for a volume attached at launch).
+            deleteOnTermination: preview,
           }),
         },
       ],
@@ -232,5 +253,15 @@ export class ComputeStack extends Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
     recoveryAlarm.addAlarmAction(new cwActions.Ec2Action(cwActions.Ec2InstanceAction.RECOVER));
+
+    // Preview: expose the host's private IP so the in-VPC app can reach Kong directly
+    // over HTTP (SUPABASE_URL=http://<ip>:8000) — preview has no internal ALB/Edge stack.
+    if (preview) {
+      new CfnOutput(this, 'HostPrivateIpOutput', {
+        value: this.instance.instancePrivateIp,
+        description: 'Preview Supabase host private IP — set SUPABASE_URL=http://<ip>:8000',
+        exportName: 'SupabaseHostPrivateIp',
+      });
+    }
   }
 }

@@ -216,6 +216,13 @@ CRON
 }
 
 setup_backups() {
+  # Preview profile: SKIP_BACKUPS is exported from user-data (rendered by CDK). When set
+  # (non-empty) we skip ALL pgBackRest/WAL/cron wiring — it is the riskiest first-boot
+  # step and the backup vault does not exist in a preview stack. Fail-loud otherwise.
+  if [ -n "${SKIP_BACKUPS:-}" ]; then
+    log "skipping backups (preview)"
+    return 0
+  fi
   export BACKUP_BUCKET AWS_REGION
   install_backup_deps
   wait_for_db

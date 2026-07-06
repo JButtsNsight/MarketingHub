@@ -15,6 +15,13 @@ export interface DataStackProps extends StackProps {
   readonly dataKey: kms.IKey;
   readonly backupKey: kms.IKey;
   readonly secretsKey: kms.IKey;
+  // Tear-downable "preview" profile (default false). When true: buckets drop Object
+  // Lock and become fully deletable (DESTROY + autoDeleteObjects), the AWS Backup
+  // vault/plan/selection are skipped entirely, and every secret + the service-role CMK
+  // use a DESTROY removal policy. SSE-KMS, blockPublicAccess, enforceSSL, versioning,
+  // the JWT-signer, and all secret generation are unchanged. Production keeps RETAIN
+  // + COMPLIANCE Object Lock + the Vault-Locked backup tier.
+  readonly preview?: boolean;
 }
 
 export class DataStack extends Stack {
@@ -25,12 +32,23 @@ export class DataStack extends Stack {
   public readonly appConfigSecret: secretsmanager.Secret;
   public readonly storageCredsSecret: secretsmanager.Secret;
   public readonly smtpSecret: secretsmanager.Secret;
-  public readonly backupVault: backup.BackupVault;
+  // Skipped entirely in preview (no AWS Backup at all) — hence the definite-assignment
+  // assertion. Only the production (compliance) path and ObservabilityStack use it, and
+  // ObservabilityStack is not instantiated in preview.
+  public readonly backupVault!: backup.BackupVault;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
 
+    // Preview = tear-downable: no irreversible locks, everything deletable.
+    const preview = props.preview === true;
+    const retainOrDestroy = preview ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;
+
     // §10/§14 — Supabase Storage S3 backend. PHI-bearing objects.
+    // Object Lock cannot be enabled on a bucket we intend to delete, so preview OMITS it
+    // (and its COMPLIANCE default retention + the 7-yr noncurrent lifecycle) and instead
+    // makes the bucket fully deletable (DESTROY + autoDeleteObjects). SSE-KMS(+dataKey),
+    // blockPublicAccess ALL, enforceSSL, and versioning are kept in both modes.
     this.storageBucket = new s3.Bucket(this, 'StorageBucket', {
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: props.dataKey,
@@ -38,29 +56,39 @@ export class DataStack extends Stack {
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      objectLockEnabled: true,
-      // §10 — Object Lock is inert without a retention: storage-api PutObject sends no
-      // per-object retention header, so a bucket-level COMPLIANCE default is what actually
-      // makes each object version WORM. 2555 d (7 yr) so objects can't be hard-deleted out
-      // from under a DB restore, even by a privileged/root principal (§164.312(c)).
-      objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2555)),
-      lifecycleRules: [
-        {
-          id: 'storage-noncurrent-7yr',
-          enabled: true,
-          // Live (current) PHI objects stay in Standard so the app can read them; superseded
-          // (noncurrent) versions tier to Glacier and expire at the 7-yr window (§10). They
-          // can never expire early anyway — COMPLIANCE Object Lock pins each version 2555 d.
-          noncurrentVersionTransitions: [
-            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
-          ],
-          noncurrentVersionExpiration: Duration.days(2555),
-        },
-      ],
-      removalPolicy: RemovalPolicy.RETAIN,
+      ...(preview
+        ? {
+            removalPolicy: RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+          }
+        : {
+            objectLockEnabled: true,
+            // §10 — Object Lock is inert without a retention: storage-api PutObject sends no
+            // per-object retention header, so a bucket-level COMPLIANCE default is what actually
+            // makes each object version WORM. 2555 d (7 yr) so objects can't be hard-deleted out
+            // from under a DB restore, even by a privileged/root principal (§164.312(c)).
+            objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2555)),
+            lifecycleRules: [
+              {
+                id: 'storage-noncurrent-7yr',
+                enabled: true,
+                // Live (current) PHI objects stay in Standard so the app can read them; superseded
+                // (noncurrent) versions tier to Glacier and expire at the 7-yr window (§10). They
+                // can never expire early anyway — COMPLIANCE Object Lock pins each version 2555 d.
+                noncurrentVersionTransitions: [
+                  { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
+                ],
+                noncurrentVersionExpiration: Duration.days(2555),
+              },
+            ],
+            removalPolicy: RemovalPolicy.RETAIN,
+          }),
     });
 
     // §9/§14 — pgBackRest WAL/base backups + nightly pg_dump. 7-yr tier via Glacier.
+    // Preview OMITS Object Lock (can't delete a locked bucket) and its lifecycle, and
+    // makes the bucket fully deletable (DESTROY + autoDeleteObjects). SSE-KMS(+backupKey),
+    // blockPublicAccess ALL, enforceSSL, and versioning are kept in both modes.
     this.backupBucket = new s3.Bucket(this, 'BackupBucket', {
       encryption: s3.BucketEncryption.KMS,
       encryptionKey: props.backupKey,
@@ -68,25 +96,32 @@ export class DataStack extends Stack {
       versioned: true,
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       enforceSSL: true,
-      objectLockEnabled: true,
-      // Compliance-mode default retention aligned to the 7-yr window (§9/§10).
-      objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2555)),
-      lifecycleRules: [
-        {
-          id: 'backup-to-glacier-7yr',
-          enabled: true,
-          // Current objects age into Glacier; older WAL/base backups don't sit in Standard.
-          transitions: [
-            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
-          ],
-          // Noncurrent versions likewise tier down, then expire at the 7-yr window.
-          noncurrentVersionTransitions: [
-            { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
-          ],
-          noncurrentVersionExpiration: Duration.days(2555),
-        },
-      ],
-      removalPolicy: RemovalPolicy.RETAIN,
+      ...(preview
+        ? {
+            removalPolicy: RemovalPolicy.DESTROY,
+            autoDeleteObjects: true,
+          }
+        : {
+            objectLockEnabled: true,
+            // Compliance-mode default retention aligned to the 7-yr window (§9/§10).
+            objectLockDefaultRetention: s3.ObjectLockRetention.compliance(Duration.days(2555)),
+            lifecycleRules: [
+              {
+                id: 'backup-to-glacier-7yr',
+                enabled: true,
+                // Current objects age into Glacier; older WAL/base backups don't sit in Standard.
+                transitions: [
+                  { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
+                ],
+                // Noncurrent versions likewise tier down, then expire at the 7-yr window.
+                noncurrentVersionTransitions: [
+                  { storageClass: s3.StorageClass.GLACIER, transitionAfter: Duration.days(30) },
+                ],
+                noncurrentVersionExpiration: Duration.days(2555),
+              },
+            ],
+            removalPolicy: RemovalPolicy.RETAIN,
+          }),
     });
 
     // §14 — require SSE-KMS with the *specific* CMK on upload. Default bucket encryption only
@@ -129,7 +164,7 @@ export class DataStack extends Stack {
       alias: 'alias/nsight-supabase-service-role',
       description: 'Dedicated CMK for the service_role (BYPASSRLS) crown-jewel secret',
       enableKeyRotation: true,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: retainOrDestroy,
       // §14 — segregated key policy: key admins ≠ usage principals, and NO unconditioned
       // kms:*-to-root. Replacing the default policy means an over-scoped IAM/break-glass role
       // holding a broad kms:Decrypt can no longer decrypt the crown-jewel data key directly:
@@ -175,7 +210,7 @@ export class DataStack extends Stack {
       description: 'Supabase service_role JWT (BYPASSRLS). Crown jewel — server-side/admin only.',
       encryptionKey: this.serviceRoleKey,
       secretObjectValue: {}, // populated at deploy time by JwtSigner custom resource
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: retainOrDestroy,
     });
 
     // §13 — non-crown-jewel compose config. A single secretsmanager.Secret can only
@@ -197,7 +232,7 @@ export class DataStack extends Stack {
         passwordLength: 40,
         excludePunctuation: true,
       },
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: retainOrDestroy,
     });
 
     // §12/§13 — deploy-time signer. Generates JWT_SECRET, signs ANON_KEY (→ app-config)
@@ -279,7 +314,7 @@ export class DataStack extends Stack {
         AWS_ACCESS_KEY_ID: SecretValue.unsafePlainText(storageAccessKey.accessKeyId),
         AWS_SECRET_ACCESS_KEY: storageAccessKey.secretAccessKey,
       },
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: retainOrDestroy,
     });
 
     // §13/§20.1 — SES SMTP creds for GoTrue. Shell only; populate AFTER SES production
@@ -293,8 +328,16 @@ export class DataStack extends Stack {
         SMTP_USER: SecretValue.unsafePlainText(''),
         SMTP_PASS: SecretValue.unsafePlainText(''),
       },
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: retainOrDestroy,
     });
+
+    // §9 — AWS Backup (Vault Lock + tiered plan). Skipped ENTIRELY in preview: a
+    // Vault-Locked (COMPLIANCE) vault cannot be deleted, which defeats a tear-downable
+    // preview, and nothing in preview references the vault (ObservabilityStack — its only
+    // other consumer — is not instantiated in preview).
+    if (preview) {
+      return;
+    }
 
     // §9 — Vault Lock (COMPLIANCE) on a dedicated backupKey-encrypted vault.
     // Setting changeableFor puts the lock into the immutable/compliance regime after the

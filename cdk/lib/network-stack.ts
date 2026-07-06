@@ -6,6 +6,9 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 
 export interface NetworkStackProps extends StackProps {
   readonly logsKey: kms.IKey;
+  // Tear-downable "preview" profile (default false). When true the flow-log group
+  // uses a DESTROY removal policy; the VPC, endpoints, SGs, and outputs are unchanged.
+  readonly preview?: boolean;
 }
 
 export class NetworkStack extends Stack {
@@ -54,11 +57,11 @@ export class NetworkStack extends Stack {
       });
     }
 
-    // KMS-encrypted, retained VPC flow logs (spec §6/§15).
+    // KMS-encrypted, retained VPC flow logs (spec §6/§15). Deletable in preview.
     const flowLogGroup = new logs.LogGroup(this, 'FlowLogGroup', {
       retention: logs.RetentionDays.THREE_MONTHS,
       encryptionKey: props.logsKey,
-      removalPolicy: RemovalPolicy.RETAIN,
+      removalPolicy: props.preview ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
     });
     this.vpc.addFlowLog('FlowLog', {
       destination: ec2.FlowLogDestination.toCloudWatchLogs(flowLogGroup),
