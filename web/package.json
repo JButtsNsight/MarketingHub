@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",

@@ -7,3 +7,9 @@ next-env.d.ts
 .env.local
 .DS_Store
 coverage/
+
+# Playwright e2e
+test-results/
+playwright-report/
+.playwright/
+test/e2e/.mh-auth.json
