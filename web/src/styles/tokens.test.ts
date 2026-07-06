@@ -55,6 +55,14 @@ describe("tokens.css", () => {
     }
   });
 
+  it("binds the one living accent to the governed brand teal #64A6A7", () => {
+    // Spec §2.1: teal #64A6A7 is "the one living accent"; raw off-palette hex is a lint error.
+    expect(ruleBody(":root")).toContain("--teal:#64A6A7");
+    // --accent must reference the governed teal token, not a freehand hex, in both themes.
+    expect(ruleBody(":root")).toContain("--accent:var(--teal)");
+    expect(ruleBody('html[data-theme="dark"]')).toContain("--accent:var(--teal)");
+  });
+
   it("resolves --status-failed to #D24747 (light) and #FF6363 (dark)", () => {
     expect(ruleBody(":root")).toContain("--status-failed:#D24747");
     expect(ruleBody('html[data-theme="dark"]')).toContain(

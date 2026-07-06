@@ -29,7 +29,7 @@
   --teal: #64A6A7;
   --coral: #FF8766;
   --blue-gray: #275C7F;
-  --accent: #3F8F8F; /* the one living accent (links, focus, tabs) */
+  --accent: var(--teal); /* the one living accent (links, focus, tabs) = teal #64A6A7 */
 
   /* status — semantic only; red = failure exclusively */
   --ok: #5E8E5A;
@@ -39,7 +39,7 @@
   --status-failed: #D24747;
   --idle: var(--faint);
 
-  --ring: rgba(63, 143, 143, 0.28); /* focus ring */
+  --ring: rgba(100, 166, 167, 0.28); /* focus ring — teal #64A6A7 */
   --ae: rgba(210, 71, 71, 0.95); /* alert glow — edge */
   --as: rgba(210, 71, 71, 0.55); /* alert glow — spread */
   --ag: rgba(210, 71, 71, 0.9); /* alert glow — glow */
@@ -68,7 +68,7 @@ html[data-theme="dark"] {
   --faint: #5E726B;
   --tx: #F0EAD6; /* eggshell */
 
-  --accent: #79C2C2;
+  --accent: var(--teal); /* the one living accent = teal #64A6A7 (governed brand token) */
 
   --ok: #84C08A;
   --run: #7FB0DA;
@@ -76,7 +76,7 @@ html[data-theme="dark"] {
   --fail: #FF6363;
   --status-failed: #FF6363;
 
-  --ring: rgba(121, 194, 194, 0.3);
+  --ring: rgba(100, 166, 167, 0.3); /* teal #64A6A7 */
   --ae: rgba(255, 99, 99, 0.5);
   --as: rgba(255, 99, 99, 0.2);
   --ag: rgba(255, 99, 99, 0.42);
