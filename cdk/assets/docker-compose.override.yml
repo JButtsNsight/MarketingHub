@@ -60,3 +60,14 @@ services:
     # Edge Functions dir lives on the persistent data volume (§7).
     volumes:
       - /mnt/pgdata/functions:/home/deno/functions:rw
+
+  supavisor:
+    # The pooler entrypoint (limits.sh) raises RLIMIT_NOFILE to 100000, but the
+    # container's default hard nofile limit is lower, so `ulimit -n 100000` fails
+    # ("Operation not permitted") and the container crash-loops (exit 1). Grant an
+    # explicit high nofile limit so the entrypoint succeeds. (Pooler is off the app's
+    # PostgREST path, but keep it healthy.)
+    ulimits:
+      nofile:
+        soft: 100000
+        hard: 100000
