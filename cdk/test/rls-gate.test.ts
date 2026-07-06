@@ -13,6 +13,8 @@ test('rls-gate.sql selects offending tables from pg_tables/pg_policies', () => {
   // exposed schemas covered
   expect(sql).toMatch(/'public'/);
   expect(sql).toMatch(/'storage'/);
+  // marketinghub is exposed to PostgREST (PGRST_DB_SCHEMAS) → the gate must cover it too
+  expect(sql).toMatch(/'marketinghub'/);
 });
 
 test('enable-rls-template.sql shows ENABLE + FORCE + deny-by-default + REVOKE/GRANT', () => {

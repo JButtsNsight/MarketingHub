@@ -5,7 +5,10 @@
 WITH exposed AS (
   SELECT t.schemaname, t.tablename, t.rowsecurity
   FROM pg_tables t
-  WHERE t.schemaname IN ('public', 'storage', 'auth', 'realtime')
+  -- `marketinghub` is exposed to PostgREST via PGRST_DB_SCHEMAS
+  -- (cdk/assets/docker-compose.override.yml), so a PostgREST-reachable table
+  -- there must also satisfy the deny-by-default gate — include it here.
+  WHERE t.schemaname IN ('public', 'storage', 'auth', 'realtime', 'marketinghub')
 ),
 policy_counts AS (
   SELECT p.schemaname, p.tablename, COUNT(*) AS n_policies

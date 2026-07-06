@@ -33,6 +33,16 @@ services:
       - "127.0.0.1:8002:8002/tcp"
     depends_on: {}
 
+  rest:
+    # PostgREST only serves schemas listed in PGRST_DB_SCHEMAS. The pinned bundle
+    # defaults to `public, storage, graphql_public`, which does NOT include the
+    # app's `marketinghub` schema — so every service_role query the Next.js server
+    # issues via `.schema('marketinghub')` (Accept-Profile: marketinghub) would fail
+    # with PGRST106 ("The schema must be one of the following: ..."). Expose it here.
+    # Keep the bundle defaults and APPEND marketinghub (never drop public/storage).
+    environment:
+      PGRST_DB_SCHEMAS: "public, storage, graphql_public, marketinghub"
+
   storage:
     # S3 backend against the dedicated, bucket-scoped bucket. Creds are injected via
     # the env-file ONLY for this service (render-env.sh), never the instance role.
