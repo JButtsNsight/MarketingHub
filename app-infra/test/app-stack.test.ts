@@ -80,8 +80,22 @@ test('app client uses OAuth code flow with the app idpresponse callback', () => 
     AllowedOAuthFlows: Match.arrayWith(['code']),
     AllowedOAuthFlowsUserPoolClient: true,
     CallbackURLs: Match.arrayWith(['https://marketinghub.nsightcare.com/oauth2/idpresponse']),
+    LogoutURLs: Match.arrayWith(['https://marketinghub.nsightcare.com/']),
     SupportedIdentityProviders: Match.arrayWith(['GoogleSAML']),
     GenerateSecret: true,
+  });
+});
+
+test('the task gets a COGNITO_LOGOUT_URL env var for the /logout redirect', () => {
+  const { template } = makeApp();
+  template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+    ContainerDefinitions: Match.arrayWith([
+      Match.objectLike({
+        Environment: Match.arrayWith([
+          Match.objectLike({ Name: 'COGNITO_LOGOUT_URL' }),
+        ]),
+      }),
+    ]),
   });
 });
 

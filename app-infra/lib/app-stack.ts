@@ -106,9 +106,24 @@ export class AppStack extends Stack {
         flows: { authorizationCodeGrant: true },
         scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
         callbackUrls: [`https://${appHostname}/oauth2/idpresponse`],
+        // Where the Cognito Hosted-UI /logout endpoint redirects the browser
+        // AFTER clearing the Cognito/SAML session. The app's /logout route hits
+        // the Hosted-UI logout with this as `logout_uri`; Cognito rejects any
+        // logout_uri not registered here. Landing on the app root re-triggers
+        // the ALB auth flow (i.e. a clean signed-out state).
+        logoutUrls: [`https://${appHostname}/`],
       },
     });
     userPoolClient.node.addDependency(samlIdp); // client references the IdP by name
+
+    // The fully-formed Cognito Hosted-UI logout URL the app's /logout route
+    // redirects to (after expiring the ALB session cookie). Passed to the
+    // container as env so the app owns no Cognito config of its own.
+    const postLogoutRedirect = `https://${appHostname}/`;
+    const cognitoLogoutUrl =
+      `https://${cognitoDomainPrefix}.auth.${this.region}.amazoncognito.com/logout` +
+      `?client_id=${userPoolClient.userPoolClientId}` +
+      `&logout_uri=${encodeURIComponent(postLogoutRedirect)}`;
 
     // The two authorization boundaries: admins + marketing staff. Google groups
     // map to these Cognito groups; app-layer authz reads `cognito:groups`.
@@ -162,6 +177,7 @@ export class AppStack extends Stack {
       environment: {
         PORT: String(APP_PORT),
         NEXT_PUBLIC_APP_NAME: 'MarketingHub',
+        COGNITO_LOGOUT_URL: cognitoLogoutUrl,
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
     });
