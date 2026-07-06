@@ -16,7 +16,7 @@ readonly SENTINEL="${DATA_MOUNT}/.supabase-initialized"
 readonly PGDATA_DIR="${DATA_MOUNT}/db/data"     # PGDATA
 readonly PGWAL_DIR="${DATA_MOUNT}/db/wal"       # pg_wal — SAME volume as PGDATA
 readonly FUNCTIONS_DIR="${DATA_MOUNT}/functions"
-readonly AWS_REGION="us-east-1"
+export AWS_REGION="us-east-1"   # exported (not readonly): render_env passes it as a command-prefix env, which bash forbids on a readonly var
 readonly STANZA="supabase"              # pgBackRest stanza (matches pgbackrest.conf)
 readonly DB_CONTAINER="supabase-db"     # pinned bundle's db container name
 # Secret ARNs are injected by user-data (rendered from CDK); fail if unset.
