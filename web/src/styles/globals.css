@@ -1124,6 +1124,98 @@ input[type="file"].control {
   }
 }
 
+/* hero split: one big tile + one narrow tile */
+.split-hero {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .split-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Campaign performance charts ── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.chart-card {
+  --r: 14px;
+  padding: 16px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chart-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chart-title {
+  font-family: var(--fd);
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.chart-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.chart-value {
+  font-family: var(--fm);
+  font-size: 22px;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+.chart-delta {
+  font-family: var(--fm);
+  font-size: 12px;
+  color: var(--muted);
+}
+.chart-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-svg {
+  width: 100%;
+  display: block;
+}
+/* The one sanctioned graph drop-shadow (per the design language). */
+.chart-line {
+  filter: drop-shadow(0 2px 3px rgba(21, 48, 63, 0.28));
+}
+html[data-theme="dark"] .chart-line {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+.chart-x {
+  display: flex;
+  justify-content: space-between;
+}
+.chart-x span {
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+/* compact chip cloud (small Backend services tile) */
+.svc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.svc-count {
+  font-family: var(--fm);
+  font-size: 22px;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+
 /* pagination */
 .pager {
   display: flex;
