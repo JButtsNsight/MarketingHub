@@ -14,8 +14,9 @@ import { getUser } from "@/lib/auth";
 import { DEFAULT_SKIN, DEFAULT_THEME } from "@/lib/theme";
 
 export const metadata = {
-  title: "MarketingHub",
-  description: "Campaign templates for NSight marketing.",
+  title: "MarketingHub Console",
+  description:
+    "Console for the MarketingHub self-hosted Supabase-on-AWS backend.",
 };
 
 // Restore the persisted theme/skin before first paint to avoid a flash.
