@@ -88,20 +88,24 @@ export default async function DatabaseRowsPage({
         <span className="pager-info">
           page {page} of {pageCount}
         </span>
-        <Link
-          className="pager-link"
-          aria-disabled={page <= 1}
-          href={`/database?page=${page - 1}`}
-        >
-          Previous
-        </Link>
-        <Link
-          className="pager-link"
-          aria-disabled={page >= pageCount}
-          href={`/database?page=${page + 1}`}
-        >
-          Next
-        </Link>
+        {page > 1 ? (
+          <Link className="pager-link" href={`/database?page=${page - 1}`}>
+            Previous
+          </Link>
+        ) : (
+          <span className="pager-link" aria-disabled="true">
+            Previous
+          </span>
+        )}
+        {page < pageCount ? (
+          <Link className="pager-link" href={`/database?page=${page + 1}`}>
+            Next
+          </Link>
+        ) : (
+          <span className="pager-link" aria-disabled="true">
+            Next
+          </span>
+        )}
       </div>
     </>
   );

@@ -112,7 +112,7 @@ export default async function StoragePage({
       <nav className="tabs" aria-label="Breadcrumb">
         {trail.map((c, i) => (
           <Link
-            key={c.prefix || "root"}
+            key={i}
             href={`/storage?prefix=${encodeURIComponent(c.prefix)}`}
             className={i === trail.length - 1 ? "tab on" : "tab"}
           >
