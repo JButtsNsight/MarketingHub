@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import 'source-map-support/register';
-import { App } from 'aws-cdk-lib';
+import { App, Tags } from 'aws-cdk-lib';
 import { FoundationStack } from '../lib/foundation-stack';
 import { NetworkStack } from '../lib/network-stack';
 import { DataStack } from '../lib/data-stack';
@@ -19,6 +19,17 @@ const env = {
 // irreversible locks, no public Studio/Edge, no observability) reached in-VPC via Kong.
 const previewCtx = app.node.tryGetContext('previewMode');
 const preview = previewCtx === true || previewCtx === 'true';
+
+// Stack-level tags (propagate to every taggable resource). These mirror the
+// tags applied to the deployed Supabase* CloudFormation stacks out-of-band on
+// 2026-07-14 so the next `cdk deploy` preserves rather than strips them.
+// NOTE: a CloudFormation update of SupabaseCompute replaces the EC2 host
+// (AMI resolved via SSM latest) — do not deploy for tags alone.
+Tags.of(app).add('Environment', preview ? 'preview' : 'production');
+Tags.of(app).add('Project', 'marketinghub');
+Tags.of(app).add('Owner', 'jbutts@nsightcare.com');
+Tags.of(app).add('ManagedBy', 'cdk');
+Tags.of(app).add('DataClassification', 'phi');
 
 const foundation = new FoundationStack(app, 'SupabaseFoundation', { env, preview });
 const network = new NetworkStack(app, 'SupabaseNetwork', { env, preview, logsKey: foundation.logsKey });
