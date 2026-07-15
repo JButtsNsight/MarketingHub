@@ -26,7 +26,10 @@ COPY . .
 RUN npm run build
 
 # ---- runner: distroless Node 24, non-root ----
-FROM gcr.io/distroless/nodejs24-debian12:nonroot AS runner
+# debian13 is the maintained distroless line; the debian12 variants were frozen
+# upstream in Feb 2026 (tags aliased deprecated-public-image-*) and stopped
+# receiving Node security patches (stuck at 24.14.0 with known CVEs).
+FROM gcr.io/distroless/nodejs24-debian13:nonroot AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
