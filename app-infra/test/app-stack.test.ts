@@ -194,7 +194,9 @@ test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a p
         Secrets: Match.arrayWith([
           Match.objectLike({
             Name: 'SUPABASE_SERVICE_ROLE_KEY',
-            ValueFrom: SERVICE_ROLE_SECRET_ARN,
+            // JSON-field form: the secret is a JSON blob; ECS extracts the
+            // SERVICE_ROLE_KEY field (<arn>:<json-key>:<version-stage>:<version-id>).
+            ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
           }),
         ]),
       }),
@@ -535,7 +537,9 @@ test('preview: SUPABASE_URL + region envs and the service-role SECRET are still 
         Secrets: Match.arrayWith([
           Match.objectLike({
             Name: 'SUPABASE_SERVICE_ROLE_KEY',
-            ValueFrom: SERVICE_ROLE_SECRET_ARN,
+            // JSON-field form: the secret is a JSON blob; ECS extracts the
+            // SERVICE_ROLE_KEY field (<arn>:<json-key>:<version-stage>:<version-id>).
+            ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
           }),
         ]),
       }),
