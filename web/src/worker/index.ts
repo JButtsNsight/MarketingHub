@@ -57,7 +57,7 @@ function positiveNumber(raw: string | undefined, fallback: number): number {
 
 /** Dispatcher config from env with documented defaults (see the plan doc). */
 export function buildConfigFromEnv(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
 ): DispatcherConfig {
   return {
     pollMs: positiveNumber(env.SMS_POLL_INTERVAL_MS, DEFAULTS.pollMs),
