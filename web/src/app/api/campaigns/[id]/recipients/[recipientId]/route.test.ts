@@ -70,9 +70,9 @@ const CAMPAIGN_ID = "11111111-2222-3333-4444-555555555555";
 const RECIPIENT_ID = "66666666-7777-8888-9999-000000000000";
 
 /** Next 15 route context: params is a Promise. */
-function ctx() {
+function ctx(id: string = CAMPAIGN_ID, recipientId: string = RECIPIENT_ID) {
   return {
-    params: Promise.resolve({ id: CAMPAIGN_ID, recipientId: RECIPIENT_ID }),
+    params: Promise.resolve({ id, recipientId }),
   };
 }
 
@@ -115,6 +115,26 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
   test("400 on malformed JSON", async () => {
     const res = await PATCH(patchReq("{not json"), ctx());
     expect(res.status).toBe(400);
+  });
+
+  test("404 (not 500) for a non-UUID recipientId, before any repo call", async () => {
+    const res = await PATCH(
+      patchReq({ action: "retry" }),
+      ctx(CAMPAIGN_ID, "not-a-uuid"),
+    );
+    expect(res.status).toBe(404);
+    expect(h.retryRecipient).not.toHaveBeenCalled();
+    expect(h.markRecipientFailed).not.toHaveBeenCalled();
+  });
+
+  test("404 (not 500) for a non-UUID campaign id, before any repo call", async () => {
+    const res = await PATCH(
+      patchReq({ action: "mark_failed" }),
+      ctx("not-a-uuid", RECIPIENT_ID),
+    );
+    expect(res.status).toBe(404);
+    expect(h.retryRecipient).not.toHaveBeenCalled();
+    expect(h.markRecipientFailed).not.toHaveBeenCalled();
   });
 
   test("400 + issues on an unknown action", async () => {

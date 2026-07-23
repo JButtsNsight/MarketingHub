@@ -154,7 +154,10 @@ describe("POST /api/webhooks/simpletexting — unsubscribe", () => {
 
 describe("POST /api/webhooks/simpletexting — delivery reports", () => {
   test("delivered: reconciles the matched recipient", async () => {
-    h.findRecipientForDeliveryReport.mockResolvedValue({ id: "r1" });
+    h.findRecipientForDeliveryReport.mockResolvedValue({
+      id: "r1",
+      st_message_id: null,
+    });
     const payload = {
       messageId: "st-msg-1",
       status: "DELIVERED",
@@ -169,12 +172,32 @@ describe("POST /api/webhooks/simpletexting — delivery reports", () => {
     });
     expect(h.applyDeliveryReport).toHaveBeenCalledWith(
       "r1",
-      expect.objectContaining({ delivered: true, stMessageId: "st-msg-1" }),
+      expect.objectContaining({
+        delivered: true,
+        stMessageId: "st-msg-1",
+        // the row's known id travels along so the repo never overwrites a
+        // DIFFERENT already-learned st_message_id
+        currentStMessageId: null,
+      }),
     );
     expect(h.recordWebhookEvent).toHaveBeenCalledWith(
       "delivery_report",
       payload,
       "r1",
+    );
+  });
+
+  test("passes the matched row's known st_message_id through as currentStMessageId", async () => {
+    h.findRecipientForDeliveryReport.mockResolvedValue({
+      id: "r9",
+      st_message_id: "st-msg-9",
+    });
+    const payload = { messageId: "st-msg-9", status: "DELIVERED" };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+    expect(h.applyDeliveryReport).toHaveBeenCalledWith(
+      "r9",
+      expect.objectContaining({ currentStMessageId: "st-msg-9" }),
     );
   });
 
@@ -228,6 +251,19 @@ describe("POST /api/webhooks/simpletexting — unknown + malformed", () => {
     expect(h.recordWebhookEvent).toHaveBeenCalledWith(
       "unknown",
       payload,
+      null,
+    );
+  });
+
+  test("wraps a literal 'null' body as {unparsed} so the NOT NULL audit insert survives", async () => {
+    const res = await POST(postReq("null"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    // raw=null would violate sms_webhook_events.raw NOT NULL and silently
+    // drop the promised audit row — it must travel wrapped instead.
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "unknown",
+      { unparsed: "null" },
       null,
     );
   });

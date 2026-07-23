@@ -110,6 +110,14 @@ describe("GET /api/campaigns/[id]", () => {
     expect(h.getCampaignRecipients).not.toHaveBeenCalled();
   });
 
+  test("404 (not 500) for a non-UUID path id, before any repo call", async () => {
+    const res = await GET(getReq(marketingHeaders()), ctx("not-a-uuid"));
+    expect(res.status).toBe(404);
+    // never reaches PostgREST — a raw non-UUID would 22P02 → thrown → 500
+    expect(h.getCampaign).not.toHaveBeenCalled();
+    expect(h.getCampaignRecipients).not.toHaveBeenCalled();
+  });
+
   test("200 with campaign + counts + recipients", async () => {
     const campaign = { id: ID, status: "scheduled" };
     const counts = { pending: 3, sent: 1 };
@@ -141,6 +149,14 @@ describe("PATCH /api/campaigns/[id]", () => {
   test("400 on malformed JSON", async () => {
     const res = await PATCH(patchReq("{not json"), ctx());
     expect(res.status).toBe(400);
+  });
+
+  test("404 (not 500) for a non-UUID path id, before any repo call", async () => {
+    const res = await PATCH(patchReq({ action: "pause" }), ctx("not-a-uuid"));
+    expect(res.status).toBe(404);
+    expect(h.pauseCampaign).not.toHaveBeenCalled();
+    expect(h.resumeCampaign).not.toHaveBeenCalled();
+    expect(h.cancelCampaign).not.toHaveBeenCalled();
   });
 
   test("400 + issues on an unknown action", async () => {

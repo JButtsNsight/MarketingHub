@@ -21,20 +21,21 @@ describe("buildConfigFromEnv", () => {
     });
   });
 
-  test("honors the four env overrides", () => {
+  test("honors the five env overrides", () => {
     expect(
       buildConfigFromEnv({
         SMS_POLL_INTERVAL_MS: "5000",
         SMS_CLAIM_BATCH: "10",
         SMS_SEND_RATE_PER_SEC: "5",
         SMS_CLAIM_TTL_S: "60",
+        SMS_MAX_ATTEMPTS: "5",
       }),
     ).toEqual({
       pollMs: 5_000,
       batchSize: 10,
       claimTtlSeconds: 60,
       ratePerSecond: 5,
-      maxAttempts: 3,
+      maxAttempts: 5,
     });
   });
 
@@ -45,6 +46,7 @@ describe("buildConfigFromEnv", () => {
         SMS_CLAIM_BATCH: "0",
         SMS_SEND_RATE_PER_SEC: "-2",
         SMS_CLAIM_TTL_S: "",
+        SMS_MAX_ATTEMPTS: "lots",
       }),
     ).toEqual({
       pollMs: 30_000,

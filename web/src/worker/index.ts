@@ -70,7 +70,7 @@ export function buildConfigFromEnv(
       env.SMS_SEND_RATE_PER_SEC,
       DEFAULTS.ratePerSecond,
     ),
-    maxAttempts: DEFAULTS.maxAttempts,
+    maxAttempts: positiveNumber(env.SMS_MAX_ATTEMPTS, DEFAULTS.maxAttempts),
   };
 }
 

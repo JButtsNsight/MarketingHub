@@ -189,6 +189,11 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     raw = { unparsed: rawText };
   }
+  // A literal 'null' body parses fine but raw=null would violate the audit
+  // table's NOT NULL and silently drop the promised evidence row.
+  if (payload === null || payload === undefined) {
+    raw = { unparsed: rawText };
+  }
 
   let kind: WebhookKind = "unknown";
   let matchedRecipientId: string | null = null;
@@ -214,6 +219,9 @@ export async function POST(req: Request): Promise<Response> {
         await applyDeliveryReport(recipient.id, {
           delivered: classified.delivered,
           stMessageId: classified.stMessageId,
+          // the known id travels along so the repo can refuse to overwrite a
+          // different already-learned st_message_id
+          currentStMessageId: recipient.st_message_id ?? null,
           detail: classified.delivered
             ? undefined
             : `delivery report: ${classified.status}`,

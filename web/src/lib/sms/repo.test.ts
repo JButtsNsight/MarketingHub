@@ -13,6 +13,7 @@ import {
   claimDueRecipients,
   completeDrainedCampaigns,
   createCampaign,
+  findActiveDuplicateCampaign,
   findRecipientForDeliveryReport,
   getCampaign,
   getCampaignCounts,
@@ -57,6 +58,7 @@ interface QueryLog {
   upsert: { row: unknown; options: unknown } | null;
   eq: Array<[string, unknown]>;
   in: Array<[string, unknown[]]>;
+  is: Array<[string, unknown]>;
   lte: Array<[string, unknown]>;
   order: Array<[string, unknown]>;
   limit: number | null;
@@ -94,6 +96,7 @@ function buildClient(results: MockResult[] = []) {
       upsert: null,
       eq: [],
       in: [],
+      is: [],
       lte: [],
       order: [],
       limit: null,
@@ -126,6 +129,10 @@ function buildClient(results: MockResult[] = []) {
     });
     q.in = vi.fn((col: string, vals: unknown[]) => {
       log.in.push([col, vals]);
+      return q;
+    });
+    q.is = vi.fn((col: string, val: unknown) => {
+      log.is.push([col, val]);
       return q;
     });
     q.lte = vi.fn((col: string, val: unknown) => {
@@ -396,12 +403,17 @@ describe("createCampaign", () => {
     }));
   }
 
-  test("inserts the campaign snapshot (message_body, DST-aware send_at, scheduled, created_by) then chunk-inserts recipients 200 at a time", async () => {
+  // DELIBERATE TEST UPDATE (defect F): the campaign is now born 'paused'
+  // (non-dispatchable) and only flips paused → scheduled AFTER the last
+  // recipient chunk lands — a crash mid-insert can no longer leave a partial
+  // campaign that would dispatch.
+  test("inserts the campaign snapshot as PAUSED, chunk-inserts recipients 200 at a time, then flips paused → scheduled as the final step", async () => {
     const { client, queries } = buildClient([
-      ok(campaignRow),
+      ok({ ...campaignRow, status: "paused" }),
       ok(null),
       ok(null),
       ok(null),
+      ok(campaignRow), // the final paused → scheduled flip
     ]);
     h.client = client;
 
@@ -413,6 +425,7 @@ describe("createCampaign", () => {
     );
 
     expect(created.id).toBe("c1");
+    expect(created.status).toBe("scheduled");
     expect(queries[0].schema).toBe("marketinghub");
     expect(queries[0].source).toBe("sms_campaigns");
     expect(queries[0].insert).toMatchObject({
@@ -424,14 +437,14 @@ describe("createCampaign", () => {
       send_date: "2026-08-05",
       // 2026-08-05 is EDT: 11:30 America/New_York === 15:30Z
       send_at: "2026-08-05T15:30:00.000Z",
-      status: "scheduled",
+      status: "paused",
       created_by: "amy@nsight.example",
     });
     expect(queries[0].single).toBe(true);
 
     // 450 recipients → 3 chunks of 200/200/50 into sms_campaign_recipients
-    expect(queries).toHaveLength(4);
-    const chunks = queries.slice(1);
+    expect(queries).toHaveLength(5);
+    const chunks = queries.slice(1, 4);
     expect(chunks.map((q) => q.source)).toEqual([
       "sms_campaign_recipients",
       "sms_campaign_recipients",
@@ -445,10 +458,36 @@ describe("createCampaign", () => {
     expect(firstRow.send_after).toBe("2026-08-05T15:30:00.000Z");
     expect(firstRow.status).toBe("pending");
     expect(firstRow.rendered_text).toBe("Hi Person 0");
+
+    // the go-live flip happens ONLY after the last chunk, guarded on paused
+    const flip = queries[4];
+    expect(flip.source).toBe("sms_campaigns");
+    expect(flip.update?.status).toBe("scheduled");
+    expect(flip.eq).toContainEqual(["id", "c1"]);
+    expect(flip.eq).toContainEqual(["status", "paused"]);
+    expect(flip.maybeSingle).toBe(true);
+  });
+
+  test("fails loud when the final paused → scheduled flip loses (campaign left visibly paused)", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(null), // flip matched 0 rows (someone canceled it mid-create)
+    ]);
+    h.client = client;
+
+    await expect(
+      createCampaign(validInput, "Hi {{firstName}}", prepared(10), user),
+    ).rejects.toThrow(/\[sms\] create-activate failed/);
+    expect(queries).toHaveLength(3);
   });
 
   test("accepts a pasted Monday board URL (schema transform reduces it to the id)", async () => {
-    const { client, queries } = buildClient([ok(campaignRow), ok(null)]);
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
     h.client = client;
 
     await createCampaign(
@@ -496,6 +535,54 @@ describe("createCampaign", () => {
 });
 
 // ---------------------------------------------------------------------------
+// findActiveDuplicateCampaign — creation idempotency backstop
+// ---------------------------------------------------------------------------
+describe("findActiveDuplicateCampaign", () => {
+  test("matches template_id + monday_board_id + send_date among scheduled|sending|paused", async () => {
+    const { client, queries } = buildClient([ok([campaignRow])]);
+    h.client = client;
+
+    const dupe = await findActiveDuplicateCampaign(
+      validInput.templateId,
+      "12345",
+      "2026-08-05",
+    );
+
+    expect(dupe?.id).toBe("c1");
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].eq).toContainEqual(["template_id", validInput.templateId]);
+    expect(queries[0].eq).toContainEqual(["monday_board_id", "12345"]);
+    expect(queries[0].eq).toContainEqual(["send_date", "2026-08-05"]);
+    // terminal campaigns (completed/canceled) never block a re-create
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["scheduled", "sending", "paused"],
+    ]);
+    expect(queries[0].limit).toBe(1);
+  });
+
+  test("returns null when no active duplicate exists", async () => {
+    const { client } = buildClient([ok([])]);
+    h.client = client;
+    expect(
+      await findActiveDuplicateCampaign(
+        validInput.templateId,
+        "12345",
+        "2026-08-05",
+      ),
+    ).toBeNull();
+  });
+
+  test("fails loud on a PostgREST error", async () => {
+    const { client } = buildClient([err("db down")]);
+    h.client = client;
+    await expect(
+      findActiveDuplicateCampaign(validInput.templateId, "12345", "2026-08-05"),
+    ).rejects.toThrow(/\[sms\].*db down/);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------
 describe("reads", () => {
@@ -527,6 +614,35 @@ describe("reads", () => {
     expect(list[0].counts.skipped).toBe(1);
     expect(list[0].counts.sent).toBe(0); // zero-filled
     expect(list[1].counts.sent).toBe(7);
+  });
+
+  test("listCampaignsWithCounts chunks >200 campaign ids across .in() queries and merges the counts", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({
+      ...campaignRow,
+      id: `c${i}`,
+    }));
+    const { client, queries } = buildClient([
+      ok(many),
+      ok([{ campaign_id: "c0", status: "pending", count: 3 }]),
+      ok([{ campaign_id: "c249", status: "sent", count: 7 }]),
+    ]);
+    h.client = client;
+
+    const list = await listCampaignsWithCounts();
+
+    // 1 campaigns read + 2 chunked counts-view reads (200/50)
+    expect(queries).toHaveLength(3);
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in[0][0]).toBe("campaign_id");
+    expect(queries[1].in[0][1]).toHaveLength(200);
+    expect(queries[2].in[0][1]).toHaveLength(50);
+    expect(queries[2].in[0][1]).toContain("c249");
+
+    // counts from BOTH chunks land on the right campaigns
+    expect(list).toHaveLength(250);
+    expect(list[0].counts.pending).toBe(3);
+    expect(list[249].counts.sent).toBe(7);
+    expect(list[1].counts.pending).toBe(0); // zero-filled
   });
 
   test("listCampaignsWithCounts with no campaigns returns [] without querying the view", async () => {
@@ -685,8 +801,13 @@ describe("campaign transitions", () => {
     expect(queries).toHaveLength(1);
   });
 
+  // DELIBERATE TEST UPDATE (defect A): retryRecipient now pre-checks the
+  // row's campaign status before flipping the row — the two lookup queries
+  // (recipient → campaign) precede the guarded update.
   test("retryRecipient re-queues failed_ambiguous|failed with send_after=now and re-opens a completed campaign", async () => {
     const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }), // recipient lookup
+      ok({ status: "completed" }), // campaign status pre-check
       ok({ ...recipientRow, status: "pending" }),
       ok(null),
     ]);
@@ -695,7 +816,14 @@ describe("campaign transitions", () => {
     const row = await retryRecipient("r1");
 
     expect(row?.id).toBe("r1");
-    const retry = queries[0];
+    const lookup = queries[0];
+    expect(lookup.source).toBe("sms_campaign_recipients");
+    expect(lookup.eq).toContainEqual(["id", "r1"]);
+    const statusCheck = queries[1];
+    expect(statusCheck.source).toBe("sms_campaigns");
+    expect(statusCheck.eq).toContainEqual(["id", "c1"]);
+
+    const retry = queries[2];
     expect(retry.source).toBe("sms_campaign_recipients");
     expect(retry.update).toMatchObject({
       status: "pending",
@@ -707,18 +835,48 @@ describe("campaign transitions", () => {
     expect(retry.in).toContainEqual(["status", ["failed_ambiguous", "failed"]]);
 
     // completed → sending re-open, guarded so other states are untouched
-    const reopen = queries[1];
+    const reopen = queries[3];
     expect(reopen.source).toBe("sms_campaigns");
     expect(reopen.update?.status).toBe("sending");
     expect(reopen.eq).toContainEqual(["id", "c1"]);
     expect(reopen.eq).toContainEqual(["status", "completed"]);
   });
 
-  test("retryRecipient returns null (409) without touching the campaign when the guard loses", async () => {
+  test("retryRecipient returns null (409) for a row in a CANCELED campaign without issuing any recipient update", async () => {
+    const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }),
+      ok({ status: "canceled" }),
+    ]);
+    h.client = client;
+
+    expect(await retryRecipient("r1")).toBeNull();
+
+    // Only the two read queries ran — the row was never flipped to pending
+    // (a pending row inside a canceled campaign could never dispatch NOR be
+    // retried/mark_failed again: it would be wedged forever).
+    expect(queries).toHaveLength(2);
+    for (const q of queries) expect(q.update).toBeNull();
+  });
+
+  test("retryRecipient returns null (409) for an unknown recipient id", async () => {
     const { client, queries } = buildClient([ok(null)]);
     h.client = client;
-    expect(await retryRecipient("r1")).toBeNull();
+    expect(await retryRecipient("r-missing")).toBeNull();
     expect(queries).toHaveLength(1);
+    expect(queries[0].update).toBeNull();
+  });
+
+  // DELIBERATE TEST UPDATE (defect A): the lost-guard case now runs the two
+  // pre-check reads before the (losing) conditional update.
+  test("retryRecipient returns null (409) without touching the campaign when the guard loses", async () => {
+    const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }),
+      ok({ status: "sending" }),
+      ok(null),
+    ]);
+    h.client = client;
+    expect(await retryRecipient("r1")).toBeNull();
+    expect(queries).toHaveLength(3);
   });
 
   test("markRecipientFailed resolves failed_ambiguous → failed only", async () => {
@@ -954,11 +1112,14 @@ describe("dispatcher accessors", () => {
     expect(queries).toHaveLength(0);
   });
 
+  // DELIBERATE TEST UPDATE (defect E): a compensating counts re-check now
+  // follows the completed-update — asserted as queries[3] here.
   test("completeDrainedCampaigns completes sending campaigns with zero active rows (guarded)", async () => {
     const { client, queries } = buildClient([
       ok([{ id: "c1" }, { id: "c2" }, { id: "c3" }]),
       ok([{ campaign_id: "c2" }]), // c2 still has active rows
       ok([{ id: "c1" }, { id: "c3" }]),
+      ok([]), // compensating re-check: nothing re-activated
     ]);
     h.client = client;
 
@@ -982,6 +1143,83 @@ describe("dispatcher accessors", () => {
     expect(complete.in).toContainEqual(["id", ["c1", "c3"]]);
     // guarded: a retryRecipient re-open between check and update must win
     expect(complete.eq).toContainEqual(["status", "sending"]);
+
+    // post-update re-check of just the completed ids; no compensation needed
+    expect(queries).toHaveLength(4);
+    expect(queries[3].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[3].in).toContainEqual(["campaign_id", ["c1", "c3"]]);
+  });
+
+  test("completeDrainedCampaigns compensates a retry that landed between the counts read and the update", async () => {
+    const { client, queries } = buildClient([
+      ok([{ id: "c1" }, { id: "c2" }]), // sending campaigns
+      ok([]), // first counts read: both look drained
+      ok([{ id: "c1" }, { id: "c2" }]), // completed update wins both
+      // re-check: a retryRecipient landed on c1 in the window — it now has an
+      // active pending row stranded inside a 'completed' campaign
+      ok([{ campaign_id: "c1" }]),
+      ok(null), // compensating completed → sending update
+    ]);
+    h.client = client;
+
+    const completed = await completeDrainedCampaigns();
+
+    expect(queries[3].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[3].in).toContainEqual(["campaign_id", ["c1", "c2"]]);
+    expect(queries[3].in).toContainEqual([
+      "status",
+      ["pending", "claimed", "sending"],
+    ]);
+
+    const compensate = queries[4];
+    expect(compensate.source).toBe("sms_campaigns");
+    expect(compensate.update?.status).toBe("sending");
+    expect(compensate.in).toContainEqual(["id", ["c1"]]);
+    // guarded so a concurrent pause/cancel still wins over the re-open
+    expect(compensate.eq).toContainEqual(["status", "completed"]);
+
+    // only the campaign that STAYED completed is reported
+    expect(completed).toEqual(["c2"]);
+  });
+
+  test("completeDrainedCampaigns chunks >200 sending ids on the counts view and merges the active set", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({ id: `c${i}` }));
+    const drained = many
+      .map((r) => r.id)
+      .filter((id) => id !== "c0" && id !== "c249");
+    const { client, queries } = buildClient([
+      ok(many),
+      ok([{ campaign_id: "c0" }]), // chunk 1: c0 still active
+      ok([{ campaign_id: "c249" }]), // chunk 2: c249 still active
+      ok(drained.map((id) => ({ id }))),
+    ]);
+    h.client = client;
+
+    const completed = await completeDrainedCampaigns();
+
+    // two chunked counts-view reads (200/50), both status-scoped
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in).toContainEqual([
+      "campaign_id",
+      many.slice(0, 200).map((r) => r.id),
+    ]);
+    expect(queries[1].in).toContainEqual([
+      "status",
+      ["pending", "claimed", "sending"],
+    ]);
+    expect(queries[2].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[2].in).toContainEqual([
+      "campaign_id",
+      many.slice(200).map((r) => r.id),
+    ]);
+
+    // hits from BOTH chunks are excluded from the completed update
+    const complete = queries[3];
+    expect(complete.source).toBe("sms_campaigns");
+    expect(complete.update?.status).toBe("completed");
+    expect(complete.in).toContainEqual(["id", drained]);
+
+    expect(completed).toEqual(drained);
   });
 
   test("completeDrainedCampaigns is a no-op when nothing is sending or nothing drained", async () => {
@@ -1114,6 +1352,10 @@ describe("webhook accessors", () => {
       "status",
       ["sent", "sending", "failed_ambiguous"],
     ]);
+    // ...and ONLY rows that never learned a message id: a 'sent' row that
+    // already carries a DIFFERENT st_message_id belongs to another message
+    // and must never be matched (and then corrupted) by the phone fallback.
+    expect(byPhone.is).toContainEqual(["st_message_id", null]);
     expect(byPhone.order).toContainEqual(["updated_at", { ascending: false }]);
     expect(byPhone.limit).toBe(1);
   });
@@ -1175,6 +1417,39 @@ describe("webhook accessors", () => {
       status: "undelivered",
       last_error: "carrier rejected",
     });
+  });
+
+  test("applyDeliveryReport never overwrites a DIFFERENT known st_message_id (status still settles)", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "delivered", st_message_id: "st-old" }),
+    ]);
+    h.client = client;
+
+    const row = await applyDeliveryReport("r1", {
+      delivered: true,
+      stMessageId: "st-9",
+      currentStMessageId: "st-old",
+    });
+
+    expect(row?.status).toBe("delivered");
+    expect(queries[0].update?.status).toBe("delivered");
+    // the row already learned a different id — keep it
+    expect(queries[0].update).not.toHaveProperty("st_message_id");
+  });
+
+  test("applyDeliveryReport re-writes st_message_id when it matches the row's known id", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "delivered", st_message_id: "st-9" }),
+    ]);
+    h.client = client;
+
+    await applyDeliveryReport("r1", {
+      delivered: true,
+      stMessageId: "st-9",
+      currentStMessageId: "st-9",
+    });
+
+    expect(queries[0].update?.st_message_id).toBe("st-9");
   });
 
   test("applyDeliveryReport returns null when the row is not in a settleable status", async () => {

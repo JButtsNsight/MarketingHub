@@ -73,6 +73,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Split values into IN_CHUNK-sized slices for `.in()` filters (URL length). */
+function inChunks<T>(values: T[]): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += IN_CHUNK) {
+    chunks.push(values.slice(i, i + IN_CHUNK));
+  }
+  return chunks;
+}
+
 // ---------------------------------------------------------------------------
 // Creation
 // ---------------------------------------------------------------------------
@@ -201,9 +210,12 @@ export async function getSuppressedSet(
  * instant (`send_at`); every recipient starts with `send_after = send_at`.
  *
  * Recipients are inserted in chunks of 200. NOT transactional (PostgREST has
- * no multi-statement transactions) — acceptable at hundreds of rows: on a
- * chunk failure the campaign is best-effort marked `canceled` (so a partial
- * outbox can never send) and the error is re-thrown.
+ * no multi-statement transactions), so the campaign is born `paused` — a
+ * non-dispatchable state — and only flips paused → `scheduled` as the FINAL
+ * step, after the last chunk lands. A crash mid-insert therefore leaves a
+ * visible paused campaign that can never dispatch, not a live partial one.
+ * On a chunk failure the campaign is additionally best-effort marked
+ * `canceled` and the error is re-thrown; a lost final flip fails loud.
  */
 export async function createCampaign(
   input: CampaignCreateInput,
@@ -223,7 +235,7 @@ export async function createCampaign(
       message_body: messageBody,
       send_date: parsed.sendDate,
       send_at: sendAt,
-      status: "scheduled",
+      status: "paused",
       created_by: user.email,
     })
     .select()
@@ -256,7 +268,44 @@ export async function createCampaign(
     }
   }
 
-  return campaign;
+  // Go live only now that every outbox row exists. Guarded on 'paused' and
+  // fail-loud when the flip loses (e.g. someone canceled it mid-create).
+  const { data: activated, error: activateError } = await campaigns()
+    .update({ status: "scheduled", updated_at: nowIso() })
+    .eq("id", campaign.id)
+    .eq("status", "paused")
+    .select()
+    .maybeSingle();
+  if (activateError) fail("create-activate", activateError.message);
+  if (!activated) {
+    fail(
+      "create-activate",
+      `campaign ${campaign.id} was no longer paused after inserting recipients`,
+    );
+  }
+  return activated as SmsCampaign;
+}
+
+/**
+ * Idempotency backstop for creation: an existing campaign with the same
+ * template + board + send date that is still live (`scheduled`/`sending`/
+ * `paused`) — a double-submit would text the same board twice. Terminal
+ * campaigns (completed/canceled) never block a deliberate re-create.
+ */
+export async function findActiveDuplicateCampaign(
+  templateId: string,
+  mondayBoardId: string,
+  sendDate: string,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .select("*")
+    .eq("template_id", templateId)
+    .eq("monday_board_id", mondayBoardId)
+    .eq("send_date", sendDate)
+    .in("status", ["scheduled", "sending", "paused"])
+    .limit(1);
+  if (error) fail("find-duplicate", error.message);
+  return ((data ?? []) as SmsCampaign[])[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,14 +344,16 @@ export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
   const rows = (data ?? []) as SmsCampaign[];
   if (rows.length === 0) return [];
 
-  const { data: countRows, error: countsError } = await countsView()
-    .select("*")
-    .in(
-      "campaign_id",
-      rows.map((c) => c.id),
-    );
-  if (countsError) fail("list-counts", countsError.message);
-  const byCampaign = foldCounts((countRows ?? []) as CampaignCounts[]);
+  // Chunked like getSuppressedSet — PostgREST .in() filters travel in the URL.
+  const countRows: CampaignCounts[] = [];
+  for (const chunk of inChunks(rows.map((c) => c.id))) {
+    const { data: chunkRows, error: countsError } = await countsView()
+      .select("*")
+      .in("campaign_id", chunk);
+    if (countsError) fail("list-counts", countsError.message);
+    countRows.push(...((chunkRows ?? []) as CampaignCounts[]));
+  }
+  const byCampaign = foldCounts(countRows);
 
   return rows.map((campaign) => ({
     ...campaign,
@@ -433,10 +484,33 @@ export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
  * `pending`, and re-open its campaign (`completed` → `sending`) so the
  * dispatcher picks it up. last_error is kept for audit until the next attempt
  * overwrites it.
+ *
+ * Refuses (null → 409) when the row's campaign is `canceled` BEFORE touching
+ * the row: nothing transitions a campaign out of `canceled` and the claim RPC
+ * only serves `sending` campaigns, so a `pending` row inside a canceled
+ * campaign could never dispatch — and could never be retried or mark_failed
+ * again either (both guards exclude `pending`). It would be wedged forever.
  */
 export async function retryRecipient(
   id: string,
 ): Promise<SmsCampaignRecipient | null> {
+  const { data: rowData, error: lookupError } = await recipients()
+    .select("campaign_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (lookupError) fail("retry-lookup", lookupError.message);
+  if (!rowData) return null;
+  const campaignId = (rowData as { campaign_id: string }).campaign_id;
+
+  const { data: campaignData, error: statusError } = await campaigns()
+    .select("status")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (statusError) fail("retry-campaign-status", statusError.message);
+  const campaignStatus = (campaignData as { status: CampaignStatus } | null)
+    ?.status;
+  if (campaignStatus === "canceled") return null;
+
   const { data, error } = await recipients()
     .update({
       status: "pending",
@@ -730,10 +804,40 @@ const ACTIVE_RECIPIENT_STATUSES: RecipientStatus[] = [
 ];
 
 /**
+ * The subset of `campaignIds` that still have active (pending|claimed|
+ * sending) recipient rows, via the counts view — chunked per `.in()` like
+ * getSuppressedSet (PostgREST filters travel in the URL).
+ */
+async function campaignsWithActiveRows(
+  campaignIds: string[],
+): Promise<Set<string>> {
+  const active = new Set<string>();
+  for (const chunk of inChunks(campaignIds)) {
+    const { data, error } = await countsView()
+      .select("campaign_id")
+      .in("campaign_id", chunk)
+      .in("status", ACTIVE_RECIPIENT_STATUSES);
+    if (error) fail("complete-drained-counts", error.message);
+    for (const row of (data ?? []) as Array<{ campaign_id: string }>) {
+      active.add(row.campaign_id);
+    }
+  }
+  return active;
+}
+
+/**
  * Drain check: `sending` campaigns with zero rows left in
  * pending|claimed|sending become `completed`. The final update is still
  * guarded on `status='sending'` so a concurrent pause/cancel (or a
  * retryRecipient re-open) between the check and the update wins.
+ *
+ * TOCTOU compensation: a retryRecipient that lands between the counts read
+ * and the guarded update sees the campaign still `sending` (its re-open
+ * matches 0 rows) while our update then completes it — stranding the fresh
+ * `pending` row inside a `completed` campaign. After completing, the counts
+ * are re-read for just the completed ids and any campaign that regained
+ * active rows is re-opened `completed` → `sending`; only campaigns that
+ * STAYED completed are returned.
  */
 export async function completeDrainedCampaigns(): Promise<string[]> {
   const { data, error } = await campaigns()
@@ -743,16 +847,7 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
   const sendingIds = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
   if (sendingIds.length === 0) return [];
 
-  const { data: activeRows, error: activeError } = await countsView()
-    .select("campaign_id")
-    .in("campaign_id", sendingIds)
-    .in("status", ACTIVE_RECIPIENT_STATUSES);
-  if (activeError) fail("complete-drained-counts", activeError.message);
-  const active = new Set(
-    ((activeRows ?? []) as Array<{ campaign_id: string }>).map(
-      (r) => r.campaign_id,
-    ),
-  );
+  const active = await campaignsWithActiveRows(sendingIds);
 
   const drained = sendingIds.filter((id) => !active.has(id));
   if (drained.length === 0) return [];
@@ -763,7 +858,23 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
     .eq("status", "sending")
     .select("id");
   if (completeError) fail("complete-drained-update", completeError.message);
-  return ((completedRows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  const completedIds = ((completedRows ?? []) as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
+  if (completedIds.length === 0) return [];
+
+  // Compensating re-check: re-open anything that regained active rows in the
+  // race window, guarded on 'completed' so a concurrent pause/cancel wins.
+  const reactivated = await campaignsWithActiveRows(completedIds);
+  if (reactivated.size > 0) {
+    const { error: reopenError } = await campaigns()
+      .update({ status: "sending", updated_at: nowIso() })
+      .in("id", Array.from(reactivated))
+      .eq("status", "completed");
+    if (reopenError) fail("complete-drained-reopen", reopenError.message);
+  }
+
+  return completedIds.filter((id) => !reactivated.has(id));
 }
 
 // ---------------------------------------------------------------------------
@@ -838,7 +949,9 @@ export async function recordWebhookEvent(
  * Locate the outbox row a delivery report refers to: by SimpleTexting
  * message id first (exact), else the newest row for the phone still awaiting
  * an outcome (`sent`/`sending`/`failed_ambiguous`) — the phone fallback is
- * what reconciles ambiguous rows whose st_message_id we never learned.
+ * what reconciles ambiguous rows whose st_message_id we never learned, so it
+ * ONLY considers rows with a null st_message_id (a `sent` row that already
+ * carries a DIFFERENT id belongs to another message and must not be matched).
  */
 export async function findRecipientForDeliveryReport(lookup: {
   stMessageId?: string | null;
@@ -860,6 +973,7 @@ export async function findRecipientForDeliveryReport(lookup: {
       .select("*")
       .eq("phone_e164", lookup.phone)
       .in("status", ["sent", "sending", "failed_ambiguous"])
+      .is("st_message_id", null)
       .order("updated_at", { ascending: false })
       .limit(1);
     if (error) fail("find-by-phone", error.message);
@@ -874,18 +988,33 @@ export async function findRecipientForDeliveryReport(lookup: {
  * Settle a recipient from a delivery report: `delivered`/`undelivered`.
  * Guarded to sent|sending|failed_ambiguous — the failed_ambiguous path IS
  * the automatic reconciliation lane (proof the ambiguous POST landed).
- * Backfills st_message_id when the report carries one we did not know.
+ * Backfills st_message_id when the report carries one we did not know, but
+ * NEVER overwrites a different already-learned id: callers pass the row's
+ * known value as `currentStMessageId`, and the id is only written when that
+ * value is null/unknown or equals the incoming one.
  */
 export async function applyDeliveryReport(
   id: string,
-  report: { delivered: boolean; stMessageId?: string | null; detail?: string },
+  report: {
+    delivered: boolean;
+    stMessageId?: string | null;
+    /** The row's st_message_id as the caller last read it. */
+    currentStMessageId?: string | null;
+    detail?: string;
+  },
 ): Promise<SmsCampaignRecipient | null> {
   const patch: Record<string, unknown> = {
     status: report.delivered ? "delivered" : "undelivered",
     claim_expires_at: null,
     updated_at: nowIso(),
   };
-  if (report.stMessageId) patch.st_message_id = report.stMessageId;
+  if (
+    report.stMessageId &&
+    (report.currentStMessageId == null ||
+      report.currentStMessageId === report.stMessageId)
+  ) {
+    patch.st_message_id = report.stMessageId;
+  }
   if (!report.delivered && report.detail) patch.last_error = report.detail;
 
   const { data, error } = await recipients()

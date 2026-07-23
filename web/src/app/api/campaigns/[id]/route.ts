@@ -30,6 +30,15 @@ function authErrorResponse(err: unknown): Response {
   throw err;
 }
 
+/**
+ * Path params reach PostgREST as uuid filters — a non-UUID would trigger
+ * Postgres 22P02 (thrown → 500). Guard up front: not a UUID = not found.
+ */
+const UuidSchema = z.string().uuid();
+function isUuid(value: string): boolean {
+  return UuidSchema.safeParse(value).success;
+}
+
 const PatchBodySchema = z.object({
   action: z.enum(["pause", "resume", "cancel"]),
 });
@@ -56,6 +65,9 @@ export async function GET(
   }
 
   const { id } = await context.params;
+  if (!isUuid(id)) {
+    return Response.json({ error: "Campaign not found" }, { status: 404 });
+  }
   const campaign = await getCampaign(id);
   if (!campaign) {
     return Response.json({ error: "Campaign not found" }, { status: 404 });
@@ -78,6 +90,11 @@ export async function PATCH(
     return authErrorResponse(err);
   }
 
+  const { id } = await context.params;
+  if (!isUuid(id)) {
+    return Response.json({ error: "Campaign not found" }, { status: 404 });
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -93,7 +110,6 @@ export async function PATCH(
     );
   }
 
-  const { id } = await context.params;
   const campaign = await TRANSITIONS[parsed.data.action](id);
   if (!campaign) {
     return Response.json(
