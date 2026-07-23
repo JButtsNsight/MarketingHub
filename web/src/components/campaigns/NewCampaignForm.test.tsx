@@ -238,6 +238,59 @@ describe("NewCampaignForm", () => {
     expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
   });
 
+  test("after a 201 the submit button STAYS disabled while navigation is pending", async () => {
+    // router.push is async — re-enabling the button on success opens a
+    // double-submit window that double-creates the campaign.
+    stubFetch({
+      "/api/monday/board-preview": { status: 200, body: PREVIEW },
+      "/api/campaigns": { status: 201, body: { id: "camp-9" } },
+    });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+    await loadBoard(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-15" },
+    });
+    const submit = screen.getByRole("button", { name: /create campaign/i });
+    await user.click(submit);
+
+    expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
+    expect(submit).toBeDisabled();
+  });
+
+  test("a 409 duplicate-campaign response shows a clear duplicate message", async () => {
+    stubFetch({
+      "/api/monday/board-preview": { status: 200, body: PREVIEW },
+      "/api/campaigns": {
+        status: 409,
+        body: { error: "duplicate-campaign" },
+      },
+    });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+    await loadBoard(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-15" },
+    });
+    await user.click(screen.getByRole("button", { name: /create campaign/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/an identical campaign already exists/i);
+    // The raw server slug is not user-facing copy.
+    expect(alert).not.toHaveTextContent(/^duplicate-campaign$/);
+    expect(push).not.toHaveBeenCalled();
+    // Error path — the button is usable again after the fix.
+    expect(
+      screen.getByRole("button", { name: /create campaign/i }),
+    ).toBeEnabled();
+  });
+
   test("surfaces the server's 400 error message on create", async () => {
     stubFetch({
       "/api/monday/board-preview": { status: 200, body: PREVIEW },
