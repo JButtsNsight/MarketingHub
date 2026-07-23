@@ -1,0 +1,245 @@
+import "server-only";
+
+import { getServiceClient } from "../supabase";
+import {
+  CampaignCreateInputSchema,
+  type CampaignCreateInput,
+  type RecipientStatus,
+  type SmsCampaign,
+} from "./schema";
+import { firstNameOf, renderSms } from "./render";
+import { sendAtForEasternDate } from "./schedule";
+
+/**
+ * Data access for SMS campaigns — the durable outbox behind the dispatcher
+ * worker and the campaign API routes. Every function talks to the
+ * `marketinghub` schema via the service-role PostgREST client and fails loud
+ * on unexpected PostgREST errors.
+ *
+ * Durability rule: every state transition here is a CONDITIONAL update
+ * (`.eq('status', expected)` / `.in('status', [...])`). Row count = won/lost;
+ * `null` return = lost the race (caller skips or routes 409). Never widen a
+ * guard — the at-most-once send accounting depends on them.
+ */
+
+const SCHEMA = "marketinghub";
+const CAMPAIGNS = "sms_campaigns";
+const RECIPIENTS = "sms_campaign_recipients";
+const SUPPRESSIONS = "sms_suppressions";
+
+/** Max values per PostgREST `.in()` filter (URL-length safety). */
+const IN_CHUNK = 200;
+/** Recipient rows per insert statement at creation time. */
+const INSERT_CHUNK = 200;
+
+/** Minimal identity to stamp ownership (Cognito user is compatible). */
+export interface CampaignCreator {
+  email: string;
+}
+
+function campaigns() {
+  return getServiceClient().schema(SCHEMA).from(CAMPAIGNS);
+}
+
+function recipients() {
+  return getServiceClient().schema(SCHEMA).from(RECIPIENTS);
+}
+
+function suppressions() {
+  return getServiceClient().schema(SCHEMA).from(SUPPRESSIONS);
+}
+
+function fail(op: string, message: string): never {
+  throw new Error(`[sms] ${op} failed: ${message}`);
+}
+
+/** updated_at is app-maintained (no DB trigger) — stamp it on every update. */
+function nowIso(): string {
+  return new Date().toISOString();
+}
+
+// ---------------------------------------------------------------------------
+// Creation
+// ---------------------------------------------------------------------------
+
+/**
+ * One recipient as extracted from a Monday board (Phase 4
+ * `fetchBoardRecipients` output is structurally compatible).
+ */
+export interface MondayRecipientRow {
+  mondayItemId: string;
+  name: string;
+  firstName: string;
+  phoneE164: string | null;
+  rawPhone: string;
+}
+
+/** Creation-time statuses — everything else is owned by the dispatcher. */
+export type PreparedRecipientStatus = Extract<
+  RecipientStatus,
+  "pending" | "suppressed" | "skipped"
+>;
+
+/** An outbox row ready to insert (campaign_id/send_after added by create). */
+export interface PreparedRecipient {
+  monday_item_id: string;
+  name: string;
+  first_name: string;
+  phone_e164: string | null;
+  rendered_text: string;
+  status: PreparedRecipientStatus;
+  last_error: string | null;
+}
+
+/**
+ * Pure creation-time classification of Monday rows into outbox rows:
+ *
+ * - unusable phone (`phoneE164` null)  → `skipped`, raw phone in last_error;
+ * - duplicate phone (first row wins)   → `skipped` with `phone_e164 = null` —
+ *   the DB has `unique (campaign_id, phone_e164)` and nulls are distinct, so
+ *   dupes MUST NOT carry the phone or the insert would violate it; the raw
+ *   phone is preserved in last_error for audit;
+ * - phone on the STOP list             → `suppressed` (phone kept);
+ * - otherwise                          → `pending`.
+ *
+ * `rendered_text` is snapshotted for every row (audit trail), even skipped.
+ */
+export function prepareRecipients(
+  mondayRows: MondayRecipientRow[],
+  body: string,
+  suppressedSet: ReadonlySet<string>,
+): PreparedRecipient[] {
+  const seenPhones = new Set<string>();
+
+  return mondayRows.map((row) => {
+    const firstName = row.firstName.trim() || firstNameOf(row.name);
+    const base = {
+      monday_item_id: row.mondayItemId,
+      name: row.name,
+      first_name: firstName,
+      rendered_text: renderSms(body, { name: row.name, firstName }),
+    };
+
+    if (!row.phoneE164) {
+      return {
+        ...base,
+        phone_e164: null,
+        status: "skipped" as const,
+        last_error: `skipped: no usable US phone (raw: ${row.rawPhone})`,
+      };
+    }
+    if (seenPhones.has(row.phoneE164)) {
+      return {
+        ...base,
+        phone_e164: null,
+        status: "skipped" as const,
+        last_error: `skipped: duplicate phone, first occurrence kept (raw: ${row.rawPhone})`,
+      };
+    }
+    seenPhones.add(row.phoneE164);
+
+    if (suppressedSet.has(row.phoneE164)) {
+      return {
+        ...base,
+        phone_e164: row.phoneE164,
+        status: "suppressed" as const,
+        last_error: "suppressed: phone is on the STOP list",
+      };
+    }
+    return {
+      ...base,
+      phone_e164: row.phoneE164,
+      status: "pending" as const,
+      last_error: null,
+    };
+  });
+}
+
+/**
+ * The subset of `phones` present on the STOP list, queried in chunks of
+ * 200 per `.in()` filter (PostgREST filters travel in the URL).
+ */
+export async function getSuppressedSet(
+  phones: Array<string | null>,
+): Promise<Set<string>> {
+  const unique = Array.from(
+    new Set(phones.filter((p): p is string => Boolean(p))),
+  );
+  const suppressed = new Set<string>();
+
+  for (let i = 0; i < unique.length; i += IN_CHUNK) {
+    const chunk = unique.slice(i, i + IN_CHUNK);
+    const { data, error } = await suppressions()
+      .select("phone_e164")
+      .in("phone_e164", chunk);
+    if (error) fail("suppressed-set", error.message);
+    for (const row of (data ?? []) as Array<{ phone_e164: string }>) {
+      suppressed.add(row.phone_e164);
+    }
+  }
+  return suppressed;
+}
+
+/**
+ * Create a campaign plus its outbox rows. The campaign row snapshots the
+ * template body (`message_body`) and the computed 11:30 AM America/New_York
+ * instant (`send_at`); every recipient starts with `send_after = send_at`.
+ *
+ * Recipients are inserted in chunks of 200. NOT transactional (PostgREST has
+ * no multi-statement transactions) — acceptable at hundreds of rows: on a
+ * chunk failure the campaign is best-effort marked `canceled` (so a partial
+ * outbox can never send) and the error is re-thrown.
+ */
+export async function createCampaign(
+  input: CampaignCreateInput,
+  messageBody: string,
+  prepared: PreparedRecipient[],
+  user: CampaignCreator,
+): Promise<SmsCampaign> {
+  const parsed = CampaignCreateInputSchema.parse(input);
+  const sendAt = sendAtForEasternDate(parsed.sendDate).toISOString();
+
+  const { data, error } = await campaigns()
+    .insert({
+      name: parsed.name,
+      template_id: parsed.templateId,
+      monday_board_id: parsed.mondayBoardId,
+      monday_phone_column_id: parsed.mondayPhoneColumnId,
+      message_body: messageBody,
+      send_date: parsed.sendDate,
+      send_at: sendAt,
+      status: "scheduled",
+      created_by: user.email,
+    })
+    .select()
+    .single();
+  if (error) fail("create", error.message);
+  const campaign = data as SmsCampaign;
+
+  const rows = prepared.map((r) => ({
+    ...r,
+    campaign_id: campaign.id,
+    send_after: sendAt,
+  }));
+
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK);
+    const { error: insertError } = await recipients().insert(chunk);
+    if (insertError) {
+      // Best-effort: a partially-populated campaign must never dispatch.
+      try {
+        await campaigns()
+          .update({ status: "canceled", updated_at: nowIso() })
+          .eq("id", campaign.id);
+      } catch {
+        // the original failure is the one worth surfacing
+      }
+      fail(
+        "create-recipients",
+        `chunk at ${i} (campaign ${campaign.id} canceled): ${insertError.message}`,
+      );
+    }
+  }
+
+  return campaign;
+}
