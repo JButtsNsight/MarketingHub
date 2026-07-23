@@ -1,0 +1,133 @@
+import { z } from "zod";
+
+// Pure module — imported by client components and the worker alike. Nothing
+// server-only or node-only may be imported here.
+
+/** Campaign lifecycle states. Mirrors the DB `status` check constraint. */
+export const CAMPAIGN_STATUSES = [
+  "scheduled",
+  "sending",
+  "paused",
+  "completed",
+  "canceled",
+] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/** Recipient (outbox row) states. Mirrors the DB `status` check constraint. */
+export const RECIPIENT_STATUSES = [
+  "pending",
+  "claimed",
+  "sending",
+  "sent",
+  "delivered",
+  "undelivered",
+  "failed",
+  "failed_ambiguous",
+  "suppressed",
+  "skipped",
+  "canceled",
+] as const;
+export type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
+
+/**
+ * Board input: a raw numeric board id, or a pasted Monday board URL
+ * (`https://<acct>.monday.com/boards/<id>[/views/...]`) from which the id is
+ * extracted. Anything else is rejected.
+ */
+const mondayBoardIdSchema = z
+  .string()
+  .trim()
+  .min(1, "mondayBoardId is required")
+  .transform((value) => {
+    const fromUrl = value.match(/boards\/(\d+)/);
+    return fromUrl ? fromUrl[1] : value;
+  })
+  .refine((value) => /^\d+$/.test(value), {
+    message: "mondayBoardId must be a numeric board id or a Monday board URL",
+  });
+
+/**
+ * `YYYY-MM-DD` and a real calendar date (rejects 2026-02-30 etc.). The
+ * 11:30 AM America/New_York instant is computed from this in schedule.ts.
+ */
+const sendDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "sendDate must be YYYY-MM-DD")
+  .refine(
+    (value) => {
+      const [year, month, day] = value.split("-").map(Number);
+      const roundTrip = new Date(Date.UTC(year, month - 1, day));
+      return (
+        roundTrip.getUTCFullYear() === year &&
+        roundTrip.getUTCMonth() === month - 1 &&
+        roundTrip.getUTCDate() === day
+      );
+    },
+    { message: "sendDate must be a real calendar date" },
+  );
+
+/** Validated input for creating an SMS campaign. */
+export const CampaignCreateInputSchema = z.object({
+  name: z.string().trim().min(1, "name is required"),
+  templateId: z.string().uuid("templateId must be a UUID"),
+  mondayBoardId: mondayBoardIdSchema,
+  mondayPhoneColumnId: z
+    .string()
+    .trim()
+    .min(1, "mondayPhoneColumnId is required"),
+  sendDate: sendDateSchema,
+});
+
+/** Validated create-input (post-transform: board URL reduced to its id). */
+export type CampaignCreateInput = z.infer<typeof CampaignCreateInputSchema>;
+
+/** A row of `marketinghub.sms_campaigns`. */
+export interface SmsCampaign {
+  id: string;
+  name: string;
+  template_id: string;
+  monday_board_id: string;
+  monday_phone_column_id: string;
+  /** Template body snapshot taken at creation time. */
+  message_body: string;
+  /** `YYYY-MM-DD` chosen by the user (interpreted in America/New_York). */
+  send_date: string;
+  /** The computed 11:30 AM America/New_York instant, as timestamptz. */
+  send_at: string;
+  status: CampaignStatus;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A row of `marketinghub.sms_campaign_recipients` (the outbox). */
+export interface SmsCampaignRecipient {
+  id: string;
+  campaign_id: string;
+  monday_item_id: string;
+  name: string;
+  first_name: string;
+  /** Null for skipped rows (invalid/duplicate phone) — raw noted in last_error. */
+  phone_e164: string | null;
+  /** Per-recipient rendered message snapshot (audit). */
+  rendered_text: string;
+  status: RecipientStatus;
+  /** POST attempts *started* (incremented on the claimed → sending transition). */
+  attempts: number;
+  /** Due instant; starts at the campaign's send_at, bumped by retry backoff. */
+  send_after: string;
+  claimed_at: string | null;
+  claim_expires_at: string | null;
+  st_message_id: string | null;
+  st_credits: number | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A row of the `sms_campaign_recipient_counts` view: campaign × status × n. */
+export interface CampaignCounts {
+  campaign_id: string;
+  status: RecipientStatus;
+  count: number;
+}
