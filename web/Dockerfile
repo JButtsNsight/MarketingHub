@@ -23,7 +23,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run build && npm run build:worker
 
 # ---- runner: distroless Node 24, non-root ----
 # debian13 is the maintained distroless line; the debian12 variants were frozen
@@ -41,6 +41,9 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+# SMS dispatcher worker: same image, separate entrypoint. The worker ECS
+# service overrides the command to ["worker.cjs"] (ENTRYPOINT is `node`).
+COPY --from=builder /app/.worker/worker.cjs ./worker.cjs
 
 EXPOSE 3000
 
