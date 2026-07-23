@@ -23,6 +23,7 @@ import { MondayConfigError } from "@/lib/monday/client";
 // test (render/schedule/schema are pure and stay real).
 const h = vi.hoisted(() => ({
   getTemplate: vi.fn(),
+  getBoardMeta: vi.fn(),
   fetchBoardRecipients: vi.fn(),
   getSuppressedSet: vi.fn(),
   prepareRecipients: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("@/lib/templates/repo", () => ({
 }));
 
 vi.mock("@/lib/monday/boards", () => ({
+  getBoardMeta: h.getBoardMeta,
   fetchBoardRecipients: h.fetchBoardRecipients,
 }));
 
@@ -149,6 +151,11 @@ function postReq(body: unknown, headers: HeadersInit = marketingHeaders()) {
 function primeHappyPath() {
   h.getTemplate.mockResolvedValue(textTemplate);
   h.findActiveDuplicateCampaign.mockResolvedValue(null);
+  h.getBoardMeta.mockResolvedValue({
+    id: "123456",
+    name: "Patients",
+    columns: [{ id: "phone_col", title: "Phone", type: "phone" }],
+  });
   h.fetchBoardRecipients.mockResolvedValue(mondayRows);
   h.getSuppressedSet.mockResolvedValue(new Set(["+15550000003"]));
   h.prepareRecipients.mockReturnValue(prepared);
@@ -265,6 +272,47 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
+  test("503 monday-not-configured when the board-meta check itself hits the missing token", async () => {
+    primeHappyPath();
+    h.getBoardMeta.mockRejectedValue(new MondayConfigError());
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(503);
+    const json = await res.json();
+    expect(json.error).toBe("monday-not-configured");
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
+  test("404 board-not-found when the board id does not resolve (no zero-recipient 201)", async () => {
+    primeHappyPath();
+    h.getBoardMeta.mockResolvedValue(null);
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toBe("board-not-found");
+    expect(h.getBoardMeta).toHaveBeenCalledWith("123456");
+    expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
+  test("400 naming the counts when nothing would send (zero pending recipients)", async () => {
+    primeHappyPath();
+    h.prepareRecipients.mockReturnValue([
+      { monday_item_id: "3", status: "skipped" },
+      { monday_item_id: "4", status: "suppressed" },
+    ]);
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/0 pending/);
+    expect(json.counts).toEqual({
+      pending: 0,
+      skipped: 1,
+      suppressed: 1,
+      total: 2,
+    });
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
   test("201 with id + counts on the happy path (board URL reduced to its id)", async () => {
     primeHappyPath();
     const res = await POST(postReq(validBody));
@@ -278,6 +326,8 @@ describe("POST /api/campaigns", () => {
       total: 4,
     });
 
+    // The board's existence is verified up front, by its numeric id.
+    expect(h.getBoardMeta).toHaveBeenCalledWith("123456");
     // The pasted board URL travels as its numeric id.
     expect(h.fetchBoardRecipients).toHaveBeenCalledWith("123456", "phone_col");
     // Suppressions are looked up for every fetched phone (nulls included —

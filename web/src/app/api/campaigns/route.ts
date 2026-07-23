@@ -1,6 +1,6 @@
 import { AuthError, requireUser } from "@/lib/auth";
 import { MondayConfigError } from "@/lib/monday/client";
-import { fetchBoardRecipients } from "@/lib/monday/boards";
+import { fetchBoardRecipients, getBoardMeta } from "@/lib/monday/boards";
 import {
   createCampaign,
   findActiveDuplicateCampaign,
@@ -112,6 +112,12 @@ export async function POST(req: Request): Promise<Response> {
   // Every page of the board — the preview's first-page sample is advisory.
   let mondayRows;
   try {
+    // Verify the board exists first: fetchBoardRecipients returns [] for an
+    // unknown/typo'd board id, which would otherwise become an empty 201.
+    const board = await getBoardMeta(input.mondayBoardId);
+    if (!board) {
+      return Response.json({ error: "board-not-found" }, { status: 404 });
+    }
     mondayRows = await fetchBoardRecipients(
       input.mondayBoardId,
       input.mondayPhoneColumnId,
@@ -125,14 +131,27 @@ export async function POST(req: Request): Promise<Response> {
 
   const suppressed = await getSuppressedSet(mondayRows.map((r) => r.phoneE164));
   const prepared = prepareRecipients(mondayRows, template.body, suppressed);
+
+  // A campaign nothing would send from is a mistake, not a campaign.
+  const counts = summarize(prepared);
+  if (counts.pending === 0) {
+    return Response.json(
+      {
+        error:
+          `Nothing would send: ${counts.pending} pending, ` +
+          `${counts.skipped} skipped, ${counts.suppressed} suppressed ` +
+          `of ${counts.total} board rows`,
+        counts,
+      },
+      { status: 400 },
+    );
+  }
+
   const campaign = await createCampaign(input, template.body, prepared, {
     email: user.email,
   });
 
-  return Response.json(
-    { id: campaign.id, counts: summarize(prepared) },
-    { status: 201 },
-  );
+  return Response.json({ id: campaign.id, counts }, { status: 201 });
 }
 
 export async function GET(req: Request): Promise<Response> {
