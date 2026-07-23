@@ -403,12 +403,17 @@ describe("createCampaign", () => {
     }));
   }
 
-  test("inserts the campaign snapshot (message_body, DST-aware send_at, scheduled, created_by) then chunk-inserts recipients 200 at a time", async () => {
+  // DELIBERATE TEST UPDATE (defect F): the campaign is now born 'paused'
+  // (non-dispatchable) and only flips paused → scheduled AFTER the last
+  // recipient chunk lands — a crash mid-insert can no longer leave a partial
+  // campaign that would dispatch.
+  test("inserts the campaign snapshot as PAUSED, chunk-inserts recipients 200 at a time, then flips paused → scheduled as the final step", async () => {
     const { client, queries } = buildClient([
-      ok(campaignRow),
+      ok({ ...campaignRow, status: "paused" }),
       ok(null),
       ok(null),
       ok(null),
+      ok(campaignRow), // the final paused → scheduled flip
     ]);
     h.client = client;
 
@@ -420,6 +425,7 @@ describe("createCampaign", () => {
     );
 
     expect(created.id).toBe("c1");
+    expect(created.status).toBe("scheduled");
     expect(queries[0].schema).toBe("marketinghub");
     expect(queries[0].source).toBe("sms_campaigns");
     expect(queries[0].insert).toMatchObject({
@@ -431,14 +437,14 @@ describe("createCampaign", () => {
       send_date: "2026-08-05",
       // 2026-08-05 is EDT: 11:30 America/New_York === 15:30Z
       send_at: "2026-08-05T15:30:00.000Z",
-      status: "scheduled",
+      status: "paused",
       created_by: "amy@nsight.example",
     });
     expect(queries[0].single).toBe(true);
 
     // 450 recipients → 3 chunks of 200/200/50 into sms_campaign_recipients
-    expect(queries).toHaveLength(4);
-    const chunks = queries.slice(1);
+    expect(queries).toHaveLength(5);
+    const chunks = queries.slice(1, 4);
     expect(chunks.map((q) => q.source)).toEqual([
       "sms_campaign_recipients",
       "sms_campaign_recipients",
@@ -452,10 +458,36 @@ describe("createCampaign", () => {
     expect(firstRow.send_after).toBe("2026-08-05T15:30:00.000Z");
     expect(firstRow.status).toBe("pending");
     expect(firstRow.rendered_text).toBe("Hi Person 0");
+
+    // the go-live flip happens ONLY after the last chunk, guarded on paused
+    const flip = queries[4];
+    expect(flip.source).toBe("sms_campaigns");
+    expect(flip.update?.status).toBe("scheduled");
+    expect(flip.eq).toContainEqual(["id", "c1"]);
+    expect(flip.eq).toContainEqual(["status", "paused"]);
+    expect(flip.maybeSingle).toBe(true);
+  });
+
+  test("fails loud when the final paused → scheduled flip loses (campaign left visibly paused)", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(null), // flip matched 0 rows (someone canceled it mid-create)
+    ]);
+    h.client = client;
+
+    await expect(
+      createCampaign(validInput, "Hi {{firstName}}", prepared(10), user),
+    ).rejects.toThrow(/\[sms\] create-activate failed/);
+    expect(queries).toHaveLength(3);
   });
 
   test("accepts a pasted Monday board URL (schema transform reduces it to the id)", async () => {
-    const { client, queries } = buildClient([ok(campaignRow), ok(null)]);
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
     h.client = client;
 
     await createCampaign(

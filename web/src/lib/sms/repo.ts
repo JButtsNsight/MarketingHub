@@ -210,9 +210,12 @@ export async function getSuppressedSet(
  * instant (`send_at`); every recipient starts with `send_after = send_at`.
  *
  * Recipients are inserted in chunks of 200. NOT transactional (PostgREST has
- * no multi-statement transactions) — acceptable at hundreds of rows: on a
- * chunk failure the campaign is best-effort marked `canceled` (so a partial
- * outbox can never send) and the error is re-thrown.
+ * no multi-statement transactions), so the campaign is born `paused` — a
+ * non-dispatchable state — and only flips paused → `scheduled` as the FINAL
+ * step, after the last chunk lands. A crash mid-insert therefore leaves a
+ * visible paused campaign that can never dispatch, not a live partial one.
+ * On a chunk failure the campaign is additionally best-effort marked
+ * `canceled` and the error is re-thrown; a lost final flip fails loud.
  */
 export async function createCampaign(
   input: CampaignCreateInput,
@@ -232,7 +235,7 @@ export async function createCampaign(
       message_body: messageBody,
       send_date: parsed.sendDate,
       send_at: sendAt,
-      status: "scheduled",
+      status: "paused",
       created_by: user.email,
     })
     .select()
@@ -265,7 +268,22 @@ export async function createCampaign(
     }
   }
 
-  return campaign;
+  // Go live only now that every outbox row exists. Guarded on 'paused' and
+  // fail-loud when the flip loses (e.g. someone canceled it mid-create).
+  const { data: activated, error: activateError } = await campaigns()
+    .update({ status: "scheduled", updated_at: nowIso() })
+    .eq("id", campaign.id)
+    .eq("status", "paused")
+    .select()
+    .maybeSingle();
+  if (activateError) fail("create-activate", activateError.message);
+  if (!activated) {
+    fail(
+      "create-activate",
+      `campaign ${campaign.id} was no longer paused after inserting recipients`,
+    );
+  }
+  return activated as SmsCampaign;
 }
 
 /**
