@@ -30,6 +30,7 @@ const SCHEMA = "marketinghub";
 const CAMPAIGNS = "sms_campaigns";
 const RECIPIENTS = "sms_campaign_recipients";
 const SUPPRESSIONS = "sms_suppressions";
+const WEBHOOK_EVENTS = "sms_webhook_events";
 /** campaign_id × status × count view (security_invoker). */
 const COUNTS_VIEW = "sms_campaign_recipient_counts";
 
@@ -57,6 +58,10 @@ function suppressions() {
 
 function countsView() {
   return getServiceClient().schema(SCHEMA).from(COUNTS_VIEW);
+}
+
+function webhookEvents() {
+  return getServiceClient().schema(SCHEMA).from(WEBHOOK_EVENTS);
 }
 
 function fail(op: string, message: string): never {
@@ -759,4 +764,136 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
     .select("id");
   if (completeError) fail("complete-drained-update", completeError.message);
   return ((completedRows ?? []) as Array<{ id: string }>).map((r) => r.id);
+}
+
+// ---------------------------------------------------------------------------
+// Webhook accessors — STOP suppression + delivery-report reconciliation
+// ---------------------------------------------------------------------------
+
+export type SuppressionReason = "stop" | "manual";
+export type WebhookKind = "unsubscribe" | "delivery_report" | "unknown";
+
+/**
+ * Permanently add a phone to the STOP list. Upsert on the phone_e164 primary
+ * key so repeated STOP webhooks are idempotent (latest raw payload wins).
+ */
+export async function recordSuppression(
+  phone: string,
+  reason: SuppressionReason,
+  raw?: unknown,
+): Promise<void> {
+  const { error } = await suppressions().upsert(
+    { phone_e164: phone, reason, raw: raw ?? null },
+    { onConflict: "phone_e164" },
+  );
+  if (error) fail("record-suppression", error.message);
+}
+
+/**
+ * STOP fan-out: suppress every not-yet-attempted (`pending`/`claimed`) row
+ * for this phone across ALL campaigns. Rows already `sending`/`sent` are
+ * history and stay untouched. Returns how many rows were suppressed.
+ */
+export async function suppressActiveRecipientsByPhone(
+  phone: string,
+): Promise<number> {
+  const { data, error } = await recipients()
+    .update({
+      status: "suppressed",
+      claimed_at: null,
+      claim_expires_at: null,
+      last_error: "suppressed: phone joined the STOP list",
+      updated_at: nowIso(),
+    })
+    .eq("phone_e164", phone)
+    .in("status", ["pending", "claimed"])
+    .select("id");
+  if (error) fail("suppress-by-phone", error.message);
+  return ((data ?? []) as Array<{ id: string }>).length;
+}
+
+/**
+ * Audit EVERY webhook request (payload shapes are undocumented — the raw
+ * rows are the evidence for post-launch heuristic tuning). Returns the
+ * event id.
+ */
+export async function recordWebhookEvent(
+  kind: WebhookKind,
+  raw: unknown,
+  matchedRecipientId?: string | null,
+): Promise<string> {
+  const { data, error } = await webhookEvents()
+    .insert({
+      kind,
+      raw,
+      matched_recipient_id: matchedRecipientId ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) fail("record-webhook-event", error.message);
+  return (data as { id: string }).id;
+}
+
+/**
+ * Locate the outbox row a delivery report refers to: by SimpleTexting
+ * message id first (exact), else the newest row for the phone still awaiting
+ * an outcome (`sent`/`sending`/`failed_ambiguous`) — the phone fallback is
+ * what reconciles ambiguous rows whose st_message_id we never learned.
+ */
+export async function findRecipientForDeliveryReport(lookup: {
+  stMessageId?: string | null;
+  phone?: string | null;
+}): Promise<SmsCampaignRecipient | null> {
+  if (lookup.stMessageId) {
+    const { data, error } = await recipients()
+      .select("*")
+      .eq("st_message_id", lookup.stMessageId)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) fail("find-by-message-id", error.message);
+    const row = ((data ?? []) as SmsCampaignRecipient[])[0];
+    if (row) return row;
+  }
+
+  if (lookup.phone) {
+    const { data, error } = await recipients()
+      .select("*")
+      .eq("phone_e164", lookup.phone)
+      .in("status", ["sent", "sending", "failed_ambiguous"])
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (error) fail("find-by-phone", error.message);
+    const row = ((data ?? []) as SmsCampaignRecipient[])[0];
+    if (row) return row;
+  }
+
+  return null;
+}
+
+/**
+ * Settle a recipient from a delivery report: `delivered`/`undelivered`.
+ * Guarded to sent|sending|failed_ambiguous — the failed_ambiguous path IS
+ * the automatic reconciliation lane (proof the ambiguous POST landed).
+ * Backfills st_message_id when the report carries one we did not know.
+ */
+export async function applyDeliveryReport(
+  id: string,
+  report: { delivered: boolean; stMessageId?: string | null; detail?: string },
+): Promise<SmsCampaignRecipient | null> {
+  const patch: Record<string, unknown> = {
+    status: report.delivered ? "delivered" : "undelivered",
+    claim_expires_at: null,
+    updated_at: nowIso(),
+  };
+  if (report.stMessageId) patch.st_message_id = report.stMessageId;
+  if (!report.delivered && report.detail) patch.last_error = report.detail;
+
+  const { data, error } = await recipients()
+    .update(patch)
+    .eq("id", id)
+    .in("status", ["sent", "sending", "failed_ambiguous"])
+    .select()
+    .maybeSingle();
+  if (error) fail("apply-delivery-report", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
 }

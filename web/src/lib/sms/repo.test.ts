@@ -8,10 +8,12 @@ vi.mock("../supabase", () => ({
 }));
 
 import {
+  applyDeliveryReport,
   cancelCampaign,
   claimDueRecipients,
   completeDrainedCampaigns,
   createCampaign,
+  findRecipientForDeliveryReport,
   getCampaign,
   getCampaignCounts,
   getCampaignRecipients,
@@ -28,10 +30,13 @@ import {
   pauseCampaign,
   prepareRecipients,
   promoteDueCampaigns,
+  recordSuppression,
+  recordWebhookEvent,
   releaseClaim,
   releaseForConfigError,
   resumeCampaign,
   retryRecipient,
+  suppressActiveRecipientsByPhone,
   type MondayRecipientRow,
 } from "./repo";
 
@@ -992,5 +997,189 @@ describe("dispatcher accessors", () => {
     h.client = allActive.client;
     expect(await completeDrainedCampaigns()).toEqual([]);
     expect(allActive.queries).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Webhook accessors — STOP suppression + delivery-report reconciliation
+// ---------------------------------------------------------------------------
+describe("webhook accessors", () => {
+  test("recordSuppression upserts onto the phone_e164 primary key (STOP is permanent, re-STOP is a no-op)", async () => {
+    const { client, queries } = buildClient([ok(null)]);
+    h.client = client;
+
+    await recordSuppression("+15551230001", "stop", { action: "STOP" });
+
+    expect(queries[0].source).toBe("sms_suppressions");
+    expect(queries[0].upsert?.row).toEqual({
+      phone_e164: "+15551230001",
+      reason: "stop",
+      raw: { action: "STOP" },
+    });
+    expect(queries[0].upsert?.options).toMatchObject({
+      onConflict: "phone_e164",
+    });
+  });
+
+  test("recordSuppression fails loud on error", async () => {
+    const { client } = buildClient([err("nope")]);
+    h.client = client;
+    await expect(recordSuppression("+15551230001", "manual")).rejects.toThrow(
+      /\[sms\].*nope/,
+    );
+  });
+
+  test("suppressActiveRecipientsByPhone suppresses pending|claimed rows across ALL campaigns and returns the count", async () => {
+    const { client, queries } = buildClient([ok([{ id: "r1" }, { id: "r2" }])]);
+    h.client = client;
+
+    const n = await suppressActiveRecipientsByPhone("+15551230001");
+
+    expect(n).toBe(2);
+    expect(queries[0].source).toBe("sms_campaign_recipients");
+    expect(queries[0].update).toMatchObject({
+      status: "suppressed",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["phone_e164", "+15551230001"]);
+    // active-only guard; NO campaign_id filter — STOP fans out everywhere
+    expect(queries[0].in).toContainEqual(["status", ["pending", "claimed"]]);
+    expect(queries[0].eq.map(([col]) => col)).not.toContain("campaign_id");
+  });
+
+  test("recordWebhookEvent stores the raw payload with its classification and match", async () => {
+    const { client, queries } = buildClient([ok({ id: "evt-1" })]);
+    h.client = client;
+
+    const id = await recordWebhookEvent(
+      "delivery_report",
+      { messageId: "st-9" },
+      "r1",
+    );
+
+    expect(id).toBe("evt-1");
+    expect(queries[0].source).toBe("sms_webhook_events");
+    expect(queries[0].insert).toEqual({
+      kind: "delivery_report",
+      raw: { messageId: "st-9" },
+      matched_recipient_id: "r1",
+    });
+    expect(queries[0].single).toBe(true);
+  });
+
+  test("recordWebhookEvent defaults matched_recipient_id to null", async () => {
+    const { client, queries } = buildClient([ok({ id: "evt-2" })]);
+    h.client = client;
+    await recordWebhookEvent("unknown", { unparsed: "???" });
+    expect(
+      (queries[0].insert as Record<string, unknown>).matched_recipient_id,
+    ).toBeNull();
+  });
+
+  test("findRecipientForDeliveryReport matches by st_message_id first", async () => {
+    const { client, queries } = buildClient([
+      ok([{ ...recipientRow, status: "sent", st_message_id: "st-9" }]),
+    ]);
+    h.client = client;
+
+    const row = await findRecipientForDeliveryReport({
+      stMessageId: "st-9",
+      phone: "+15551230001",
+    });
+
+    expect(row?.id).toBe("r1");
+    expect(queries).toHaveLength(1);
+    expect(queries[0].eq).toContainEqual(["st_message_id", "st-9"]);
+    expect(queries[0].limit).toBe(1);
+  });
+
+  test("findRecipientForDeliveryReport falls back to the newest awaiting-outcome row by phone", async () => {
+    const { client, queries } = buildClient([
+      ok([]), // st_message_id miss
+      ok([{ ...recipientRow, status: "failed_ambiguous" }]),
+    ]);
+    h.client = client;
+
+    const row = await findRecipientForDeliveryReport({
+      stMessageId: "st-9",
+      phone: "+15551230001",
+    });
+
+    expect(row?.status).toBe("failed_ambiguous");
+    const byPhone = queries[1];
+    expect(byPhone.eq).toContainEqual(["phone_e164", "+15551230001"]);
+    // only rows whose outcome a delivery report can settle
+    expect(byPhone.in).toContainEqual([
+      "status",
+      ["sent", "sending", "failed_ambiguous"],
+    ]);
+    expect(byPhone.order).toContainEqual(["updated_at", { ascending: false }]);
+    expect(byPhone.limit).toBe(1);
+  });
+
+  test("findRecipientForDeliveryReport returns null when nothing matches", async () => {
+    const { client } = buildClient([ok([]), ok([])]);
+    h.client = client;
+    expect(
+      await findRecipientForDeliveryReport({
+        stMessageId: "st-9",
+        phone: "+15551230001",
+      }),
+    ).toBeNull();
+
+    const noLookup = buildClient();
+    h.client = noLookup.client;
+    expect(await findRecipientForDeliveryReport({})).toBeNull();
+    expect(noLookup.queries).toHaveLength(0);
+  });
+
+  test("applyDeliveryReport(delivered) settles sent|sending|failed_ambiguous and backfills st_message_id", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "delivered" }),
+    ]);
+    h.client = client;
+
+    const row = await applyDeliveryReport("r1", {
+      delivered: true,
+      stMessageId: "st-9",
+    });
+
+    expect(row?.status).toBe("delivered");
+    expect(queries[0].update).toMatchObject({
+      status: "delivered",
+      st_message_id: "st-9",
+      claim_expires_at: null,
+    });
+    expect(queries[0].update?.last_error).toBeUndefined();
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    // the failed_ambiguous → delivered path IS the auto-reconciliation lane
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["sent", "sending", "failed_ambiguous"],
+    ]);
+  });
+
+  test("applyDeliveryReport(undelivered) records the carrier detail in last_error", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "undelivered" }),
+    ]);
+    h.client = client;
+
+    await applyDeliveryReport("r1", {
+      delivered: false,
+      detail: "carrier rejected",
+    });
+
+    expect(queries[0].update).toMatchObject({
+      status: "undelivered",
+      last_error: "carrier rejected",
+    });
+  });
+
+  test("applyDeliveryReport returns null when the row is not in a settleable status", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await applyDeliveryReport("r1", { delivered: true })).toBeNull();
   });
 });
