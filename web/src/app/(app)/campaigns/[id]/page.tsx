@@ -87,7 +87,11 @@ export default async function CampaignDetailPage({
           <StatCard label="Suppressed" value={counts.suppressed} />
         </div>
 
-        <RecipientsTable campaignId={campaign.id} recipients={recipients} />
+        <RecipientsTable
+          campaignId={campaign.id}
+          campaignStatus={campaign.status}
+          recipients={recipients}
+        />
       </div>
     </>
   );

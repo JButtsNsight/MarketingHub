@@ -155,6 +155,17 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     expect(screen.getByRole("button", { name: /retry/i })).toBeInTheDocument();
   });
 
+  test("a canceled campaign hides Retry but keeps Mark failed", async () => {
+    h.getCampaign.mockResolvedValue({ ...campaign, status: "canceled" });
+    await renderPage();
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /mark failed/i }),
+    ).toBeInTheDocument();
+  });
+
   test("calls notFound() when the campaign does not exist", async () => {
     h.getCampaign.mockResolvedValue(null);
     await expect(
