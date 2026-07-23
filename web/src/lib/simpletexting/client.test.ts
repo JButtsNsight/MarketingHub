@@ -29,6 +29,13 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+/** Node system error shape: an Error carrying a string `code`. */
+function codedError(code: string, message = `request failed: ${code}`): Error {
+  const err = new Error(message) as Error & { code: string };
+  err.code = code;
+  return err;
+}
+
 beforeEach(() => {
   process.env.SIMPLETEXTING_API_TOKEN = "st-test-token";
   delete process.env.SIMPLETEXTING_ACCOUNT_PHONE;
@@ -114,5 +121,144 @@ describe("sendSms → sent", () => {
     stubFetch(async () => new Response("created", { status: 201 }));
     const result = await sendSms({ phone: "+15551230001", text: "Hi" });
     expect(result).toEqual({ kind: "sent", id: null, credits: null });
+  });
+});
+
+describe("sendSms HTTP status classification", () => {
+  test.each([400, 404, 422])(
+    "%i → permanent (definitive rejection, do not retry)",
+    async (status) => {
+      stubFetch(async () => new Response("nope", { status }));
+      const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+      expect(result).toMatchObject({ kind: "permanent", status });
+    },
+  );
+
+  test.each([401, 403])(
+    "%i → config (bad token must not burn recipients to failed)",
+    async (status) => {
+      stubFetch(async () => new Response("denied", { status }));
+      const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+      expect(result).toMatchObject({ kind: "config", status });
+    },
+  );
+
+  test.each([429, 502, 503, 504])(
+    "%i → retryable (transient, provably not processed)",
+    async (status) => {
+      stubFetch(async () => new Response("busy", { status }));
+      const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+      expect(result).toMatchObject({ kind: "retryable", status });
+    },
+  );
+
+  test("500 → ambiguous (the request may have been processed)", async () => {
+    stubFetch(async () => new Response("boom", { status: 500 }));
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({ kind: "ambiguous", status: 500 });
+  });
+
+  test("detail carries the HTTP status and a response-body excerpt for the audit trail", async () => {
+    stubFetch(
+      async () => new Response("invalid contactPhone", { status: 400 }),
+    );
+    const result = await sendSms({ phone: "not-a-phone", text: "Hi" });
+    expect(result).toMatchObject({
+      kind: "permanent",
+      status: 400,
+      detail: expect.stringContaining("400"),
+    });
+    expect(result).toMatchObject({
+      detail: expect.stringContaining("invalid contactPhone"),
+    });
+  });
+
+  test("detail is truncated so last_error stays an audit field, not a log sink", async () => {
+    stubFetch(async () => new Response("x".repeat(5000), { status: 400 }));
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    if (result.kind === "sent") throw new Error("expected a failure result");
+    expect(result.detail.length).toBeLessThanOrEqual(400);
+  });
+});
+
+describe("sendSms fetch-rejection classification", () => {
+  test.each(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"])(
+    "%s → retryable (connection never established)",
+    async (code) => {
+      stubFetch(() => Promise.reject(codedError(code)));
+      const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+      expect(result).toMatchObject({
+        kind: "retryable",
+        status: null,
+        detail: expect.stringContaining(code),
+      });
+    },
+  );
+
+  test("undici-style TypeError('fetch failed') with the coded error on cause → retryable", async () => {
+    stubFetch(() =>
+      Promise.reject(
+        new TypeError("fetch failed", { cause: codedError("ECONNREFUSED") }),
+      ),
+    );
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({
+      kind: "retryable",
+      status: null,
+      detail: expect.stringContaining("ECONNREFUSED"),
+    });
+  });
+
+  test("AbortError (AbortSignal.timeout fired) → ambiguous, never auto-retried", async () => {
+    const abort = new Error("This operation was aborted");
+    abort.name = "AbortError";
+    stubFetch(() => Promise.reject(abort));
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({ kind: "ambiguous", status: null });
+  });
+
+  test("TimeoutError DOMException (Node's AbortSignal.timeout reason) → ambiguous", async () => {
+    stubFetch(() =>
+      Promise.reject(
+        new DOMException("The operation timed out", "TimeoutError"),
+      ),
+    );
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({ kind: "ambiguous", status: null });
+  });
+
+  test("ECONNRESET → ambiguous (dropped mid-request; may have been processed)", async () => {
+    stubFetch(() => Promise.reject(codedError("ECONNRESET")));
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({
+      kind: "ambiguous",
+      status: null,
+      detail: expect.stringContaining("ECONNRESET"),
+    });
+  });
+
+  test("never throws: even a non-Error rejection resolves to ambiguous", async () => {
+    stubFetch(() => Promise.reject("wires crossed"));
+    await expect(
+      sendSms({ phone: "+15551230001", text: "Hi" }),
+    ).resolves.toMatchObject({
+      kind: "ambiguous",
+      status: null,
+      detail: expect.stringContaining("wires crossed"),
+    });
+  });
+});
+
+describe("sendSms unconfigured", () => {
+  test("missing token → config result without ever calling fetch", async () => {
+    delete process.env.SIMPLETEXTING_API_TOKEN;
+    const mock = stubFetch(async () => jsonResponse(201, { id: "m1" }));
+    const result = await sendSms({ phone: "+15551230001", text: "Hi" });
+    expect(result).toMatchObject({
+      kind: "config",
+      status: null,
+      detail: expect.stringContaining("SIMPLETEXTING_API_TOKEN"),
+    });
+    expect(mock).not.toHaveBeenCalled();
   });
 });

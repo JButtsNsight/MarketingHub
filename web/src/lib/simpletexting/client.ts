@@ -67,6 +67,19 @@ async function safeJson(res: Response): Promise<Record<string, unknown>> {
   return {};
 }
 
+/** Best-effort body text for error detail; never allowed to throw. */
+async function safeText(res: Response): Promise<string> {
+  try {
+    return await res.text();
+  } catch {
+    return "";
+  }
+}
+
+function truncate(detail: string): string {
+  return detail.length > DETAIL_MAX ? detail.slice(0, DETAIL_MAX) : detail;
+}
+
 async function classifyResponse(res: Response): Promise<SendResult> {
   if (res.status === 201) {
     const body = await safeJson(res);
@@ -76,12 +89,64 @@ async function classifyResponse(res: Response): Promise<SendResult> {
       credits: typeof body.credits === "number" ? body.credits : null,
     };
   }
-  // Non-201 classification lands in the full classification table.
-  return {
-    kind: "ambiguous",
-    status: res.status,
-    detail: `HTTP ${res.status}`,
-  };
+
+  const status = res.status;
+  const detail = truncate(`HTTP ${status}: ${await safeText(res)}`);
+  // Credentials/config problem — must not burn recipients to `failed`.
+  if (status === 401 || status === 403) return { kind: "config", status, detail };
+  // Throttled or gateway-rejected before processing — safe to retry.
+  if (status === 429 || status === 502 || status === 503 || status === 504) {
+    return { kind: "retryable", status, detail };
+  }
+  // The API errored while handling the request — it may have been processed.
+  if (status === 500) return { kind: "ambiguous", status, detail };
+  // Any other 4xx is a definitive rejection of this exact request.
+  if (status >= 400 && status <= 499) return { kind: "permanent", status, detail };
+  // Anything unexpected (3xx, other 5xx, non-201 2xx): the request reached
+  // the API and the effect is unknown — ambiguous, never auto-retried.
+  return { kind: "ambiguous", status, detail };
+}
+
+/**
+ * Failures where the connection was provably never established, so the
+ * request cannot have been processed: duplicate-free to retry.
+ */
+const PRE_CONNECTION_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+/**
+ * Extract a Node system-error code. undici's fetch wraps system errors as
+ * `TypeError: fetch failed` with the coded error on `cause`; direct
+ * rejections (and our tests) carry `code` on the error itself.
+ */
+function errorCode(err: unknown): string | null {
+  for (const candidate of [err, (err as { cause?: unknown } | null)?.cause]) {
+    if (candidate && typeof candidate === "object") {
+      const code = (candidate as { code?: unknown }).code;
+      if (typeof code === "string") return code;
+    }
+  }
+  return null;
+}
+
+function describeError(err: unknown, code: string | null): string {
+  if (err instanceof Error) {
+    const cause = err.cause instanceof Error ? `: ${err.cause.message}` : "";
+    const suffix = code && !`${err.message}${cause}`.includes(code) ? ` (${code})` : "";
+    return `${err.name}: ${err.message}${cause}${suffix}`;
+  }
+  return String(err);
+}
+
+function classifyRejection(err: unknown): SendResult {
+  const code = errorCode(err);
+  const detail = truncate(describeError(err, code));
+  if (code && PRE_CONNECTION_CODES.has(code)) {
+    return { kind: "retryable", status: null, detail };
+  }
+  // Timeout (AbortError/TimeoutError from AbortSignal.timeout), ECONNRESET,
+  // and anything unrecognized: the request may have reached SimpleTexting —
+  // ambiguous, never auto-retried.
+  return { kind: "ambiguous", status: null, detail };
 }
 
 /**
@@ -117,7 +182,7 @@ export async function sendSms(input: SendSmsInput): Promise<SendResult> {
       signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
     });
     return await classifyResponse(res);
-  } catch {
-    return { kind: "ambiguous", status: null, detail: "request failed" };
+  } catch (err) {
+    return classifyRejection(err);
   }
 }
