@@ -634,3 +634,157 @@ test('preview: synthesizes with NO Google-SAML/Cognito/DNS context supplied', ()
     Template.fromStack(new AppStack(app, 'AppPreviewMinimal', { env })),
   ).not.toThrow();
 });
+
+// ---------------------------------------------------------------------------
+// SMS dispatcher worker: a SECOND, ALB-less Fargate service (BOTH modes) that
+// runs the same image with the worker.cjs entrypoint, polling the outbox. One
+// task, min 0 / max 100 so a deploy never runs two dispatchers at once.
+// ---------------------------------------------------------------------------
+
+/** The worker task definition — the one whose (only) container is named 'worker'. */
+function findWorkerTaskDef(template: ReturnType<typeof Template.fromStack>) {
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  return Object.values(taskDefs).find((td: any) =>
+    (td.Properties.ContainerDefinitions ?? []).some((c: any) => c.Name === 'worker'),
+  ) as any;
+}
+
+/** The worker Fargate service — the only service with DesiredCount 1. */
+function findWorkerService(template: ReturnType<typeof Template.fromStack>) {
+  const services = template.findResources('AWS::ECS::Service');
+  return Object.values(services).find((s: any) => s.Properties.DesiredCount === 1) as any;
+}
+
+const MODES: ReadonlyArray<[string, () => { template: ReturnType<typeof Template.fromStack> }]> =
+  [
+    ['production', makeApp],
+    ['preview', () => makePreviewApp()],
+  ];
+
+for (const [mode, make] of MODES) {
+  test(`worker (${mode}): small taskdef runs the SAME image with Command ['worker.cjs'] and NO ports`, () => {
+    const { template } = make();
+    const td = findWorkerTaskDef(template);
+    expect(td).toBeDefined();
+    expect(td.Properties.Cpu).toBe('256');
+    expect(td.Properties.Memory).toBe('512');
+    const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+    // Same image as the app — the worker bundle ships inside it; the distroless
+    // ENTRYPOINT is `node`, so the command override is just the bundle path.
+    expect(worker.Image).toBe(CONTEXT.appImageTag);
+    expect(worker.Command).toEqual(['worker.cjs']);
+    // No listener, no target group, no ports — the worker serves no traffic.
+    expect(worker.PortMappings).toBeUndefined();
+  });
+
+  test(`worker (${mode}): SUPABASE_URL env + service-role/SimpleTexting SECRETS + awslogs`, () => {
+    const { template } = make();
+    const td = findWorkerTaskDef(template);
+    const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+    expect(worker.Environment).toEqual(
+      expect.arrayContaining([{ Name: 'SUPABASE_URL', Value: CONTEXT.supabaseUrl }]),
+    );
+    expect(worker.Secrets).toEqual(
+      expect.arrayContaining([
+        {
+          Name: 'SUPABASE_SERVICE_ROLE_KEY',
+          ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
+        },
+        {
+          Name: 'SIMPLETEXTING_API_TOKEN',
+          ValueFrom: `${SMS_SECRETS_ARN}:SIMPLETEXTING_API_TOKEN::`,
+        },
+      ]),
+    );
+    expect(worker.LogConfiguration.LogDriver).toBe('awslogs');
+    expect(worker.LogConfiguration.Options['awslogs-stream-prefix']).toBe(
+      'marketinghub-sms-worker',
+    );
+  });
+
+  test(`worker (${mode}): ONE task, min 0 / max 100 (a deploy never runs two dispatchers)`, () => {
+    const { template } = make();
+    const svc = findWorkerService(template);
+    expect(svc).toBeDefined();
+    expect(svc.Properties.LaunchType).toBe('FARGATE');
+    expect(svc.Properties.DeploymentConfiguration.MinimumHealthyPercent).toBe(0);
+    expect(svc.Properties.DeploymentConfiguration.MaximumPercent).toBe(100);
+    // Not attached to any load balancer.
+    expect(svc.Properties.LoadBalancers ?? []).toHaveLength(0);
+  });
+
+  test(`worker (${mode}): private subnets, no public IP, WorkerSg + internalClientSg`, () => {
+    const { template } = make();
+    const svc = findWorkerService(template);
+    const cfg = svc.Properties.NetworkConfiguration.AwsvpcConfiguration;
+    expect(cfg.AssignPublicIp).toBe('DISABLED');
+    expect(cfg.Subnets).toEqual(expect.arrayContaining(SUPABASE_PRIVATE_SUBNET_IDS));
+    expect(cfg.SecurityGroups).toEqual(
+      expect.arrayContaining([SUPABASE_INTERNAL_CLIENT_SG_ID]),
+    );
+    expect(JSON.stringify(cfg.SecurityGroups)).toContain('WorkerSg');
+  });
+
+  test(`worker (${mode}): the WorkerSg accepts NO ingress at all`, () => {
+    const { template } = make();
+    const sgs = template.findResources('AWS::EC2::SecurityGroup');
+    const entry = Object.entries(sgs).find(([id]) => id.startsWith('WorkerSg'));
+    expect(entry).toBeDefined();
+    const [, workerSg] = entry as [string, any];
+    expect(workerSg.Properties.SecurityGroupIngress ?? []).toHaveLength(0);
+    // ...including via standalone ingress resources.
+    const ingresses = template.findResources('AWS::EC2::SecurityGroupIngress');
+    for (const r of Object.values(ingresses) as any[]) {
+      expect(JSON.stringify(r.Properties.GroupId ?? '')).not.toContain('WorkerSg');
+    }
+  });
+
+  test(`worker (${mode}): the ECR-pull and kms:Decrypt exec-role grants are replicated`, () => {
+    // Both taskdefs use fromRegistry(<ecr-uri>) images and CMK-encrypted secrets,
+    // so BOTH execution roles need the ECR pull set + kms:Decrypt on the CMK.
+    const { template } = make();
+    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
+    const withEcrPull = policies.filter((p: any) =>
+      (p.Properties.PolicyDocument.Statement as any[]).some((s) => {
+        const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+        return (
+          actions.includes('ecr:GetAuthorizationToken') && actions.includes('ecr:BatchGetImage')
+        );
+      }),
+    );
+    expect(withEcrPull.length).toBeGreaterThanOrEqual(2);
+    const withKmsDecrypt = policies.filter((p: any) =>
+      (p.Properties.PolicyDocument.Statement as any[]).some((s) => {
+        const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+        const resources = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
+        return (
+          actions.includes('kms:Decrypt') &&
+          resources.includes(CONTEXT.supabaseSecretsKmsKeyArn)
+        );
+      }),
+    );
+    expect(withKmsDecrypt.length).toBeGreaterThanOrEqual(2);
+  });
+}
+
+test('worker: optional simpletextingAccountPhone context becomes SIMPLETEXTING_ACCOUNT_PHONE', () => {
+  const app = new App({ context: { ...CONTEXT, simpletextingAccountPhone: '+15551234567' } });
+  const template = Template.fromStack(new AppStack(app, 'AppWithAccountPhone', { env }));
+  const td = findWorkerTaskDef(template);
+  const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+  expect(worker.Environment).toEqual(
+    expect.arrayContaining([{ Name: 'SIMPLETEXTING_ACCOUNT_PHONE', Value: '+15551234567' }]),
+  );
+});
+
+test('worker: WITHOUT the optional context, no SIMPLETEXTING_ACCOUNT_PHONE env anywhere', () => {
+  const { template } = makeApp();
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const td of Object.values(taskDefs) as any[]) {
+    for (const c of td.Properties.ContainerDefinitions ?? []) {
+      for (const e of c.Environment ?? []) {
+        expect(e.Name).not.toBe('SIMPLETEXTING_ACCOUNT_PHONE');
+      }
+    }
+  }
+});
