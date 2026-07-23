@@ -142,4 +142,22 @@ describe("CampaignActions", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/failed/i);
     expect(refresh).not.toHaveBeenCalled();
   });
+
+  test("a network-level failure shows an error, no unhandled rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    const user = userEvent.setup();
+    render(<CampaignActions campaignId="c1" status="sending" />);
+
+    await user.click(screen.getByRole("button", { name: /pause/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    expect(refresh).not.toHaveBeenCalled();
+    // The busy flag resets so the user can retry.
+    expect(screen.getByRole("button", { name: /pause/i })).toBeEnabled();
+  });
 });

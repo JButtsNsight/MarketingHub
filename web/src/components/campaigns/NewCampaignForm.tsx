@@ -144,6 +144,11 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
       const data = (await res.json()) as BoardPreview;
       setPreview(data);
       setPhoneColumnId(data.suggestedPhoneColumnId ?? "");
+    } catch {
+      // fetch itself rejected (offline, DNS, CORS) — never a bare rejection.
+      setPreview(null);
+      setPhoneColumnId("");
+      setBoardError("Network error — please try again.");
     } finally {
       setLoadingBoard(false);
     }

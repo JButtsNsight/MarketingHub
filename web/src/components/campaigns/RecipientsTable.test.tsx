@@ -204,6 +204,30 @@ describe("RecipientsTable", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  test("a network-level failure shows an error, no unhandled rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    const user = userEvent.setup();
+    render(
+      <RecipientsTable
+        campaignId="c1"
+        campaignStatus="sending"
+        recipients={[recipient("r1", { status: "failed_ambiguous" })]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    expect(refresh).not.toHaveBeenCalled();
+    // The busy flag resets so the user can retry.
+    expect(screen.getByRole("button", { name: /retry/i })).toBeEnabled();
+  });
+
   test("renders an empty message when the campaign has no recipients", () => {
     render(
       <RecipientsTable campaignId="c1" campaignStatus="sending" recipients={[]} />,
