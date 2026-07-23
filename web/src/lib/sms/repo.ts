@@ -6,6 +6,7 @@ import {
   RECIPIENT_STATUSES,
   type CampaignCounts,
   type CampaignCreateInput,
+  type CampaignStatus,
   type RecipientStatus,
   type SmsCampaign,
   type SmsCampaignRecipient,
@@ -475,4 +476,287 @@ export async function markRecipientFailed(
     .maybeSingle();
   if (error) fail("mark-recipient-failed", error.message);
   return (data as SmsCampaignRecipient) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Dispatcher accessors — one poll tick is: promoteDueCampaigns →
+// claimDueRecipients → per row markSending → send → markSent/markFailed/
+// markRetry/markAmbiguous → completeDrainedCampaigns.
+// ---------------------------------------------------------------------------
+
+/**
+ * Claim a batch of due outbox rows via the `claim_due_sms_recipients` RPC
+ * (FOR UPDATE SKIP LOCKED lives in Postgres — PostgREST cannot express it).
+ * The RPC also runs the suppression sweep and crash recovery (expired
+ * `claimed` → `pending`, expired `sending` → `failed_ambiguous`).
+ */
+export async function claimDueRecipients(
+  batchSize: number,
+  claimTtlSeconds: number,
+): Promise<SmsCampaignRecipient[]> {
+  const { data, error } = await getServiceClient()
+    .schema(SCHEMA)
+    .rpc("claim_due_sms_recipients", {
+      batch_size: batchSize,
+      claim_ttl_seconds: claimTtlSeconds,
+    });
+  if (error) fail("claim", error.message);
+  return (data ?? []) as SmsCampaignRecipient[];
+}
+
+/** Promote due `scheduled` campaigns to `sending`; returns the promoted ids. */
+export async function promoteDueCampaigns(
+  now: Date = new Date(),
+): Promise<string[]> {
+  const { data, error } = await campaigns()
+    .update({ status: "sending", updated_at: nowIso() })
+    .eq("status", "scheduled")
+    .lte("send_at", now.toISOString())
+    .select("id");
+  if (error) fail("promote", error.message);
+  return ((data ?? []) as Array<{ id: string }>).map((row) => row.id);
+}
+
+/**
+ * The durable `claimed` → `sending` transition that STARTS a POST attempt.
+ * `nextAttempts` is the caller-computed attempts+1 (PostgREST cannot
+ * increment server-side; the read-modify-write is safe ONLY because of the
+ * `.eq('status','claimed')` guard — pause/cancel releases make it match 0
+ * rows, in which case this returns null and the caller must NOT send).
+ */
+export async function markSending(
+  id: string,
+  nextAttempts: number,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "sending",
+      attempts: nextAttempts,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "claimed")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-sending", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/** 201 outcome: record SimpleTexting's message id + credits. */
+export async function markSent(
+  id: string,
+  result: { stMessageId: string | null; stCredits: number | null },
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "sent",
+      st_message_id: result.stMessageId,
+      st_credits: result.stCredits,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "sending")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-sent", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/** Definitive rejection (or retries exhausted): terminal `failed`. */
+export async function markFailed(
+  id: string,
+  detail: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "failed",
+      last_error: detail,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "sending")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-failed", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/**
+ * Retryable outcome (provably not processed): back to `pending` with
+ * `send_after` pushed to the caller-computed backoff instant.
+ */
+export async function markRetry(
+  id: string,
+  sendAfter: Date,
+  detail: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "pending",
+      send_after: sendAfter.toISOString(),
+      last_error: detail,
+      claimed_at: null,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "sending")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-retry", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/**
+ * Ambiguous outcome (timeout/ECONNRESET/500 — the POST may have landed):
+ * park as `failed_ambiguous`. NEVER auto-retried; webhook reconciliation or
+ * manual review resolves it.
+ */
+export async function markAmbiguous(
+  id: string,
+  detail: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "failed_ambiguous",
+      last_error: detail,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "sending")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-ambiguous", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/**
+ * Return an un-attempted `claimed` row to `pending` (campaign paused/canceled
+ * mid-batch, suppression pre-check hit, or SIGTERM drain). Guarded on
+ * `claimed`: a row that reached `sending` has started a POST and must resolve
+ * through markSent/markFailed/markRetry/markAmbiguous instead.
+ */
+export async function releaseClaim(
+  id: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "pending",
+      claimed_at: null,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "claimed")
+    .select()
+    .maybeSingle();
+  if (error) fail("release-claim", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/**
+ * 401/403 outcome: the POST was rejected before processing, so the attempt
+ * did not really happen — re-queue as `pending` and write back the
+ * pre-increment `attempts` the caller remembers (a bad token must not burn a
+ * campaign's attempt budget).
+ */
+export async function releaseForConfigError(
+  id: string,
+  revertAttempts: number,
+  detail: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "pending",
+      attempts: revertAttempts,
+      claimed_at: null,
+      claim_expires_at: null,
+      last_error: detail,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .eq("status", "sending")
+    .select()
+    .maybeSingle();
+  if (error) fail("release-config-error", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+/** Belt-and-suspenders pre-send STOP check for one phone. */
+export async function isSuppressed(phone: string): Promise<boolean> {
+  const { data, error } = await suppressions()
+    .select("phone_e164")
+    .eq("phone_e164", phone)
+    .maybeSingle();
+  if (error) fail("is-suppressed", error.message);
+  return data !== null;
+}
+
+/** Current status per campaign id (one query per claimed batch). */
+export async function getCampaignStatuses(
+  ids: string[],
+): Promise<Map<string, CampaignStatus>> {
+  const unique = Array.from(new Set(ids));
+  if (unique.length === 0) return new Map();
+
+  const { data, error } = await campaigns()
+    .select("id, status")
+    .in("id", unique);
+  if (error) fail("campaign-statuses", error.message);
+
+  const statuses = new Map<string, CampaignStatus>();
+  for (const row of (data ?? []) as Array<{
+    id: string;
+    status: CampaignStatus;
+  }>) {
+    statuses.set(row.id, row.status);
+  }
+  return statuses;
+}
+
+/** Recipient statuses that keep a campaign open. */
+const ACTIVE_RECIPIENT_STATUSES: RecipientStatus[] = [
+  "pending",
+  "claimed",
+  "sending",
+];
+
+/**
+ * Drain check: `sending` campaigns with zero rows left in
+ * pending|claimed|sending become `completed`. The final update is still
+ * guarded on `status='sending'` so a concurrent pause/cancel (or a
+ * retryRecipient re-open) between the check and the update wins.
+ */
+export async function completeDrainedCampaigns(): Promise<string[]> {
+  const { data, error } = await campaigns()
+    .select("id")
+    .eq("status", "sending");
+  if (error) fail("complete-drained", error.message);
+  const sendingIds = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
+  if (sendingIds.length === 0) return [];
+
+  const { data: activeRows, error: activeError } = await countsView()
+    .select("campaign_id")
+    .in("campaign_id", sendingIds)
+    .in("status", ACTIVE_RECIPIENT_STATUSES);
+  if (activeError) fail("complete-drained-counts", activeError.message);
+  const active = new Set(
+    ((activeRows ?? []) as Array<{ campaign_id: string }>).map(
+      (r) => r.campaign_id,
+    ),
+  );
+
+  const drained = sendingIds.filter((id) => !active.has(id));
+  if (drained.length === 0) return [];
+
+  const { data: completedRows, error: completeError } = await campaigns()
+    .update({ status: "completed", updated_at: nowIso() })
+    .in("id", drained)
+    .eq("status", "sending")
+    .select("id");
+  if (completeError) fail("complete-drained-update", completeError.message);
+  return ((completedRows ?? []) as Array<{ id: string }>).map((r) => r.id);
 }

@@ -9,15 +9,27 @@ vi.mock("../supabase", () => ({
 
 import {
   cancelCampaign,
+  claimDueRecipients,
+  completeDrainedCampaigns,
   createCampaign,
   getCampaign,
   getCampaignCounts,
   getCampaignRecipients,
+  getCampaignStatuses,
   getSuppressedSet,
+  isSuppressed,
   listCampaignsWithCounts,
+  markAmbiguous,
+  markFailed,
   markRecipientFailed,
+  markRetry,
+  markSending,
+  markSent,
   pauseCampaign,
   prepareRecipients,
+  promoteDueCampaigns,
+  releaseClaim,
+  releaseForConfigError,
   resumeCampaign,
   retryRecipient,
   type MondayRecipientRow,
@@ -723,5 +735,262 @@ describe("campaign transitions", () => {
     const { client } = buildClient([ok(null)]);
     h.client = client;
     expect(await markRecipientFailed("r1")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dispatcher accessors
+// ---------------------------------------------------------------------------
+describe("dispatcher accessors", () => {
+  test("claimDueRecipients calls the claim RPC on the marketinghub schema with batch_size/claim_ttl_seconds", async () => {
+    const { client, queries } = buildClient([
+      ok([{ ...recipientRow, status: "claimed" }]),
+    ]);
+    h.client = client;
+
+    const claimed = await claimDueRecipients(25, 180);
+
+    expect(queries[0].schema).toBe("marketinghub");
+    expect(queries[0].source).toBe("rpc:claim_due_sms_recipients");
+    expect(queries[0].rpcArgs).toEqual({
+      batch_size: 25,
+      claim_ttl_seconds: 180,
+    });
+    expect(claimed).toHaveLength(1);
+    expect(claimed[0].status).toBe("claimed");
+  });
+
+  test("claimDueRecipients fails loud when the RPC errors", async () => {
+    const { client } = buildClient([err("function missing")]);
+    h.client = client;
+    await expect(claimDueRecipients(25, 180)).rejects.toThrow(
+      /\[sms\].*function missing/,
+    );
+  });
+
+  test("promoteDueCampaigns promotes only scheduled campaigns whose send_at is due", async () => {
+    const { client, queries } = buildClient([ok([{ id: "c1" }, { id: "c2" }])]);
+    h.client = client;
+
+    const now = new Date("2026-08-05T15:31:00.000Z");
+    const promoted = await promoteDueCampaigns(now);
+
+    expect(promoted).toEqual(["c1", "c2"]);
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].update?.status).toBe("sending");
+    expect(queries[0].eq).toContainEqual(["status", "scheduled"]);
+    expect(queries[0].lte).toContainEqual([
+      "send_at",
+      "2026-08-05T15:31:00.000Z",
+    ]);
+  });
+
+  test("markSending is guarded on status=claimed and writes the caller-computed attempts", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "sending", attempts: 3 }),
+    ]);
+    h.client = client;
+
+    const row = await markSending("r1", 3);
+
+    expect(row?.attempts).toBe(3);
+    expect(queries[0].update).toMatchObject({ status: "sending", attempts: 3 });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    // NEVER remove this guard: attempts+1 is a read-modify-write and pause/
+    // cancel releases race this update — 0 rows matched means we lost.
+    expect(queries[0].eq).toContainEqual(["status", "claimed"]);
+    expect(queries[0].maybeSingle).toBe(true);
+  });
+
+  test("markSending returns null when the claim was released (race lost)", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await markSending("r1", 1)).toBeNull();
+  });
+
+  test("markSent records st_message_id/st_credits, guarded on status=sending", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "sent" }),
+    ]);
+    h.client = client;
+
+    const row = await markSent("r1", { stMessageId: "st-9", stCredits: 1 });
+
+    expect(row?.status).toBe("sent");
+    expect(queries[0].update).toMatchObject({
+      status: "sent",
+      st_message_id: "st-9",
+      st_credits: 1,
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("markFailed stores the error detail, guarded on status=sending", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "failed" }),
+    ]);
+    h.client = client;
+
+    await markFailed("r1", "HTTP 422: bad number");
+
+    expect(queries[0].update).toMatchObject({
+      status: "failed",
+      last_error: "HTTP 422: bad number",
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("markRetry re-queues to pending with the backoff send_after, guarded on status=sending", async () => {
+    const { client, queries } = buildClient([ok(recipientRow)]);
+    h.client = client;
+
+    const backoffTo = new Date("2026-08-05T15:32:00.000Z");
+    await markRetry("r1", backoffTo, "HTTP 429: throttled");
+
+    expect(queries[0].update).toMatchObject({
+      status: "pending",
+      send_after: "2026-08-05T15:32:00.000Z",
+      last_error: "HTTP 429: throttled",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("markAmbiguous parks the row as failed_ambiguous, guarded on status=sending", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "failed_ambiguous" }),
+    ]);
+    h.client = client;
+
+    await markAmbiguous("r1", "TimeoutError: request timed out");
+
+    expect(queries[0].update).toMatchObject({
+      status: "failed_ambiguous",
+      last_error: "TimeoutError: request timed out",
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("releaseClaim returns an un-attempted claimed row to pending", async () => {
+    const { client, queries } = buildClient([ok(recipientRow)]);
+    h.client = client;
+
+    await releaseClaim("r1");
+
+    expect(queries[0].update).toMatchObject({
+      status: "pending",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    // only claimed rows may be released — a row that made it to sending has
+    // started a POST and must resolve through a mark* transition instead
+    expect(queries[0].eq).toContainEqual(["status", "claimed"]);
+  });
+
+  test("releaseForConfigError compensates attempts and re-queues, guarded on status=sending", async () => {
+    const { client, queries } = buildClient([ok(recipientRow)]);
+    h.client = client;
+
+    await releaseForConfigError("r1", 2, "HTTP 401: bad token");
+
+    expect(queries[0].update).toMatchObject({
+      status: "pending",
+      attempts: 2, // caller passes back the pre-increment value
+      claimed_at: null,
+      claim_expires_at: null,
+      last_error: "HTTP 401: bad token",
+    });
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("isSuppressed checks the STOP list for one phone", async () => {
+    const hit = buildClient([ok({ phone_e164: "+15551230001" })]);
+    h.client = hit.client;
+    expect(await isSuppressed("+15551230001")).toBe(true);
+    expect(hit.queries[0].source).toBe("sms_suppressions");
+    expect(hit.queries[0].eq).toContainEqual(["phone_e164", "+15551230001"]);
+
+    const miss = buildClient([ok(null)]);
+    h.client = miss.client;
+    expect(await isSuppressed("+15551230002")).toBe(false);
+  });
+
+  test("getCampaignStatuses maps ids to statuses in one .in() query", async () => {
+    const { client, queries } = buildClient([
+      ok([
+        { id: "c1", status: "sending" },
+        { id: "c2", status: "paused" },
+      ]),
+    ]);
+    h.client = client;
+
+    const statuses = await getCampaignStatuses(["c1", "c2"]);
+
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].in).toContainEqual(["id", ["c1", "c2"]]);
+    expect(statuses.get("c1")).toBe("sending");
+    expect(statuses.get("c2")).toBe("paused");
+  });
+
+  test("getCampaignStatuses with no ids returns an empty map without querying", async () => {
+    const { client, queries } = buildClient();
+    h.client = client;
+    expect((await getCampaignStatuses([])).size).toBe(0);
+    expect(queries).toHaveLength(0);
+  });
+
+  test("completeDrainedCampaigns completes sending campaigns with zero active rows (guarded)", async () => {
+    const { client, queries } = buildClient([
+      ok([{ id: "c1" }, { id: "c2" }, { id: "c3" }]),
+      ok([{ campaign_id: "c2" }]), // c2 still has active rows
+      ok([{ id: "c1" }, { id: "c3" }]),
+    ]);
+    h.client = client;
+
+    const completed = await completeDrainedCampaigns();
+
+    expect(completed).toEqual(["c1", "c3"]);
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].eq).toContainEqual(["status", "sending"]);
+
+    // "active" = any row still pending|claimed|sending, via the counts view
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in).toContainEqual(["campaign_id", ["c1", "c2", "c3"]]);
+    expect(queries[1].in).toContainEqual([
+      "status",
+      ["pending", "claimed", "sending"],
+    ]);
+
+    const complete = queries[2];
+    expect(complete.source).toBe("sms_campaigns");
+    expect(complete.update?.status).toBe("completed");
+    expect(complete.in).toContainEqual(["id", ["c1", "c3"]]);
+    // guarded: a retryRecipient re-open between check and update must win
+    expect(complete.eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("completeDrainedCampaigns is a no-op when nothing is sending or nothing drained", async () => {
+    const none = buildClient([ok([])]);
+    h.client = none.client;
+    expect(await completeDrainedCampaigns()).toEqual([]);
+    expect(none.queries).toHaveLength(1);
+
+    const allActive = buildClient([
+      ok([{ id: "c1" }]),
+      ok([{ campaign_id: "c1" }]),
+    ]);
+    h.client = allActive.client;
+    expect(await completeDrainedCampaigns()).toEqual([]);
+    expect(allActive.queries).toHaveLength(2);
   });
 });
