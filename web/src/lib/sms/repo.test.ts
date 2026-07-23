@@ -584,6 +584,35 @@ describe("reads", () => {
     expect(list[1].counts.sent).toBe(7);
   });
 
+  test("listCampaignsWithCounts chunks >200 campaign ids across .in() queries and merges the counts", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({
+      ...campaignRow,
+      id: `c${i}`,
+    }));
+    const { client, queries } = buildClient([
+      ok(many),
+      ok([{ campaign_id: "c0", status: "pending", count: 3 }]),
+      ok([{ campaign_id: "c249", status: "sent", count: 7 }]),
+    ]);
+    h.client = client;
+
+    const list = await listCampaignsWithCounts();
+
+    // 1 campaigns read + 2 chunked counts-view reads (200/50)
+    expect(queries).toHaveLength(3);
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in[0][0]).toBe("campaign_id");
+    expect(queries[1].in[0][1]).toHaveLength(200);
+    expect(queries[2].in[0][1]).toHaveLength(50);
+    expect(queries[2].in[0][1]).toContain("c249");
+
+    // counts from BOTH chunks land on the right campaigns
+    expect(list).toHaveLength(250);
+    expect(list[0].counts.pending).toBe(3);
+    expect(list[249].counts.sent).toBe(7);
+    expect(list[1].counts.pending).toBe(0); // zero-filled
+  });
+
   test("listCampaignsWithCounts with no campaigns returns [] without querying the view", async () => {
     const { client, queries } = buildClient([ok([])]);
     h.client = client;
@@ -1079,6 +1108,46 @@ describe("dispatcher accessors", () => {
     expect(complete.in).toContainEqual(["id", ["c1", "c3"]]);
     // guarded: a retryRecipient re-open between check and update must win
     expect(complete.eq).toContainEqual(["status", "sending"]);
+  });
+
+  test("completeDrainedCampaigns chunks >200 sending ids on the counts view and merges the active set", async () => {
+    const many = Array.from({ length: 250 }, (_, i) => ({ id: `c${i}` }));
+    const drained = many
+      .map((r) => r.id)
+      .filter((id) => id !== "c0" && id !== "c249");
+    const { client, queries } = buildClient([
+      ok(many),
+      ok([{ campaign_id: "c0" }]), // chunk 1: c0 still active
+      ok([{ campaign_id: "c249" }]), // chunk 2: c249 still active
+      ok(drained.map((id) => ({ id }))),
+    ]);
+    h.client = client;
+
+    const completed = await completeDrainedCampaigns();
+
+    // two chunked counts-view reads (200/50), both status-scoped
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in).toContainEqual([
+      "campaign_id",
+      many.slice(0, 200).map((r) => r.id),
+    ]);
+    expect(queries[1].in).toContainEqual([
+      "status",
+      ["pending", "claimed", "sending"],
+    ]);
+    expect(queries[2].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[2].in).toContainEqual([
+      "campaign_id",
+      many.slice(200).map((r) => r.id),
+    ]);
+
+    // hits from BOTH chunks are excluded from the completed update
+    const complete = queries[3];
+    expect(complete.source).toBe("sms_campaigns");
+    expect(complete.update?.status).toBe("completed");
+    expect(complete.in).toContainEqual(["id", drained]);
+
+    expect(completed).toEqual(drained);
   });
 
   test("completeDrainedCampaigns is a no-op when nothing is sending or nothing drained", async () => {

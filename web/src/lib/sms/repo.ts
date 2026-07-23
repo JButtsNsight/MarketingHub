@@ -73,6 +73,15 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+/** Split values into IN_CHUNK-sized slices for `.in()` filters (URL length). */
+function inChunks<T>(values: T[]): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < values.length; i += IN_CHUNK) {
+    chunks.push(values.slice(i, i + IN_CHUNK));
+  }
+  return chunks;
+}
+
 // ---------------------------------------------------------------------------
 // Creation
 // ---------------------------------------------------------------------------
@@ -317,14 +326,16 @@ export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
   const rows = (data ?? []) as SmsCampaign[];
   if (rows.length === 0) return [];
 
-  const { data: countRows, error: countsError } = await countsView()
-    .select("*")
-    .in(
-      "campaign_id",
-      rows.map((c) => c.id),
-    );
-  if (countsError) fail("list-counts", countsError.message);
-  const byCampaign = foldCounts((countRows ?? []) as CampaignCounts[]);
+  // Chunked like getSuppressedSet — PostgREST .in() filters travel in the URL.
+  const countRows: CampaignCounts[] = [];
+  for (const chunk of inChunks(rows.map((c) => c.id))) {
+    const { data: chunkRows, error: countsError } = await countsView()
+      .select("*")
+      .in("campaign_id", chunk);
+    if (countsError) fail("list-counts", countsError.message);
+    countRows.push(...((chunkRows ?? []) as CampaignCounts[]));
+  }
+  const byCampaign = foldCounts(countRows);
 
   return rows.map((campaign) => ({
     ...campaign,
@@ -775,6 +786,28 @@ const ACTIVE_RECIPIENT_STATUSES: RecipientStatus[] = [
 ];
 
 /**
+ * The subset of `campaignIds` that still have active (pending|claimed|
+ * sending) recipient rows, via the counts view — chunked per `.in()` like
+ * getSuppressedSet (PostgREST filters travel in the URL).
+ */
+async function campaignsWithActiveRows(
+  campaignIds: string[],
+): Promise<Set<string>> {
+  const active = new Set<string>();
+  for (const chunk of inChunks(campaignIds)) {
+    const { data, error } = await countsView()
+      .select("campaign_id")
+      .in("campaign_id", chunk)
+      .in("status", ACTIVE_RECIPIENT_STATUSES);
+    if (error) fail("complete-drained-counts", error.message);
+    for (const row of (data ?? []) as Array<{ campaign_id: string }>) {
+      active.add(row.campaign_id);
+    }
+  }
+  return active;
+}
+
+/**
  * Drain check: `sending` campaigns with zero rows left in
  * pending|claimed|sending become `completed`. The final update is still
  * guarded on `status='sending'` so a concurrent pause/cancel (or a
@@ -788,16 +821,7 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
   const sendingIds = ((data ?? []) as Array<{ id: string }>).map((r) => r.id);
   if (sendingIds.length === 0) return [];
 
-  const { data: activeRows, error: activeError } = await countsView()
-    .select("campaign_id")
-    .in("campaign_id", sendingIds)
-    .in("status", ACTIVE_RECIPIENT_STATUSES);
-  if (activeError) fail("complete-drained-counts", activeError.message);
-  const active = new Set(
-    ((activeRows ?? []) as Array<{ campaign_id: string }>).map(
-      (r) => r.campaign_id,
-    ),
-  );
+  const active = await campaignsWithActiveRows(sendingIds);
 
   const drained = sendingIds.filter((id) => !active.has(id));
   if (drained.length === 0) return [];
