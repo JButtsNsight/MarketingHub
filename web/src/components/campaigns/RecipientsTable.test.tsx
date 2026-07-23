@@ -60,6 +60,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[
           recipient("r1", {
             status: "sent",
@@ -82,6 +83,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed_ambiguous" })]}
       />,
     );
@@ -93,6 +95,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed", last_error: longError })]}
       />,
     );
@@ -105,6 +108,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[
           recipient("r1", { status: "failed_ambiguous", name: "Ambi Guous" }),
           recipient("r2", { status: "failed", name: "Flat Failed" }),
@@ -131,6 +135,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed_ambiguous" })]}
       />,
     );
@@ -151,6 +156,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed_ambiguous" })]}
       />,
     );
@@ -169,6 +175,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed_ambiguous" })]}
       />,
     );
@@ -176,6 +183,8 @@ describe("RecipientsTable", () => {
     await user.click(screen.getByRole("button", { name: /retry/i }));
 
     expect(refresh).toHaveBeenCalled();
+    // Not a canceled campaign — no scary message, the refresh tells the story.
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   test("an unexpected failure shows an error and does not refresh", async () => {
@@ -184,6 +193,7 @@ describe("RecipientsTable", () => {
     render(
       <RecipientsTable
         campaignId="c1"
+        campaignStatus="sending"
         recipients={[recipient("r1", { status: "failed_ambiguous" })]}
       />,
     );
@@ -194,8 +204,72 @@ describe("RecipientsTable", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  test("a network-level failure shows an error, no unhandled rejection", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.reject(new TypeError("Failed to fetch"))),
+    );
+    const user = userEvent.setup();
+    render(
+      <RecipientsTable
+        campaignId="c1"
+        campaignStatus="sending"
+        recipients={[recipient("r1", { status: "failed_ambiguous" })]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    expect(refresh).not.toHaveBeenCalled();
+    // The busy flag resets so the user can retry.
+    expect(screen.getByRole("button", { name: /retry/i })).toBeEnabled();
+  });
+
   test("renders an empty message when the campaign has no recipients", () => {
-    render(<RecipientsTable campaignId="c1" recipients={[]} />);
+    render(
+      <RecipientsTable campaignId="c1" campaignStatus="sending" recipients={[]} />,
+    );
     expect(screen.getByText(/no recipients/i)).toBeInTheDocument();
+  });
+
+  test("canceled campaign: Retry is hidden, Mark failed remains", () => {
+    render(
+      <RecipientsTable
+        campaignId="c1"
+        campaignStatus="canceled"
+        recipients={[recipient("r1", { status: "failed_ambiguous" })]}
+      />,
+    );
+    expect(
+      screen.queryByRole("button", { name: /retry/i }),
+    ).not.toBeInTheDocument();
+    // Resolving the bookkeeping is still valid on a canceled campaign.
+    expect(
+      screen.getByRole("button", { name: /mark failed/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("a canceled-campaign 409 explains retries are closed and refreshes", async () => {
+    // The client's status prop can be stale (campaign canceled after page
+    // load) — the server 409s and the UI must say why.
+    mockFetch(409, { error: "campaign-canceled" });
+    const user = userEvent.setup();
+    render(
+      <RecipientsTable
+        campaignId="c1"
+        campaignStatus="sending"
+        recipients={[recipient("r1", { status: "failed_ambiguous" })]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /retry/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Campaign is canceled — recipients can no longer be retried.",
+    );
+    expect(refresh).toHaveBeenCalled();
   });
 });

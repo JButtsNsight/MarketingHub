@@ -82,12 +82,20 @@ export default async function CampaignDetailPage({
           />
           {/* No accent on the failure cards: StatCard accents are data-pool
               only (red is reserved for the status Badges). */}
+          <StatCard label="Undelivered" value={counts.undelivered} />
           <StatCard label="Failed" value={counts.failed} />
           <StatCard label="Ambiguous" value={counts.failed_ambiguous} />
           <StatCard label="Suppressed" value={counts.suppressed} />
+          {/* Skipped = invalid/duplicate phones at creation time — without it
+              the cards do not add up to the loaded audience. */}
+          <StatCard label="Skipped" value={counts.skipped} />
         </div>
 
-        <RecipientsTable campaignId={campaign.id} recipients={recipients} />
+        <RecipientsTable
+          campaignId={campaign.id}
+          campaignStatus={campaign.status}
+          recipients={recipients}
+        />
       </div>
     </>
   );

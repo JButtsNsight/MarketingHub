@@ -71,8 +71,12 @@ export default async function SettingsPage() {
                 value: sms.simpletextingSendTokenSet ? (
                   <Badge tone="var(--data-3)">configured (hidden)</Badge>
                 ) : (
+                  // The web task cannot read the worker task's env, so this
+                  // chip must never assert the secret exists — point at where
+                  // to actually verify it instead.
                   <Badge title="SIMPLETEXTING_API_TOKEN is injected into the dispatcher worker task only — its presence cannot be read from the web task.">
-                    configured on the worker task (not visible here)
+                    managed on the worker task — verify via the worker log
+                    heartbeat or Secrets Manager
                   </Badge>
                 ),
               },

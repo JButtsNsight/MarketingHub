@@ -46,11 +46,17 @@ describe("settings/page.tsx (server component)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/simpletexting send token/i)).toBeInTheDocument();
     // Web-task tokens unset -> "not set"; the send token lives on the worker
-    // task, so its unset state points there instead of claiming "not set".
+    // task, whose env the web task cannot read — the chip must NOT assert the
+    // secret is configured, only say where to verify it.
     expect(screen.getAllByText(/not set/i).length).toBeGreaterThanOrEqual(2);
     expect(
-      screen.getByText(/configured on the worker task/i),
+      screen.getByText(
+        /managed on the worker task — verify via the worker log heartbeat or Secrets Manager/i,
+      ),
     ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/configured on the worker task/i),
+    ).not.toBeInTheDocument();
   });
 
   test("shows configured chips (booleans only, never values) when env is set", async () => {

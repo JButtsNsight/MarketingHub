@@ -52,6 +52,9 @@ export function CampaignActions({
         return;
       }
       router.refresh();
+    } catch {
+      // fetch itself rejected (offline, DNS) — never a bare rejection.
+      setError("Network error — please try again.");
     } finally {
       setBusy(false);
     }

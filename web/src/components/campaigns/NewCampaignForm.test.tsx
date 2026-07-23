@@ -71,6 +71,32 @@ function stubFetch(routes: Record<string, Route>) {
   return fn;
 }
 
+/**
+ * Fetch stub routed by URL prefix where each route either resolves with a
+ * response or rejects at the network level (fetch's TypeError).
+ */
+function stubFetchWithRejects(
+  routes: Record<string, Route | { reject: true }>,
+) {
+  const fn = vi.fn((url: string, _init?: RequestInit) => {
+    const hit = Object.entries(routes).find(([prefix]) =>
+      url.startsWith(prefix),
+    );
+    if (!hit) throw new Error(`unexpected fetch: ${url}`);
+    const route = hit[1];
+    if ("reject" in route) {
+      return Promise.reject(new TypeError("Failed to fetch"));
+    }
+    return Promise.resolve({
+      ok: route.status >= 200 && route.status < 300,
+      status: route.status,
+      json: () => Promise.resolve(route.body),
+    } as Response);
+  });
+  vi.stubGlobal("fetch", fn);
+  return fn;
+}
+
 /** Today in America/New_York as YYYY-MM-DD (the date input's floor). */
 function todayInEastern(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -193,6 +219,46 @@ describe("NewCampaignForm", () => {
     );
   });
 
+  test("a network-level board-preview failure shows an error, no unhandled rejection", async () => {
+    stubFetchWithRejects({ "/api/monday/board-preview": { reject: true } });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/monday board/i), "4567890123");
+    await user.click(screen.getByRole("button", { name: /load board/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    // The busy flag resets so the user can retry.
+    expect(screen.getByRole("button", { name: /load board/i })).toBeEnabled();
+  });
+
+  test("a network-level create failure shows an error and re-enables submit", async () => {
+    stubFetchWithRejects({
+      "/api/monday/board-preview": { status: 200, body: PREVIEW },
+      "/api/campaigns": { reject: true },
+    });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+    await loadBoard(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-15" },
+    });
+    await user.click(screen.getByRole("button", { name: /create campaign/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    expect(push).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /create campaign/i }),
+    ).toBeEnabled();
+  });
+
   test("blocks submit until a board is loaded and a phone column chosen", async () => {
     const fetchFn = stubFetch({});
     const user = userEvent.setup();
@@ -236,6 +302,59 @@ describe("NewCampaignForm", () => {
       sendDate: "2030-01-15",
     });
     expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
+  });
+
+  test("after a 201 the submit button STAYS disabled while navigation is pending", async () => {
+    // router.push is async — re-enabling the button on success opens a
+    // double-submit window that double-creates the campaign.
+    stubFetch({
+      "/api/monday/board-preview": { status: 200, body: PREVIEW },
+      "/api/campaigns": { status: 201, body: { id: "camp-9" } },
+    });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+    await loadBoard(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-15" },
+    });
+    const submit = screen.getByRole("button", { name: /create campaign/i });
+    await user.click(submit);
+
+    expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
+    expect(submit).toBeDisabled();
+  });
+
+  test("a 409 duplicate-campaign response shows a clear duplicate message", async () => {
+    stubFetch({
+      "/api/monday/board-preview": { status: 200, body: PREVIEW },
+      "/api/campaigns": {
+        status: 409,
+        body: { error: "duplicate-campaign" },
+      },
+    });
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} />);
+
+    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+    await loadBoard(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-15" },
+    });
+    await user.click(screen.getByRole("button", { name: /create campaign/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/an identical campaign already exists/i);
+    // The raw server slug is not user-facing copy.
+    expect(alert).not.toHaveTextContent(/^duplicate-campaign$/);
+    expect(push).not.toHaveBeenCalled();
+    // Error path — the button is usable again after the fix.
+    expect(
+      screen.getByRole("button", { name: /create campaign/i }),
+    ).toBeEnabled();
   });
 
   test("surfaces the server's 400 error message on create", async () => {

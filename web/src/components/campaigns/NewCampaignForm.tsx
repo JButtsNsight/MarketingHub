@@ -144,6 +144,11 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
       const data = (await res.json()) as BoardPreview;
       setPreview(data);
       setPhoneColumnId(data.suggestedPhoneColumnId ?? "");
+    } catch {
+      // fetch itself rejected (offline, DNS, CORS) — never a bare rejection.
+      setPreview(null);
+      setPhoneColumnId("");
+      setBoardError("Network error — please try again.");
     } finally {
       setLoadingBoard(false);
     }
@@ -196,6 +201,10 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
           setError(MONDAY_UNCONFIGURED);
         } else if (res.status === 403) {
           setError("You do not have permission to create campaigns.");
+        } else if (res.status === 409) {
+          setError(
+            "Duplicate campaign — an identical campaign already exists. Check the campaigns list before creating it again.",
+          );
         } else {
           const body = (await res
             .json()
@@ -205,11 +214,16 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
               "Campaign creation failed. Please review the form and try again.",
           );
         }
+        setSubmitting(false);
         return;
       }
       const { id } = (await res.json()) as { id: string };
+      // Deliberately NOT re-enabling the button here: router.push navigation
+      // is async, and re-enabling opens a double-submit (double-create)
+      // window. `submitting` only resets on the error paths above/below.
       router.push(`/campaigns/${id}`);
-    } finally {
+    } catch {
+      setError("Network error — please try again.");
       setSubmitting(false);
     }
   };

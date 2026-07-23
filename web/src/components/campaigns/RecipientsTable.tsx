@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SmsCampaignRecipient } from "@/lib/sms/schema";
+import type { CampaignStatus, SmsCampaignRecipient } from "@/lib/sms/schema";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { statusLabel, statusTone } from "./statusBadge";
@@ -22,14 +22,19 @@ function truncate(text: string): string {
  * auto-retries them) additionally get the manual-review lane: Retry re-queues
  * the row as due-now pending, Mark failed declares it terminal. Both PATCH the
  * group-gated recipient route and `router.refresh()` so the server page
- * re-reads fresh rows; a 409 means someone else resolved the row first, which
- * the refresh will show.
+ * re-reads fresh rows; a 409 means someone else resolved the row first (the
+ * refresh will show it) — or that the campaign was canceled, which gets an
+ * explicit message. On a canceled campaign the Retry button is not offered at
+ * all (the server would 409 it); Mark failed stays available because resolving
+ * the bookkeeping is still valid.
  */
 export function RecipientsTable({
   campaignId,
+  campaignStatus,
   recipients,
 }: {
   campaignId: string;
+  campaignStatus: CampaignStatus;
   recipients: SmsCampaignRecipient[];
 }) {
   const router = useRouter();
@@ -54,7 +59,23 @@ export function RecipientsTable({
         );
         return;
       }
+      if (res.status === 409) {
+        // Two 409s exist: someone else resolved the row first (silent — the
+        // refresh shows it), or the campaign was canceled after this page
+        // loaded (say so explicitly; the refresh also removes Retry).
+        const body = (await res
+          .json()
+          .catch(() => null)) as { error?: string } | null;
+        if (body?.error && /cancel/i.test(body.error)) {
+          setError(
+            "Campaign is canceled — recipients can no longer be retried.",
+          );
+        }
+      }
       router.refresh();
+    } catch {
+      // fetch itself rejected (offline, DNS) — never a bare rejection.
+      setError("Network error — please try again.");
     } finally {
       setBusyId(null);
     }
@@ -112,14 +133,18 @@ export function RecipientsTable({
       render: (r) =>
         r.status === "failed_ambiguous" ? (
           <span className="campaign-actions">
-            <button
-              type="button"
-              className="type-chip"
-              disabled={busyId === r.id}
-              onClick={() => review(r.id, "retry")}
-            >
-              Retry
-            </button>
+            {/* A canceled campaign will never send again — do not offer
+                Retry (the server 409s it anyway). */}
+            {campaignStatus !== "canceled" ? (
+              <button
+                type="button"
+                className="type-chip"
+                disabled={busyId === r.id}
+                onClick={() => review(r.id, "retry")}
+              >
+                Retry
+              </button>
+            ) : null}
             <button
               type="button"
               className="type-chip"
