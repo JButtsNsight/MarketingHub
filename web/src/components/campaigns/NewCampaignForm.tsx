@@ -272,7 +272,7 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
 
       <div className="field">
         <label htmlFor="camp-board">Monday board</label>
-        <div className="field-row">
+        <div className="board-row">
           <input
             id="camp-board"
             className="surface control"
