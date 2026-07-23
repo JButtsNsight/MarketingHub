@@ -31,6 +31,15 @@ function authErrorResponse(err: unknown): Response {
   throw err;
 }
 
+/**
+ * Path params reach PostgREST as uuid filters — a non-UUID would trigger
+ * Postgres 22P02 (thrown → 500). Guard up front: not a UUID = not found.
+ */
+const UuidSchema = z.string().uuid();
+function isUuid(value: string): boolean {
+  return UuidSchema.safeParse(value).success;
+}
+
 const PatchBodySchema = z.object({
   action: z.enum(["retry", "mark_failed"]),
   /** Audit note stored as last_error by mark_failed. */
@@ -47,6 +56,11 @@ export async function PATCH(
     return authErrorResponse(err);
   }
 
+  const { id, recipientId } = await context.params;
+  if (!isUuid(id) || !isUuid(recipientId)) {
+    return Response.json({ error: "Recipient not found" }, { status: 404 });
+  }
+
   let payload: unknown;
   try {
     payload = await req.json();
@@ -61,8 +75,6 @@ export async function PATCH(
       { status: 400 },
     );
   }
-
-  const { recipientId } = await context.params;
 
   if (parsed.data.action === "retry") {
     const recipient = await retryRecipient(recipientId);
