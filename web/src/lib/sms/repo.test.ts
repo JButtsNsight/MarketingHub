@@ -8,13 +8,18 @@ vi.mock("../supabase", () => ({
 }));
 
 import {
+  cancelCampaign,
   createCampaign,
   getCampaign,
   getCampaignCounts,
   getCampaignRecipients,
   getSuppressedSet,
   listCampaignsWithCounts,
+  markRecipientFailed,
+  pauseCampaign,
   prepareRecipients,
+  resumeCampaign,
+  retryRecipient,
   type MondayRecipientRow,
 } from "./repo";
 
@@ -168,6 +173,34 @@ const campaignRow = {
   created_at: "2026-07-23T00:00:00Z",
   updated_at: "2026-07-23T00:00:00Z",
 };
+
+const recipientRow = {
+  id: "r1",
+  campaign_id: "c1",
+  monday_item_id: "m1",
+  name: "Jane Doe",
+  first_name: "Jane",
+  phone_e164: "+15551230001",
+  rendered_text: "Hi Jane",
+  status: "pending",
+  attempts: 0,
+  send_after: "2026-08-05T15:30:00.000Z",
+  claimed_at: null,
+  claim_expires_at: null,
+  st_message_id: null,
+  st_credits: null,
+  last_error: null,
+  created_at: "2026-07-23T00:00:00Z",
+  updated_at: "2026-07-23T00:00:00Z",
+};
+
+/** send_after / updated_at style timestamps stamped "now" by the repo. */
+function expectRecentIso(value: unknown) {
+  expect(typeof value).toBe("string");
+  expect(Math.abs(Date.parse(value as string) - Date.now())).toBeLessThan(
+    10_000,
+  );
+}
 
 const validInput = {
   name: "August outreach",
@@ -538,5 +571,157 @@ describe("reads", () => {
     const { client } = buildClient([err("view gone")]);
     h.client = client;
     await expect(getCampaignCounts("c1")).rejects.toThrow(/\[sms\].*view gone/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Conditional transitions — the .eq('status', …) guards ARE the durability
+// story: row count = won/lost, null = lost the race (routes answer 409).
+// ---------------------------------------------------------------------------
+describe("campaign transitions", () => {
+  test("pauseCampaign pauses only scheduled|sending, then releases claimed rows to pending", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+    ]);
+    h.client = client;
+
+    const paused = await pauseCampaign("c1");
+
+    expect(paused?.status).toBe("paused");
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].update?.status).toBe("paused");
+    expect(queries[0].eq).toContainEqual(["id", "c1"]);
+    expect(queries[0].in).toContainEqual(["status", ["scheduled", "sending"]]);
+    expect(queries[0].maybeSingle).toBe(true);
+
+    // claimed rows are released so a resumed campaign re-claims them cleanly
+    const release = queries[1];
+    expect(release.source).toBe("sms_campaign_recipients");
+    expect(release.update).toMatchObject({
+      status: "pending",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expect(release.eq).toContainEqual(["campaign_id", "c1"]);
+    expect(release.eq).toContainEqual(["status", "claimed"]);
+  });
+
+  test("pauseCampaign returns null (409) without touching recipients when the guard loses", async () => {
+    const { client, queries } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await pauseCampaign("c1")).toBeNull();
+    expect(queries).toHaveLength(1);
+  });
+
+  test("resumeCampaign moves paused → scheduled (dispatcher promotion re-decides)", async () => {
+    const { client, queries } = buildClient([ok(campaignRow)]);
+    h.client = client;
+
+    const resumed = await resumeCampaign("c1");
+
+    expect(resumed?.id).toBe("c1");
+    expect(queries[0].update?.status).toBe("scheduled");
+    expect(queries[0].eq).toContainEqual(["id", "c1"]);
+    expect(queries[0].eq).toContainEqual(["status", "paused"]);
+  });
+
+  test("resumeCampaign returns null when the campaign is not paused", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await resumeCampaign("c1")).toBeNull();
+  });
+
+  test("cancelCampaign cancels scheduled|sending|paused and cancels pending|claimed recipients", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "canceled" }),
+      ok(null),
+    ]);
+    h.client = client;
+
+    const canceled = await cancelCampaign("c1");
+
+    expect(canceled?.status).toBe("canceled");
+    expect(queries[0].update?.status).toBe("canceled");
+    expect(queries[0].eq).toContainEqual(["id", "c1"]);
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["scheduled", "sending", "paused"],
+    ]);
+
+    const sweep = queries[1];
+    expect(sweep.source).toBe("sms_campaign_recipients");
+    expect(sweep.update).toMatchObject({
+      status: "canceled",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expect(sweep.eq).toContainEqual(["campaign_id", "c1"]);
+    // sending rows are NOT canceled — the in-flight POST completes naturally
+    expect(sweep.in).toContainEqual(["status", ["pending", "claimed"]]);
+  });
+
+  test("cancelCampaign returns null for terminal campaigns without a recipient sweep", async () => {
+    const { client, queries } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await cancelCampaign("c1")).toBeNull();
+    expect(queries).toHaveLength(1);
+  });
+
+  test("retryRecipient re-queues failed_ambiguous|failed with send_after=now and re-opens a completed campaign", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "pending" }),
+      ok(null),
+    ]);
+    h.client = client;
+
+    const row = await retryRecipient("r1");
+
+    expect(row?.id).toBe("r1");
+    const retry = queries[0];
+    expect(retry.source).toBe("sms_campaign_recipients");
+    expect(retry.update).toMatchObject({
+      status: "pending",
+      claimed_at: null,
+      claim_expires_at: null,
+    });
+    expectRecentIso(retry.update?.send_after);
+    expect(retry.eq).toContainEqual(["id", "r1"]);
+    expect(retry.in).toContainEqual(["status", ["failed_ambiguous", "failed"]]);
+
+    // completed → sending re-open, guarded so other states are untouched
+    const reopen = queries[1];
+    expect(reopen.source).toBe("sms_campaigns");
+    expect(reopen.update?.status).toBe("sending");
+    expect(reopen.eq).toContainEqual(["id", "c1"]);
+    expect(reopen.eq).toContainEqual(["status", "completed"]);
+  });
+
+  test("retryRecipient returns null (409) without touching the campaign when the guard loses", async () => {
+    const { client, queries } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await retryRecipient("r1")).toBeNull();
+    expect(queries).toHaveLength(1);
+  });
+
+  test("markRecipientFailed resolves failed_ambiguous → failed only", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "failed" }),
+    ]);
+    h.client = client;
+
+    const row = await markRecipientFailed("r1", "manual review: assumed lost");
+
+    expect(row?.status).toBe("failed");
+    expect(queries[0].update?.status).toBe("failed");
+    expect(queries[0].update?.last_error).toBe("manual review: assumed lost");
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "failed_ambiguous"]);
+  });
+
+  test("markRecipientFailed returns null when the row is not failed_ambiguous", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await markRecipientFailed("r1")).toBeNull();
   });
 });

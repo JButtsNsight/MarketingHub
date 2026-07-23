@@ -341,3 +341,138 @@ export async function getCampaignCounts(
   }
   return counts;
 }
+
+// ---------------------------------------------------------------------------
+// Conditional transitions (API PATCH actions). Every transition is guarded by
+// the expected current status; `null` = the guard lost (caller routes 409).
+// ---------------------------------------------------------------------------
+
+/**
+ * Pause a `scheduled`/`sending` campaign, releasing its `claimed` (not yet
+ * attempted) rows back to `pending`. Rows the dispatcher already claimed in
+ * memory are safe: its claimed → sending update is guarded on
+ * `.eq('status','claimed')` and will match 0 rows after this release.
+ */
+export async function pauseCampaign(id: string): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .update({ status: "paused", updated_at: nowIso() })
+    .eq("id", id)
+    .in("status", ["scheduled", "sending"])
+    .select()
+    .maybeSingle();
+  if (error) fail("pause", error.message);
+  if (!data) return null;
+
+  const { error: releaseError } = await recipients()
+    .update({
+      status: "pending",
+      claimed_at: null,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("campaign_id", id)
+    .eq("status", "claimed");
+  if (releaseError) fail("pause-release", releaseError.message);
+
+  return data as SmsCampaign;
+}
+
+/**
+ * Resume a paused campaign to `scheduled` — the dispatcher's promotion query
+ * is the single decision point for "actively dispatching", so resume never
+ * jumps straight to `sending`.
+ */
+export async function resumeCampaign(id: string): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .update({ status: "scheduled", updated_at: nowIso() })
+    .eq("id", id)
+    .eq("status", "paused")
+    .select()
+    .maybeSingle();
+  if (error) fail("resume", error.message);
+  return (data as SmsCampaign) ?? null;
+}
+
+/**
+ * Cancel a non-terminal campaign and its not-yet-attempted recipients
+ * (`pending`/`claimed` → `canceled`). Rows already `sending` are left alone —
+ * the in-flight POST completes naturally and cannot be recalled.
+ */
+export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .update({ status: "canceled", updated_at: nowIso() })
+    .eq("id", id)
+    .in("status", ["scheduled", "sending", "paused"])
+    .select()
+    .maybeSingle();
+  if (error) fail("cancel", error.message);
+  if (!data) return null;
+
+  const { error: sweepError } = await recipients()
+    .update({
+      status: "canceled",
+      claimed_at: null,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("campaign_id", id)
+    .in("status", ["pending", "claimed"]);
+  if (sweepError) fail("cancel-recipients", sweepError.message);
+
+  return data as SmsCampaign;
+}
+
+/**
+ * Manual-review retry: re-queue a `failed_ambiguous`/`failed` row as due-now
+ * `pending`, and re-open its campaign (`completed` → `sending`) so the
+ * dispatcher picks it up. last_error is kept for audit until the next attempt
+ * overwrites it.
+ */
+export async function retryRecipient(
+  id: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .update({
+      status: "pending",
+      send_after: nowIso(),
+      claimed_at: null,
+      claim_expires_at: null,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .in("status", ["failed_ambiguous", "failed"])
+    .select()
+    .maybeSingle();
+  if (error) fail("retry-recipient", error.message);
+  if (!data) return null;
+  const row = data as SmsCampaignRecipient;
+
+  const { error: reopenError } = await campaigns()
+    .update({ status: "sending", updated_at: nowIso() })
+    .eq("id", row.campaign_id)
+    .eq("status", "completed");
+  if (reopenError) fail("retry-reopen", reopenError.message);
+
+  return row;
+}
+
+/** Manual-review resolution: a `failed_ambiguous` row is declared `failed`. */
+export async function markRecipientFailed(
+  id: string,
+  note?: string,
+): Promise<SmsCampaignRecipient | null> {
+  const patch: Record<string, unknown> = {
+    status: "failed",
+    updated_at: nowIso(),
+  };
+  if (note) patch.last_error = note;
+
+  const { data, error } = await recipients()
+    .update(patch)
+    .eq("id", id)
+    .eq("status", "failed_ambiguous")
+    .select()
+    .maybeSingle();
+  if (error) fail("mark-recipient-failed", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
