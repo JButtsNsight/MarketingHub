@@ -18,6 +18,8 @@ const CONTEXT: Record<string, string> = {
     'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/supabase-service-role-AbCdEf',
   supabaseSecretsKmsKeyArn:
     'arn:aws:kms:us-east-1:439024109088:key/00000000-1111-2222-3333-444444444444',
+  smsSecretsArn:
+    'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/sms-campaigns-GhIjKl',
   // The app runs INSIDE the Supabase VPC (created by the Supabase NetworkStack) and
   // joins its `internalClientSg` — the only path to the private data-API ALB + its
   // private DNS. These come from the NetworkStack CfnOutputs; no VPC is created here.
@@ -30,6 +32,12 @@ const CONTEXT: Record<string, string> = {
 
 /** The exact secret ARN the task consumes — IAM must be scoped to THIS, no wildcard. */
 const SERVICE_ROLE_SECRET_ARN = CONTEXT.supabaseServiceRoleSecretArn;
+
+/** The SMS-campaigns JSON secret (Monday + SimpleTexting tokens) app + worker consume. */
+const SMS_SECRETS_ARN = CONTEXT.smsSecretsArn;
+
+/** The ONLY exact secret ARNs any GetSecretValue statement may name (no wildcards). */
+const ALLOWED_SECRET_ARNS = [SERVICE_ROLE_SECRET_ARN, SMS_SECRETS_ARN];
 
 /** The imported Supabase networking the app must attach to (from NetworkStack outputs). */
 const SUPABASE_PRIVATE_SUBNET_IDS = CONTEXT.supabasePrivateSubnetIds.split(',');
@@ -187,14 +195,16 @@ test('the task carries AWS_REGION/ALB_REGION = the stack region for the ALB key 
 
 test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a plain env)', () => {
   const { template } = makeApp();
-  // It must be a Secret (ValueFrom), never a plaintext Environment value.
+  // It must be a Secret (ValueFrom), never a plaintext Environment value. The
+  // secret is JSON, so the ValueFrom carries the `:SERVICE_ROLE_KEY::` field
+  // selector (arn:...:secret:name-SUFFIX:FIELD:VERSION-STAGE:VERSION-ID).
   template.hasResourceProperties('AWS::ECS::TaskDefinition', {
     ContainerDefinitions: Match.arrayWith([
       Match.objectLike({
         Secrets: Match.arrayWith([
           Match.objectLike({
             Name: 'SUPABASE_SERVICE_ROLE_KEY',
-            ValueFrom: SERVICE_ROLE_SECRET_ARN,
+            ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
           }),
         ]),
       }),
@@ -211,7 +221,7 @@ test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a p
   }
 });
 
-test('the execution role may read ONLY the exact service-role secret ARN (no wildcard)', () => {
+test('execution roles may read ONLY the exact allowlisted secret ARNs (no wildcard)', () => {
   const { template } = makeApp();
   const policies = template.findResources('AWS::IAM::Policy');
   const statements = Object.values(policies).flatMap((p: any) =>
@@ -225,9 +235,10 @@ test('the execution role may read ONLY the exact service-role secret ARN (no wil
   for (const s of getSecret) {
     const resources = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
     for (const r of resources) {
-      // Exact ARN string — never a "*" and never the "-??????" partial-ARN glob.
+      // Exact ARN strings from the allowlist (service-role + sms-campaigns
+      // secrets) — never a "*" and never the "-??????" partial-ARN glob.
       expect(typeof r).toBe('string');
-      expect(r).toBe(SERVICE_ROLE_SECRET_ARN);
+      expect(ALLOWED_SECRET_ARNS).toContain(r);
       expect(r).not.toContain('*');
       expect(r).not.toContain('??????');
     }
@@ -535,7 +546,7 @@ test('preview: SUPABASE_URL + region envs and the service-role SECRET are still 
         Secrets: Match.arrayWith([
           Match.objectLike({
             Name: 'SUPABASE_SERVICE_ROLE_KEY',
-            ValueFrom: SERVICE_ROLE_SECRET_ARN,
+            ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
           }),
         ]),
       }),
