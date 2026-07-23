@@ -68,6 +68,10 @@ export class AppStack extends Stack {
     // does NOT know the CMK, so it can't grant kms:Decrypt — Fargate then fails with
     // "Access to KMS is not allowed". Pass the CMK ARN and grant Decrypt explicitly.
     const supabaseSecretsKmsKeyArn = req('supabaseSecretsKmsKeyArn');
+    // SMS campaigns credentials — one JSON secret with the MONDAY_API_TOKEN /
+    // SIMPLETEXTING_WEBHOOK_TOKEN / SIMPLETEXTING_API_TOKEN fields (fields may be
+    // empty = the feature degrades gracefully, but the secret must exist).
+    const smsSecretsArn = req('smsSecretsArn');
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
     // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
@@ -141,6 +145,16 @@ export class AppStack extends Stack {
       supabaseServiceRoleSecretArn,
     );
 
+    // The SMS-campaigns credentials secret (runbook §1.7). Encrypted with the
+    // SAME dedicated CMK as the service-role secret — mandated by the runbook —
+    // so the existing kms:Decrypt grant on that CMK covers this secret too and
+    // no new KMS statement is needed.
+    const smsSecrets = secretsmanager.Secret.fromSecretCompleteArn(
+      this,
+      'SmsSecrets',
+      smsSecretsArn,
+    );
+
     const taskDef = new ecs.FargateTaskDefinition(this, 'AppTaskDef', {
       cpu: 512,
       memoryLimitMiB: 1024,
@@ -168,6 +182,14 @@ export class AppStack extends Stack {
         SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
           supabaseServiceRoleSecret,
           'SERVICE_ROLE_KEY',
+        ),
+        // SMS campaigns: Monday board reads + SimpleTexting webhook auth. Both
+        // are JSON fields of the sms-campaigns secret (empty field = feature
+        // degrades gracefully; the app never sees the whole JSON blob).
+        MONDAY_API_TOKEN: ecs.Secret.fromSecretsManager(smsSecrets, 'MONDAY_API_TOKEN'),
+        SIMPLETEXTING_WEBHOOK_TOKEN: ecs.Secret.fromSecretsManager(
+          smsSecrets,
+          'SIMPLETEXTING_WEBHOOK_TOKEN',
         ),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),

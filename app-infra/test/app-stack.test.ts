@@ -221,6 +221,23 @@ test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a p
   }
 });
 
+test('the app container gets MONDAY_API_TOKEN + SIMPLETEXTING_WEBHOOK_TOKEN from the sms-campaigns secret', () => {
+  const { template } = makeApp();
+  for (const field of ['MONDAY_API_TOKEN', 'SIMPLETEXTING_WEBHOOK_TOKEN']) {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'app',
+          Secrets: Match.arrayWith([
+            // JSON-field extraction: ValueFrom = <arn>:FIELD::, never plaintext env.
+            Match.objectLike({ Name: field, ValueFrom: `${SMS_SECRETS_ARN}:${field}::` }),
+          ]),
+        }),
+      ]),
+    });
+  }
+});
+
 test('execution roles may read ONLY the exact allowlisted secret ARNs (no wildcard)', () => {
   const { template } = makeApp();
   const policies = template.findResources('AWS::IAM::Policy');
@@ -552,6 +569,22 @@ test('preview: SUPABASE_URL + region envs and the service-role SECRET are still 
       }),
     ]),
   });
+});
+
+test('preview: the app container still gets the sms-campaigns secrets', () => {
+  const { template } = makePreviewApp();
+  for (const field of ['MONDAY_API_TOKEN', 'SIMPLETEXTING_WEBHOOK_TOKEN']) {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'app',
+          Secrets: Match.arrayWith([
+            Match.objectLike({ Name: field, ValueFrom: `${SMS_SECRETS_ARN}:${field}::` }),
+          ]),
+        }),
+      ]),
+    });
+  }
 });
 
 test('preview: the Fargate service stays in the PRIVATE subnets with public IP disabled and the internalClientSg', () => {
