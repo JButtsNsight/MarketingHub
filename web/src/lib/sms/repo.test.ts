@@ -57,6 +57,7 @@ interface QueryLog {
   upsert: { row: unknown; options: unknown } | null;
   eq: Array<[string, unknown]>;
   in: Array<[string, unknown[]]>;
+  is: Array<[string, unknown]>;
   lte: Array<[string, unknown]>;
   order: Array<[string, unknown]>;
   limit: number | null;
@@ -94,6 +95,7 @@ function buildClient(results: MockResult[] = []) {
       upsert: null,
       eq: [],
       in: [],
+      is: [],
       lte: [],
       order: [],
       limit: null,
@@ -126,6 +128,10 @@ function buildClient(results: MockResult[] = []) {
     });
     q.in = vi.fn((col: string, vals: unknown[]) => {
       log.in.push([col, vals]);
+      return q;
+    });
+    q.is = vi.fn((col: string, val: unknown) => {
+      log.is.push([col, val]);
       return q;
     });
     q.lte = vi.fn((col: string, val: unknown) => {
@@ -1156,6 +1162,10 @@ describe("webhook accessors", () => {
       "status",
       ["sent", "sending", "failed_ambiguous"],
     ]);
+    // ...and ONLY rows that never learned a message id: a 'sent' row that
+    // already carries a DIFFERENT st_message_id belongs to another message
+    // and must never be matched (and then corrupted) by the phone fallback.
+    expect(byPhone.is).toContainEqual(["st_message_id", null]);
     expect(byPhone.order).toContainEqual(["updated_at", { ascending: false }]);
     expect(byPhone.limit).toBe(1);
   });
@@ -1217,6 +1227,39 @@ describe("webhook accessors", () => {
       status: "undelivered",
       last_error: "carrier rejected",
     });
+  });
+
+  test("applyDeliveryReport never overwrites a DIFFERENT known st_message_id (status still settles)", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "delivered", st_message_id: "st-old" }),
+    ]);
+    h.client = client;
+
+    const row = await applyDeliveryReport("r1", {
+      delivered: true,
+      stMessageId: "st-9",
+      currentStMessageId: "st-old",
+    });
+
+    expect(row?.status).toBe("delivered");
+    expect(queries[0].update?.status).toBe("delivered");
+    // the row already learned a different id — keep it
+    expect(queries[0].update).not.toHaveProperty("st_message_id");
+  });
+
+  test("applyDeliveryReport re-writes st_message_id when it matches the row's known id", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "delivered", st_message_id: "st-9" }),
+    ]);
+    h.client = client;
+
+    await applyDeliveryReport("r1", {
+      delivered: true,
+      stMessageId: "st-9",
+      currentStMessageId: "st-9",
+    });
+
+    expect(queries[0].update?.st_message_id).toBe("st-9");
   });
 
   test("applyDeliveryReport returns null when the row is not in a settleable status", async () => {

@@ -214,6 +214,9 @@ export async function POST(req: Request): Promise<Response> {
         await applyDeliveryReport(recipient.id, {
           delivered: classified.delivered,
           stMessageId: classified.stMessageId,
+          // the known id travels along so the repo can refuse to overwrite a
+          // different already-learned st_message_id
+          currentStMessageId: recipient.st_message_id ?? null,
           detail: classified.delivered
             ? undefined
             : `delivery report: ${classified.status}`,

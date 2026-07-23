@@ -861,7 +861,9 @@ export async function recordWebhookEvent(
  * Locate the outbox row a delivery report refers to: by SimpleTexting
  * message id first (exact), else the newest row for the phone still awaiting
  * an outcome (`sent`/`sending`/`failed_ambiguous`) — the phone fallback is
- * what reconciles ambiguous rows whose st_message_id we never learned.
+ * what reconciles ambiguous rows whose st_message_id we never learned, so it
+ * ONLY considers rows with a null st_message_id (a `sent` row that already
+ * carries a DIFFERENT id belongs to another message and must not be matched).
  */
 export async function findRecipientForDeliveryReport(lookup: {
   stMessageId?: string | null;
@@ -883,6 +885,7 @@ export async function findRecipientForDeliveryReport(lookup: {
       .select("*")
       .eq("phone_e164", lookup.phone)
       .in("status", ["sent", "sending", "failed_ambiguous"])
+      .is("st_message_id", null)
       .order("updated_at", { ascending: false })
       .limit(1);
     if (error) fail("find-by-phone", error.message);
@@ -897,18 +900,33 @@ export async function findRecipientForDeliveryReport(lookup: {
  * Settle a recipient from a delivery report: `delivered`/`undelivered`.
  * Guarded to sent|sending|failed_ambiguous — the failed_ambiguous path IS
  * the automatic reconciliation lane (proof the ambiguous POST landed).
- * Backfills st_message_id when the report carries one we did not know.
+ * Backfills st_message_id when the report carries one we did not know, but
+ * NEVER overwrites a different already-learned id: callers pass the row's
+ * known value as `currentStMessageId`, and the id is only written when that
+ * value is null/unknown or equals the incoming one.
  */
 export async function applyDeliveryReport(
   id: string,
-  report: { delivered: boolean; stMessageId?: string | null; detail?: string },
+  report: {
+    delivered: boolean;
+    stMessageId?: string | null;
+    /** The row's st_message_id as the caller last read it. */
+    currentStMessageId?: string | null;
+    detail?: string;
+  },
 ): Promise<SmsCampaignRecipient | null> {
   const patch: Record<string, unknown> = {
     status: report.delivered ? "delivered" : "undelivered",
     claim_expires_at: null,
     updated_at: nowIso(),
   };
-  if (report.stMessageId) patch.st_message_id = report.stMessageId;
+  if (
+    report.stMessageId &&
+    (report.currentStMessageId == null ||
+      report.currentStMessageId === report.stMessageId)
+  ) {
+    patch.st_message_id = report.stMessageId;
+  }
   if (!report.delivered && report.detail) patch.last_error = report.detail;
 
   const { data, error } = await recipients()
