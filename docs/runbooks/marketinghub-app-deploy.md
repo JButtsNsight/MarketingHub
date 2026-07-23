@@ -88,6 +88,69 @@ accepts container port `:3000` from the ALB SG only.
   must therefore be the **private** data-API hostname (Supabase private hosted zone),
   not a public URL.
 
+### 1.6 SMS campaigns schema migration
+- The **SMS campaigns migration** `cdk/sql/2026-07-22-sms-campaigns.sql` has been
+  applied to the Supabase Postgres (creates `marketinghub.sms_campaigns`, the
+  `sms_campaign_recipients` outbox, `sms_suppressions`, `sms_webhook_events`, the
+  recipient-counts view, and the `claim_due_sms_recipients()` RPC — idempotent,
+  deny-by-default RLS).
+- Apply migrations **in date order**: this one runs AFTER
+  `2026-07-05-templates.sql` (§1.1) — it references `marketinghub.templates`.
+- Apply it via SSM to the Supabase EC2 host, then `psql` inside the `supabase-db`
+  container (ship the file to the host via an S3 round-trip, or paste it into a
+  heredoc — it is idempotent, so re-running is safe):
+  ```
+  aws ssm start-session --target <supabase-instance-id> --region us-east-1
+  # on the host, with the migration file present:
+  sudo docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 \
+    < 2026-07-22-sms-campaigns.sql
+  ```
+- **Then reload the PostgREST schema cache — do not skip:**
+  ```
+  sudo docker exec -i supabase-db psql -U postgres \
+    -c "select pg_notify('pgrst','reload schema');"
+  ```
+  PostgREST caches the schema: until the reload, the new tables and especially
+  the `claim_due_sms_recipients` RPC return **404** through the data API, so the
+  dispatcher worker cannot claim anything and campaign creation fails.
+
+### 1.7 SMS credentials secret in Secrets Manager
+- Create ONE JSON secret named **`marketinghub/sms-campaigns`** in
+  `439024109088 / us-east-1` with exactly these three fields:
+  ```
+  {"SIMPLETEXTING_API_TOKEN":"","SIMPLETEXTING_WEBHOOK_TOKEN":"","MONDAY_API_TOKEN":""}
+  ```
+- **It MUST be encrypted with the SAME dedicated CMK as the Supabase
+  service-role secret** (the `supabaseSecretsKmsKeyArn` context value). The task
+  execution roles' `kms:Decrypt` is scoped to that exact key — a secret under a
+  different CMK (or the default `aws/secretsmanager` key) fails task start with
+  "Access to KMS is not allowed".
+  ```
+  aws secretsmanager create-secret --region us-east-1 \
+    --name marketinghub/sms-campaigns \
+    --kms-key-id <the Supabase-secrets CMK ARN (supabaseSecretsKmsKeyArn)> \
+    --secret-string '{"SIMPLETEXTING_API_TOKEN":"","SIMPLETEXTING_WEBHOOK_TOKEN":"","MONDAY_API_TOKEN":""}'
+  ```
+- **Fields may be empty strings.** The secret itself must exist (the stack
+  imports it by ARN at synth), but the feature degrades gracefully while fields
+  are empty: `/campaigns/new` shows an unconfigured callout, Settings shows
+  "not set" chips, and the dispatcher worker idles with a warning instead of
+  claiming rows.
+- Capture the **complete ARN** (including the random `-XXXXXX` suffix) from the
+  `create-secret` output → `smsSecretsArn` context (§3). Same rule as §1.2: a
+  name-only or truncated ARN breaks the IAM grant.
+- Minting the values:
+  - `SIMPLETEXTING_WEBHOOK_TOKEN` — mint it yourself: `openssl rand -hex 32`.
+    It is the shared secret between this app and the SimpleTexting webhook
+    configuration (§4); never reuse another credential.
+  - `MONDAY_API_TOKEN` — Monday.com admin → **Developers → API**; the token
+    needs read access to the recipient boards.
+  - `SIMPLETEXTING_API_TOKEN` — SimpleTexting **account settings → API**; used
+    only by the dispatcher worker to send messages.
+- To set values later: `aws secretsmanager put-secret-value` with the full JSON,
+  then force a new deployment of BOTH ECS services — secrets are injected at
+  task start, not live-reloaded.
+
 ---
 
 ## 2. Build and push the container image
@@ -136,6 +199,8 @@ Edit `app-infra/cdk.json` (or pass `-c key=value` on the CLI) and replace every
 | `supabasePublicSubnetIds` | comma-separated public subnet ids (internet-facing ALB tier) — from NetworkStack output `SupabasePublicSubnetIds` |
 | `supabasePrivateSubnetIds` | comma-separated private (with-egress) subnet ids (Fargate tier) — from NetworkStack output `SupabasePrivateSubnetIds` |
 | `supabaseInternalClientSgId` | Supabase `internalClientSg` id — from NetworkStack output `SupabaseInternalClientSgId` (§1.5) |
+| `smsSecretsArn` | the **complete** ARN of the `marketinghub/sms-campaigns` secret (§1.7), `-XXXXXX` suffix included |
+| `simpletextingAccountPhone` | *(optional — omit unless your SimpleTexting account requires it)* account phone passed as `accountPhone` on sends |
 
 `AppStack` fails loud on any missing context, so a blank value stops synth before
 deploy. The five `supabase*` networking keys make the app run **inside the Supabase
@@ -155,6 +220,11 @@ aws cloudformation describe-stacks --stack-name SupabaseNetwork --region us-east
   from the same stack's ALB, so no manual value is needed.
 - secret `SUPABASE_SERVICE_ROLE_KEY` from the ARN above (execution role read scoped
   to that exact ARN).
+- SMS campaigns: the app container gets secrets `MONDAY_API_TOKEN` +
+  `SIMPLETEXTING_WEBHOOK_TOKEN`, and the separate **dispatcher worker** task
+  (same image, command override `worker.cjs`, desiredCount 1, no ALB) gets
+  `SUPABASE_SERVICE_ROLE_KEY` + `SIMPLETEXTING_API_TOKEN` — all `ValueFrom` the
+  §1.7 secret's JSON fields. The send token never reaches the web task.
 
 ---
 
@@ -179,6 +249,19 @@ blocks on ACM DNS validation (automatic when the hosted zone is in-account).
 accepted by the Google SAML app, and that the marketing/admin Google groups map to
 the `marketing` / `marketinghub-admins` Cognito groups. Re-run `cdk deploy` only if
 you changed CDK inputs.
+
+**Also after the first deploy — configure the SimpleTexting webhooks.** In the
+SimpleTexting web UI, point BOTH the **delivery-report** webhook and the
+**unsubscribe** webhook at:
+```
+https://<appHostname>/api/webhooks/simpletexting?token=<SIMPLETEXTING_WEBHOOK_TOKEN>
+```
+using the token minted in §1.7. The query-string token is the endpoint's entire
+auth: the ALB forwards `POST /api/webhooks/simpletexting` without Cognito
+(production-only listener rule), the app 401s any other token, and every accepted
+payload is stored raw in `marketinghub.sms_webhook_events` for audit. Without
+these webhooks, delivery statuses never advance past `sent` and STOP replies do
+not reach the suppression list.
 
 ---
 
@@ -206,6 +289,28 @@ you changed CDK inputs.
    a signed URL (never a public bucket URL).
 5. **Sign-out:** `/logout` clears the ALB session and redirects via the Cognito
    Hosted-UI logout back to `/` (which re-triggers the auth flow).
+6. **SMS worker heartbeat:** the worker service's CloudWatch log streams (prefix
+   `marketinghub-sms-worker`) show one structured JSON `sms-dispatcher tick`
+   line per ~30 s. An `SIMPLETEXTING_API_TOKEN is not configured` warning
+   instead means the §1.7 secret field is still empty (the expected degraded
+   state, not a failure).
+7. **Self-test campaign (1 recipient):** make a Monday board containing only the
+   operator's own name + phone, then create a campaign from `/campaigns/new`
+   with a text template and a future send date. The SMS arrives at
+   **11:30 AM ET** on that date, and the recipient row advances
+   `sent → delivered` when the delivery-report webhook lands.
+8. **STOP suppression:** reply STOP to the self-test SMS → a
+   `marketinghub.sms_suppressions` row appears (unsubscribe webhook), and a NEW
+   campaign that includes that phone marks the recipient `suppressed` at
+   creation.
+9. **Pause/resume mid-send:** on a multi-recipient test campaign, hit Pause
+   while it is `sending` — remaining recipients stop (claimed rows release back
+   to pending); Resume → the dispatcher picks them up again; no recipient
+   receives a duplicate.
+10. **Unconfigured degradation:** with the §1.7 secret fields empty,
+    `/campaigns/new` shows the not-configured callout (naming this runbook),
+    Settings shows unconfigured chips, and the worker logs the idle warning —
+    nothing crashes.
 
 ---
 
@@ -240,3 +345,29 @@ you changed CDK inputs.
   stored HTML is only ever rendered in a locked `<iframe sandbox="">` preview, never
   executed. Every other CommonRuleSet rule stays at Block. The §5 smoke test's >8 KB
   upload is the regression guard for this.
+- **NO PHI in SMS message bodies — SimpleTexting has not signed a BAA.** Neither
+  templates nor rendered texts may contain conditions, medications, appointment
+  or treatment details. The campaign composer carries a permanent warning; this
+  runbook rule is the backstop. If in doubt, the message doesn't ship.
+- **The suppression list is permanent.** STOP is a legal signal:
+  `marketinghub.sms_suppressions` has no UI delete. Removing a row is a
+  deliberate manual SQL act on the Supabase host (§1.6 access path), done only
+  with fresh written consent from the recipient.
+- **Cancel cannot recall an in-flight message.** Cancel/pause stop future claims
+  and release already-claimed rows, but a POST already handed to SimpleTexting
+  completes; the cancel confirmation in the UI says so.
+- **`failed_ambiguous` review procedure:** these recipients started a send whose
+  outcome is unknown (timeout / connection reset / HTTP 500) and are **never
+  auto-retried**. First check whether a delivery-report webhook reconciles the
+  row on its own; otherwise verify in the SimpleTexting dashboard whether the
+  message actually went out, then use **Retry** (it did not) or **Mark failed**
+  (it did, or you're writing it off) on the campaign detail page.
+- **Never run two worker services.** The dispatcher's `desiredCount` stays **1**
+  with `minHealthyPercent 0 / maximumPercent 100`, so deploys stop-then-start
+  rather than overlap. `FOR UPDATE SKIP LOCKED` keeps a brief overlap
+  duplicate-safe, but two steady-state workers break the send-rate throttle —
+  do not scale this service up.
+- **The duplicates policy is at-most-once.** A crash can leave a message unsent
+  (and flagged `failed_ambiguous`), never double-sent — a missed send is the
+  accepted failure mode. Resist any "just auto-retry ambiguous rows" change: a
+  duplicate patient text is worse than a missed one.

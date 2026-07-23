@@ -3,7 +3,7 @@ import { Section } from "@/components/ui/Section";
 import { KeyValue } from "@/components/ui/KeyValue";
 import { Badge } from "@/components/ui/Badge";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { getConnectionInfo } from "@/lib/console/settings";
+import { getConnectionInfo, getSmsCampaignsInfo } from "@/lib/console/settings";
 import { PROJECT } from "@/lib/console/backend-map";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +15,7 @@ function yesNo(set: boolean) {
 export default async function SettingsPage() {
   const user = await requireMarketingUser();
   const conn = getConnectionInfo();
+  const sms = getSmsCampaignsInfo();
 
   return (
     <>
@@ -47,6 +48,32 @@ export default async function SettingsPage() {
                   <Badge tone="var(--data-1)">on</Badge>
                 ) : (
                   <Badge>off</Badge>
+                ),
+              },
+            ]}
+          />
+        </Section>
+
+        <Section
+          eyebrow="Integrations"
+          title="SMS Campaigns"
+          description="Monday.com and SimpleTexting credentials. Only presence is shown — token values are never displayed."
+        >
+          <KeyValue
+            items={[
+              { label: "Monday.com API token", value: yesNo(sms.mondayTokenSet) },
+              {
+                label: "SimpleTexting webhook token",
+                value: yesNo(sms.simpletextingWebhookTokenSet),
+              },
+              {
+                label: "SimpleTexting send token",
+                value: sms.simpletextingSendTokenSet ? (
+                  <Badge tone="var(--data-3)">configured (hidden)</Badge>
+                ) : (
+                  <Badge title="SIMPLETEXTING_API_TOKEN is injected into the dispatcher worker task only — its presence cannot be read from the web task.">
+                    configured on the worker task (not visible here)
+                  </Badge>
                 ),
               },
             ]}
