@@ -685,8 +685,13 @@ describe("campaign transitions", () => {
     expect(queries).toHaveLength(1);
   });
 
+  // DELIBERATE TEST UPDATE (defect A): retryRecipient now pre-checks the
+  // row's campaign status before flipping the row — the two lookup queries
+  // (recipient → campaign) precede the guarded update.
   test("retryRecipient re-queues failed_ambiguous|failed with send_after=now and re-opens a completed campaign", async () => {
     const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }), // recipient lookup
+      ok({ status: "completed" }), // campaign status pre-check
       ok({ ...recipientRow, status: "pending" }),
       ok(null),
     ]);
@@ -695,7 +700,14 @@ describe("campaign transitions", () => {
     const row = await retryRecipient("r1");
 
     expect(row?.id).toBe("r1");
-    const retry = queries[0];
+    const lookup = queries[0];
+    expect(lookup.source).toBe("sms_campaign_recipients");
+    expect(lookup.eq).toContainEqual(["id", "r1"]);
+    const statusCheck = queries[1];
+    expect(statusCheck.source).toBe("sms_campaigns");
+    expect(statusCheck.eq).toContainEqual(["id", "c1"]);
+
+    const retry = queries[2];
     expect(retry.source).toBe("sms_campaign_recipients");
     expect(retry.update).toMatchObject({
       status: "pending",
@@ -707,18 +719,48 @@ describe("campaign transitions", () => {
     expect(retry.in).toContainEqual(["status", ["failed_ambiguous", "failed"]]);
 
     // completed → sending re-open, guarded so other states are untouched
-    const reopen = queries[1];
+    const reopen = queries[3];
     expect(reopen.source).toBe("sms_campaigns");
     expect(reopen.update?.status).toBe("sending");
     expect(reopen.eq).toContainEqual(["id", "c1"]);
     expect(reopen.eq).toContainEqual(["status", "completed"]);
   });
 
-  test("retryRecipient returns null (409) without touching the campaign when the guard loses", async () => {
+  test("retryRecipient returns null (409) for a row in a CANCELED campaign without issuing any recipient update", async () => {
+    const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }),
+      ok({ status: "canceled" }),
+    ]);
+    h.client = client;
+
+    expect(await retryRecipient("r1")).toBeNull();
+
+    // Only the two read queries ran — the row was never flipped to pending
+    // (a pending row inside a canceled campaign could never dispatch NOR be
+    // retried/mark_failed again: it would be wedged forever).
+    expect(queries).toHaveLength(2);
+    for (const q of queries) expect(q.update).toBeNull();
+  });
+
+  test("retryRecipient returns null (409) for an unknown recipient id", async () => {
     const { client, queries } = buildClient([ok(null)]);
     h.client = client;
-    expect(await retryRecipient("r1")).toBeNull();
+    expect(await retryRecipient("r-missing")).toBeNull();
     expect(queries).toHaveLength(1);
+    expect(queries[0].update).toBeNull();
+  });
+
+  // DELIBERATE TEST UPDATE (defect A): the lost-guard case now runs the two
+  // pre-check reads before the (losing) conditional update.
+  test("retryRecipient returns null (409) without touching the campaign when the guard loses", async () => {
+    const { client, queries } = buildClient([
+      ok({ campaign_id: "c1" }),
+      ok({ status: "sending" }),
+      ok(null),
+    ]);
+    h.client = client;
+    expect(await retryRecipient("r1")).toBeNull();
+    expect(queries).toHaveLength(3);
   });
 
   test("markRecipientFailed resolves failed_ambiguous → failed only", async () => {

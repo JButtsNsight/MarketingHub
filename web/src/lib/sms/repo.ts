@@ -433,10 +433,33 @@ export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
  * `pending`, and re-open its campaign (`completed` → `sending`) so the
  * dispatcher picks it up. last_error is kept for audit until the next attempt
  * overwrites it.
+ *
+ * Refuses (null → 409) when the row's campaign is `canceled` BEFORE touching
+ * the row: nothing transitions a campaign out of `canceled` and the claim RPC
+ * only serves `sending` campaigns, so a `pending` row inside a canceled
+ * campaign could never dispatch — and could never be retried or mark_failed
+ * again either (both guards exclude `pending`). It would be wedged forever.
  */
 export async function retryRecipient(
   id: string,
 ): Promise<SmsCampaignRecipient | null> {
+  const { data: rowData, error: lookupError } = await recipients()
+    .select("campaign_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (lookupError) fail("retry-lookup", lookupError.message);
+  if (!rowData) return null;
+  const campaignId = (rowData as { campaign_id: string }).campaign_id;
+
+  const { data: campaignData, error: statusError } = await campaigns()
+    .select("status")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (statusError) fail("retry-campaign-status", statusError.message);
+  const campaignStatus = (campaignData as { status: CampaignStatus } | null)
+    ?.status;
+  if (campaignStatus === "canceled") return null;
+
   const { data, error } = await recipients()
     .update({
       status: "pending",
