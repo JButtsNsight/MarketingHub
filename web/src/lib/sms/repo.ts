@@ -3,9 +3,12 @@ import "server-only";
 import { getServiceClient } from "../supabase";
 import {
   CampaignCreateInputSchema,
+  RECIPIENT_STATUSES,
+  type CampaignCounts,
   type CampaignCreateInput,
   type RecipientStatus,
   type SmsCampaign,
+  type SmsCampaignRecipient,
 } from "./schema";
 import { firstNameOf, renderSms } from "./render";
 import { sendAtForEasternDate } from "./schedule";
@@ -26,6 +29,8 @@ const SCHEMA = "marketinghub";
 const CAMPAIGNS = "sms_campaigns";
 const RECIPIENTS = "sms_campaign_recipients";
 const SUPPRESSIONS = "sms_suppressions";
+/** campaign_id × status × count view (security_invoker). */
+const COUNTS_VIEW = "sms_campaign_recipient_counts";
 
 /** Max values per PostgREST `.in()` filter (URL-length safety). */
 const IN_CHUNK = 200;
@@ -47,6 +52,10 @@ function recipients() {
 
 function suppressions() {
   return getServiceClient().schema(SCHEMA).from(SUPPRESSIONS);
+}
+
+function countsView() {
+  return getServiceClient().schema(SCHEMA).from(COUNTS_VIEW);
 }
 
 function fail(op: string, message: string): never {
@@ -242,4 +251,93 @@ export async function createCampaign(
   }
 
   return campaign;
+}
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+
+/** Per-status recipient totals, zero-filled across every status. */
+export type CountsByStatus = Record<RecipientStatus, number>;
+
+export interface CampaignWithCounts extends SmsCampaign {
+  counts: CountsByStatus;
+}
+
+function zeroCounts(): CountsByStatus {
+  const counts = {} as CountsByStatus;
+  for (const status of RECIPIENT_STATUSES) counts[status] = 0;
+  return counts;
+}
+
+function foldCounts(rows: CampaignCounts[]): Map<string, CountsByStatus> {
+  const byCampaign = new Map<string, CountsByStatus>();
+  for (const row of rows) {
+    const counts = byCampaign.get(row.campaign_id) ?? zeroCounts();
+    counts[row.status] = row.count;
+    byCampaign.set(row.campaign_id, counts);
+  }
+  return byCampaign;
+}
+
+/** All campaigns (newest first) with zero-filled per-status recipient counts. */
+export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
+  const { data, error } = await campaigns()
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) fail("list", error.message);
+  const rows = (data ?? []) as SmsCampaign[];
+  if (rows.length === 0) return [];
+
+  const { data: countRows, error: countsError } = await countsView()
+    .select("*")
+    .in(
+      "campaign_id",
+      rows.map((c) => c.id),
+    );
+  if (countsError) fail("list-counts", countsError.message);
+  const byCampaign = foldCounts((countRows ?? []) as CampaignCounts[]);
+
+  return rows.map((campaign) => ({
+    ...campaign,
+    counts: byCampaign.get(campaign.id) ?? zeroCounts(),
+  }));
+}
+
+/** Fetch one campaign, or null if it does not exist. */
+export async function getCampaign(id: string): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) fail("get", error.message);
+  return (data as SmsCampaign) ?? null;
+}
+
+/** Outbox rows for a campaign in creation order, capped at 2000 for the UI. */
+export async function getCampaignRecipients(
+  campaignId: string,
+): Promise<SmsCampaignRecipient[]> {
+  const { data, error } = await recipients()
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .order("created_at", { ascending: true })
+    .limit(2000);
+  if (error) fail("get-recipients", error.message);
+  return (data ?? []) as SmsCampaignRecipient[];
+}
+
+/** Zero-filled per-status recipient counts for one campaign (via the view). */
+export async function getCampaignCounts(
+  campaignId: string,
+): Promise<CountsByStatus> {
+  const { data, error } = await countsView()
+    .select("*")
+    .eq("campaign_id", campaignId);
+  if (error) fail("get-counts", error.message);
+  const counts = zeroCounts();
+  for (const row of (data ?? []) as CampaignCounts[]) {
+    counts[row.status] = row.count;
+  }
+  return counts;
 }

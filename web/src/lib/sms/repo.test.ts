@@ -9,7 +9,11 @@ vi.mock("../supabase", () => ({
 
 import {
   createCampaign,
+  getCampaign,
+  getCampaignCounts,
+  getCampaignRecipients,
   getSuppressedSet,
+  listCampaignsWithCounts,
   prepareRecipients,
   type MondayRecipientRow,
 } from "./repo";
@@ -438,5 +442,101 @@ describe("createCampaign", () => {
       createCampaign(validInput, "Hi {{firstName}}", prepared(3), user),
     ).rejects.toThrow(/\[sms\] create failed: nope/);
     expect(queries).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reads
+// ---------------------------------------------------------------------------
+describe("reads", () => {
+  test("listCampaignsWithCounts lists newest-first and merges the counts view (zero-filled)", async () => {
+    const other = { ...campaignRow, id: "c2", name: "Later" };
+    const { client, queries } = buildClient([
+      ok([campaignRow, other]),
+      ok([
+        { campaign_id: "c1", status: "pending", count: 3 },
+        { campaign_id: "c1", status: "skipped", count: 1 },
+        { campaign_id: "c2", status: "sent", count: 7 },
+      ]),
+    ]);
+    h.client = client;
+
+    const list = await listCampaignsWithCounts();
+
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].order).toContainEqual([
+      "created_at",
+      { ascending: false },
+    ]);
+    // counts come from the security_invoker view, scoped to the listed ids
+    expect(queries[1].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[1].in).toContainEqual(["campaign_id", ["c1", "c2"]]);
+
+    expect(list).toHaveLength(2);
+    expect(list[0].counts.pending).toBe(3);
+    expect(list[0].counts.skipped).toBe(1);
+    expect(list[0].counts.sent).toBe(0); // zero-filled
+    expect(list[1].counts.sent).toBe(7);
+  });
+
+  test("listCampaignsWithCounts with no campaigns returns [] without querying the view", async () => {
+    const { client, queries } = buildClient([ok([])]);
+    h.client = client;
+    expect(await listCampaignsWithCounts()).toEqual([]);
+    expect(queries).toHaveLength(1);
+  });
+
+  test("getCampaign returns the row when found, null when missing", async () => {
+    const found = buildClient([ok(campaignRow)]);
+    h.client = found.client;
+    const campaign = await getCampaign("c1");
+    expect(found.queries[0].eq).toContainEqual(["id", "c1"]);
+    expect(found.queries[0].maybeSingle).toBe(true);
+    expect(campaign?.id).toBe("c1");
+
+    const missing = buildClient([ok(null)]);
+    h.client = missing.client;
+    expect(await getCampaign("nope")).toBeNull();
+  });
+
+  test("getCampaignRecipients scopes to the campaign and caps at 2000", async () => {
+    const { client, queries } = buildClient([ok([{ id: "r1" }])]);
+    h.client = client;
+
+    const rows = await getCampaignRecipients("c1");
+
+    expect(queries[0].source).toBe("sms_campaign_recipients");
+    expect(queries[0].eq).toContainEqual(["campaign_id", "c1"]);
+    expect(queries[0].limit).toBe(2000);
+    expect(queries[0].order).toContainEqual([
+      "created_at",
+      { ascending: true },
+    ]);
+    expect(rows).toHaveLength(1);
+  });
+
+  test("getCampaignCounts returns a zero-filled record for every recipient status", async () => {
+    const { client, queries } = buildClient([
+      ok([
+        { campaign_id: "c1", status: "pending", count: 2 },
+        { campaign_id: "c1", status: "failed_ambiguous", count: 1 },
+      ]),
+    ]);
+    h.client = client;
+
+    const counts = await getCampaignCounts("c1");
+
+    expect(queries[0].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[0].eq).toContainEqual(["campaign_id", "c1"]);
+    expect(counts.pending).toBe(2);
+    expect(counts.failed_ambiguous).toBe(1);
+    expect(counts.delivered).toBe(0);
+    expect(counts.canceled).toBe(0);
+  });
+
+  test("read errors fail loud with the [sms] prefix", async () => {
+    const { client } = buildClient([err("view gone")]);
+    h.client = client;
+    await expect(getCampaignCounts("c1")).rejects.toThrow(/\[sms\].*view gone/);
   });
 });
