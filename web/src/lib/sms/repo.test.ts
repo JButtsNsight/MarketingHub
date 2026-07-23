@@ -13,6 +13,7 @@ import {
   claimDueRecipients,
   completeDrainedCampaigns,
   createCampaign,
+  findActiveDuplicateCampaign,
   findRecipientForDeliveryReport,
   getCampaign,
   getCampaignCounts,
@@ -498,6 +499,54 @@ describe("createCampaign", () => {
       createCampaign(validInput, "Hi {{firstName}}", prepared(3), user),
     ).rejects.toThrow(/\[sms\] create failed: nope/);
     expect(queries).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findActiveDuplicateCampaign — creation idempotency backstop
+// ---------------------------------------------------------------------------
+describe("findActiveDuplicateCampaign", () => {
+  test("matches template_id + monday_board_id + send_date among scheduled|sending|paused", async () => {
+    const { client, queries } = buildClient([ok([campaignRow])]);
+    h.client = client;
+
+    const dupe = await findActiveDuplicateCampaign(
+      validInput.templateId,
+      "12345",
+      "2026-08-05",
+    );
+
+    expect(dupe?.id).toBe("c1");
+    expect(queries[0].source).toBe("sms_campaigns");
+    expect(queries[0].eq).toContainEqual(["template_id", validInput.templateId]);
+    expect(queries[0].eq).toContainEqual(["monday_board_id", "12345"]);
+    expect(queries[0].eq).toContainEqual(["send_date", "2026-08-05"]);
+    // terminal campaigns (completed/canceled) never block a re-create
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["scheduled", "sending", "paused"],
+    ]);
+    expect(queries[0].limit).toBe(1);
+  });
+
+  test("returns null when no active duplicate exists", async () => {
+    const { client } = buildClient([ok([])]);
+    h.client = client;
+    expect(
+      await findActiveDuplicateCampaign(
+        validInput.templateId,
+        "12345",
+        "2026-08-05",
+      ),
+    ).toBeNull();
+  });
+
+  test("fails loud on a PostgREST error", async () => {
+    const { client } = buildClient([err("db down")]);
+    h.client = client;
+    await expect(
+      findActiveDuplicateCampaign(validInput.templateId, "12345", "2026-08-05"),
+    ).rejects.toThrow(/\[sms\].*db down/);
   });
 });
 

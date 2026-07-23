@@ -27,6 +27,7 @@ const h = vi.hoisted(() => ({
   getSuppressedSet: vi.fn(),
   prepareRecipients: vi.fn(),
   createCampaign: vi.fn(),
+  findActiveDuplicateCampaign: vi.fn(),
   listCampaignsWithCounts: vi.fn(),
 }));
 
@@ -42,6 +43,7 @@ vi.mock("@/lib/sms/repo", () => ({
   getSuppressedSet: h.getSuppressedSet,
   prepareRecipients: h.prepareRecipients,
   createCampaign: h.createCampaign,
+  findActiveDuplicateCampaign: h.findActiveDuplicateCampaign,
   listCampaignsWithCounts: h.listCampaignsWithCounts,
 }));
 
@@ -146,6 +148,7 @@ function postReq(body: unknown, headers: HeadersInit = marketingHeaders()) {
 /** Wire the full happy path; individual tests override single mocks. */
 function primeHappyPath() {
   h.getTemplate.mockResolvedValue(textTemplate);
+  h.findActiveDuplicateCampaign.mockResolvedValue(null);
   h.fetchBoardRecipients.mockResolvedValue(mondayRows);
   h.getSuppressedSet.mockResolvedValue(new Set(["+15550000003"]));
   h.prepareRecipients.mockReturnValue(prepared);
@@ -226,6 +229,28 @@ describe("POST /api/campaigns", () => {
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/future/i);
+    expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
+  test("409 duplicate-campaign BEFORE the Monday fetch when an active twin exists", async () => {
+    primeHappyPath();
+    h.findActiveDuplicateCampaign.mockResolvedValue({
+      id: "camp-existing",
+      status: "scheduled",
+    });
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(409);
+    const json = await res.json();
+    expect(json.error).toBe("duplicate-campaign");
+    expect(json.existingId).toBe("camp-existing");
+
+    // matched on the snapshot triple (board URL already reduced to its id)
+    expect(h.findActiveDuplicateCampaign).toHaveBeenCalledWith(
+      TEMPLATE_ID,
+      "123456",
+      "2999-01-02",
+    );
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
     expect(h.createCampaign).not.toHaveBeenCalled();
   });

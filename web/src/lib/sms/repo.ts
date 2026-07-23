@@ -259,6 +259,28 @@ export async function createCampaign(
   return campaign;
 }
 
+/**
+ * Idempotency backstop for creation: an existing campaign with the same
+ * template + board + send date that is still live (`scheduled`/`sending`/
+ * `paused`) — a double-submit would text the same board twice. Terminal
+ * campaigns (completed/canceled) never block a deliberate re-create.
+ */
+export async function findActiveDuplicateCampaign(
+  templateId: string,
+  mondayBoardId: string,
+  sendDate: string,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns()
+    .select("*")
+    .eq("template_id", templateId)
+    .eq("monday_board_id", mondayBoardId)
+    .eq("send_date", sendDate)
+    .in("status", ["scheduled", "sending", "paused"])
+    .limit(1);
+  if (error) fail("find-duplicate", error.message);
+  return ((data ?? []) as SmsCampaign[])[0] ?? null;
+}
+
 // ---------------------------------------------------------------------------
 // Reads
 // ---------------------------------------------------------------------------

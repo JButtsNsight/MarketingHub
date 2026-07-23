@@ -3,6 +3,7 @@ import { MondayConfigError } from "@/lib/monday/client";
 import { fetchBoardRecipients } from "@/lib/monday/boards";
 import {
   createCampaign,
+  findActiveDuplicateCampaign,
   getSuppressedSet,
   listCampaignsWithCounts,
   prepareRecipients,
@@ -91,6 +92,20 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json(
       { error: "sendDate must be in the future (11:30 AM Eastern)" },
       { status: 400 },
+    );
+  }
+
+  // Idempotency backstop BEFORE the (slow) Monday fetch: the same template +
+  // board + send date still live means a double-submit, not a new campaign.
+  const duplicate = await findActiveDuplicateCampaign(
+    input.templateId,
+    input.mondayBoardId,
+    input.sendDate,
+  );
+  if (duplicate) {
+    return Response.json(
+      { error: "duplicate-campaign", existingId: duplicate.id },
+      { status: 409 },
     );
   }
 
