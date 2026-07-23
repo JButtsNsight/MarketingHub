@@ -328,6 +328,37 @@ test('an UNAUTHENTICATED /api/health listener rule forwards without Cognito', ()
   expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
 });
 
+test('an UNAUTHENTICATED POST /api/webhooks/simpletexting listener rule forwards without Cognito', () => {
+  const { template } = makeApp();
+  const rules = template.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+  const webhookRule = Object.values(rules).find((r: any) =>
+    (r.Properties.Conditions ?? []).some((c: any) =>
+      c.Field === 'path-pattern' &&
+      (c.PathPatternConfig?.Values ?? c.Values ?? []).includes('/api/webhooks/simpletexting'),
+    ),
+  ) as any;
+  expect(webhookRule).toBeDefined();
+  expect(webhookRule.Properties.Priority).toBe(20);
+  // Method-scoped: SimpleTexting only ever POSTs; a browser GET on the path
+  // still falls through to the Cognito default action.
+  const conditions = webhookRule.Properties.Conditions ?? [];
+  expect(
+    conditions.some(
+      (c: any) =>
+        c.Field === 'http-request-method' &&
+        (c.HttpRequestMethodConfig?.Values ?? []).includes('POST'),
+    ),
+  ).toBe(true);
+  const actions = webhookRule.Properties.Actions ?? [];
+  expect(actions.some((a: any) => a.Type === 'authenticate-cognito')).toBe(false);
+  expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
+});
+
+test('preview: NO listener rules at all (health + webhook exceptions are production-only)', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0);
+});
+
 test('a Fargate service runs desiredCount 2 with public IPs disabled (private subnets)', () => {
   const { template } = makeApp();
   template.hasResourceProperties('AWS::ECS::Service', {

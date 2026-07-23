@@ -520,6 +520,20 @@ export class AppStack extends Stack {
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
+    // Unauthenticated exception #2: SimpleTexting's delivery-report/unsubscribe
+    // webhooks POST here from their servers — no Cognito session possible. The
+    // route authenticates itself with its `?token=` shared secret (compared via
+    // timingSafeEqual, 401 before any storage). Method-scoped to POST so a
+    // browser GET on the path still falls through to the Cognito default action.
+    listener.addAction('SimpleTextingWebhookUnauthenticated', {
+      priority: 20,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/api/webhooks/simpletexting']),
+        elbv2.ListenerCondition.httpRequestMethods(['POST']),
+      ],
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+
     // --- WAFv2 (REGIONAL) in front of the ALB ---
     const webAcl = new wafv2.CfnWebACL(this, 'AppWebAcl', {
       scope: 'REGIONAL',
