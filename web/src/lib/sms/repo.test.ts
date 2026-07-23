@@ -1080,11 +1080,14 @@ describe("dispatcher accessors", () => {
     expect(queries).toHaveLength(0);
   });
 
+  // DELIBERATE TEST UPDATE (defect E): a compensating counts re-check now
+  // follows the completed-update — asserted as queries[3] here.
   test("completeDrainedCampaigns completes sending campaigns with zero active rows (guarded)", async () => {
     const { client, queries } = buildClient([
       ok([{ id: "c1" }, { id: "c2" }, { id: "c3" }]),
       ok([{ campaign_id: "c2" }]), // c2 still has active rows
       ok([{ id: "c1" }, { id: "c3" }]),
+      ok([]), // compensating re-check: nothing re-activated
     ]);
     h.client = client;
 
@@ -1108,6 +1111,43 @@ describe("dispatcher accessors", () => {
     expect(complete.in).toContainEqual(["id", ["c1", "c3"]]);
     // guarded: a retryRecipient re-open between check and update must win
     expect(complete.eq).toContainEqual(["status", "sending"]);
+
+    // post-update re-check of just the completed ids; no compensation needed
+    expect(queries).toHaveLength(4);
+    expect(queries[3].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[3].in).toContainEqual(["campaign_id", ["c1", "c3"]]);
+  });
+
+  test("completeDrainedCampaigns compensates a retry that landed between the counts read and the update", async () => {
+    const { client, queries } = buildClient([
+      ok([{ id: "c1" }, { id: "c2" }]), // sending campaigns
+      ok([]), // first counts read: both look drained
+      ok([{ id: "c1" }, { id: "c2" }]), // completed update wins both
+      // re-check: a retryRecipient landed on c1 in the window — it now has an
+      // active pending row stranded inside a 'completed' campaign
+      ok([{ campaign_id: "c1" }]),
+      ok(null), // compensating completed → sending update
+    ]);
+    h.client = client;
+
+    const completed = await completeDrainedCampaigns();
+
+    expect(queries[3].source).toBe("sms_campaign_recipient_counts");
+    expect(queries[3].in).toContainEqual(["campaign_id", ["c1", "c2"]]);
+    expect(queries[3].in).toContainEqual([
+      "status",
+      ["pending", "claimed", "sending"],
+    ]);
+
+    const compensate = queries[4];
+    expect(compensate.source).toBe("sms_campaigns");
+    expect(compensate.update?.status).toBe("sending");
+    expect(compensate.in).toContainEqual(["id", ["c1"]]);
+    // guarded so a concurrent pause/cancel still wins over the re-open
+    expect(compensate.eq).toContainEqual(["status", "completed"]);
+
+    // only the campaign that STAYED completed is reported
+    expect(completed).toEqual(["c2"]);
   });
 
   test("completeDrainedCampaigns chunks >200 sending ids on the counts view and merges the active set", async () => {

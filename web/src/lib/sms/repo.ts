@@ -812,6 +812,14 @@ async function campaignsWithActiveRows(
  * pending|claimed|sending become `completed`. The final update is still
  * guarded on `status='sending'` so a concurrent pause/cancel (or a
  * retryRecipient re-open) between the check and the update wins.
+ *
+ * TOCTOU compensation: a retryRecipient that lands between the counts read
+ * and the guarded update sees the campaign still `sending` (its re-open
+ * matches 0 rows) while our update then completes it — stranding the fresh
+ * `pending` row inside a `completed` campaign. After completing, the counts
+ * are re-read for just the completed ids and any campaign that regained
+ * active rows is re-opened `completed` → `sending`; only campaigns that
+ * STAYED completed are returned.
  */
 export async function completeDrainedCampaigns(): Promise<string[]> {
   const { data, error } = await campaigns()
@@ -832,7 +840,23 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
     .eq("status", "sending")
     .select("id");
   if (completeError) fail("complete-drained-update", completeError.message);
-  return ((completedRows ?? []) as Array<{ id: string }>).map((r) => r.id);
+  const completedIds = ((completedRows ?? []) as Array<{ id: string }>).map(
+    (r) => r.id,
+  );
+  if (completedIds.length === 0) return [];
+
+  // Compensating re-check: re-open anything that regained active rows in the
+  // race window, guarded on 'completed' so a concurrent pause/cancel wins.
+  const reactivated = await campaignsWithActiveRows(completedIds);
+  if (reactivated.size > 0) {
+    const { error: reopenError } = await campaigns()
+      .update({ status: "sending", updated_at: nowIso() })
+      .in("id", Array.from(reactivated))
+      .eq("status", "completed");
+    if (reopenError) fail("complete-drained-reopen", reopenError.message);
+  }
+
+  return completedIds.filter((id) => !reactivated.has(id));
 }
 
 // ---------------------------------------------------------------------------
