@@ -127,9 +127,11 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
         pending: 17,
         sent: 15,
         delivered: 14,
+        undelivered: 16,
         failed: 13,
         failed_ambiguous: 12,
         suppressed: 11,
+        skipped: 10,
       }),
     );
     await renderPage();
@@ -140,10 +142,14 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     };
     expectStat(/pending/i, "17");
     expectStat(/^sent$/i, "15");
-    expectStat(/delivered/i, "14");
+    expectStat(/^delivered$/i, "14");
+    // Skipped + Undelivered included so the cards add up to the audience —
+    // the shortfall from invalid/duplicate phones must not be hidden.
+    expectStat(/^undelivered$/i, "16");
     expectStat(/^failed$/i, "13");
     expectStat(/^ambiguous$/i, "12");
     expectStat(/suppressed/i, "11");
+    expectStat(/skipped/i, "10");
   });
 
   test("renders the campaign actions and the recipients table", async () => {
