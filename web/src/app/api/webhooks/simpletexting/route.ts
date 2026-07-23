@@ -189,6 +189,11 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     raw = { unparsed: rawText };
   }
+  // A literal 'null' body parses fine but raw=null would violate the audit
+  // table's NOT NULL and silently drop the promised evidence row.
+  if (payload === null || payload === undefined) {
+    raw = { unparsed: rawText };
+  }
 
   let kind: WebhookKind = "unknown";
   let matchedRecipientId: string | null = null;

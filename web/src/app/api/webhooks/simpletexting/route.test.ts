@@ -255,6 +255,19 @@ describe("POST /api/webhooks/simpletexting — unknown + malformed", () => {
     );
   });
 
+  test("wraps a literal 'null' body as {unparsed} so the NOT NULL audit insert survives", async () => {
+    const res = await POST(postReq("null"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    // raw=null would violate sms_webhook_events.raw NOT NULL and silently
+    // drop the promised audit row — it must travel wrapped instead.
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "unknown",
+      { unparsed: "null" },
+      null,
+    );
+  });
+
   test("wraps malformed JSON as {unparsed} and still returns 200", async () => {
     const res = await POST(postReq("this is not json{"));
     expect(res.status).toBe(200);
