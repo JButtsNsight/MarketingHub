@@ -10,9 +10,9 @@ beforeEach(() => {
 });
 
 describe("Home page", () => {
-  it("redirects to /templates", async () => {
+  it("redirects to /overview", async () => {
     const mod = await import("./page");
     mod.default();
-    expect(redirect).toHaveBeenCalledWith("/templates");
+    expect(redirect).toHaveBeenCalledWith("/overview");
   });
 });

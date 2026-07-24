@@ -231,47 +231,6 @@ a:hover {
   color: var(--accent);
 }
 
-/* ── Login landing ── */
-.login-landing {
-  display: flex;
-  justify-content: center;
-  padding: 8vh 20px;
-}
-.login-card {
-  --r: 16px;
-  max-width: 420px;
-  width: 100%;
-  padding: 32px 30px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.login-sub {
-  font-family: var(--fu);
-  color: var(--muted);
-  margin: 0;
-}
-.login-help {
-  font-family: var(--fu);
-  color: var(--ink-2);
-  line-height: 1.55;
-  margin: 6px 0 4px;
-}
-.login-cta {
-  align-self: flex-start;
-  margin-top: 8px;
-  font-family: var(--fu);
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--canvas);
-  background: var(--ink);
-  padding: 10px 18px;
-  border-radius: 10px;
-}
-.login-cta:hover {
-  text-decoration: none;
-}
-
 /* ── Layout helpers ── */
 .page-narrow {
   max-width: 720px;
@@ -682,4 +641,681 @@ input[type="file"].control {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
   border-radius: 8px;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Console UI — surfaces the MarketingHub Supabase-on-AWS backend.
+   Everything below is built on the design tokens + the .surface primitive:
+   no freehand hex (except the self-contained SSO login, which faithfully
+   mirrors the standalone Socrates auth screen), no backdrop-filter, red
+   reserved for failure, data/IDs/counts in the mono face.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Uppercase micro-label */
+.eyebrow {
+  font-family: var(--fu);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ── Masthead: wordmark link + project chip ── */
+.word-link {
+  color: inherit;
+}
+.word-link:hover {
+  text-decoration: none;
+}
+.project-chip {
+  --r: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px 5px 10px;
+  font-family: var(--fu);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.project-chip .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--teal);
+}
+.project-chip .env {
+  font-family: var(--fm);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+/* ── Grouped nav ── */
+.nav-group + .nav-group {
+  margin-top: 16px;
+}
+.nav-group-label {
+  display: block;
+  padding: 0 12px 6px;
+  font-family: var(--fu);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.nav-ico {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  color: var(--muted);
+}
+.nav-link:hover .nav-ico {
+  color: var(--ink-2);
+}
+.nav-link.on {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.nav-link.on .nav-ico {
+  color: var(--accent);
+}
+
+/* ── Page header ── */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.page-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.page-header-sub {
+  font-family: var(--fu);
+  color: var(--muted);
+  margin: 2px 0 0;
+  max-width: 640px;
+  line-height: 1.5;
+}
+.page-header-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+.page-header-right .count {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ── Content panel ── */
+.panel {
+  --r: 16px;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.panel-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.panel-desc {
+  font-family: var(--fu);
+  font-size: 13.5px;
+  color: var(--muted);
+  margin: 2px 0 0;
+  line-height: 1.5;
+  max-width: 720px;
+}
+.panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Stat cards ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.stat-card {
+  --r: 16px;
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stat-value {
+  font-size: 30px;
+  line-height: 1;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+.stat-hint {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+/* generic responsive card grid */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+/* ── Status pill (governed status colors; red = failure only) ── */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--fu);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--status, var(--muted)) 15%, transparent);
+  border: 1px solid color-mix(in srgb, var(--status, var(--muted)) 32%, transparent);
+  border-radius: 999px;
+  padding: 3px 11px 3px 9px;
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--status, var(--muted));
+}
+
+/* ── Badge ── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--fu);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--hair);
+  border-radius: 6px;
+  padding: 2px 8px;
+}
+.badge-tone {
+  color: var(--ink-2);
+  background: color-mix(in srgb, var(--chip, var(--accent)) 14%, transparent);
+  border-color: color-mix(in srgb, var(--chip, var(--accent)) 34%, transparent);
+}
+
+/* ── Data table ── */
+.dtable-wrap {
+  --r: 16px;
+  padding: 0;
+}
+.dtable-scroll {
+  overflow-x: auto;
+  border-radius: inherit;
+}
+.dtable {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--fu);
+  font-size: 13px;
+}
+.dtable thead th {
+  text-align: left;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--hair);
+  white-space: nowrap;
+}
+.dtable tbody td {
+  padding: 11px 16px;
+  color: var(--ink);
+  border-bottom: 1px solid var(--hair);
+  vertical-align: top;
+}
+.dtable tbody tr:last-child td {
+  border-bottom: none;
+}
+.dtable tbody tr {
+  transition: background 0.1s ease;
+}
+.dtable tbody tr:hover {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.dtable td.mono,
+.dtable th.mono {
+  font-family: var(--fm);
+}
+.dtable-empty {
+  text-align: center !important;
+  color: var(--muted);
+  padding: 32px 16px !important;
+}
+
+/* ── Tabs ── */
+.tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--hair);
+  margin-bottom: 20px;
+}
+.tab {
+  font-family: var(--fu);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 7px 14px;
+  border-radius: 8px;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+.tab:hover {
+  color: var(--ink);
+  text-decoration: none;
+}
+.tab.on {
+  color: var(--canvas);
+  background: var(--ink);
+}
+
+/* ── Key/value list ── */
+.kv {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.kv-row {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 16px;
+  align-items: baseline;
+}
+@media (max-width: 640px) {
+  .kv-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+.kv dt {
+  font-family: var(--fu);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.kv dd {
+  margin: 0;
+  font-family: var(--fu);
+  font-size: 13.5px;
+  color: var(--ink);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.kv dd.mono {
+  font-family: var(--fm);
+  font-size: 12.5px;
+}
+
+/* ── Code block ── */
+.code-block {
+  --r: 14px;
+  padding: 0;
+}
+.code-block-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--hair);
+}
+.code-copy {
+  font-family: var(--fu);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+}
+.code-pre {
+  margin: 0;
+  padding: 14px 16px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Notes / reference callouts */
+.note {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.55;
+  margin: 0;
+}
+.ref-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-family: var(--fu);
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+.ref-note .badge {
+  flex: 0 0 auto;
+}
+
+/* ── Reference row list (label + detail + status) ── */
+.ref-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.ref-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--hair);
+}
+.ref-row:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.ref-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ref-row-label {
+  font-family: var(--fu);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.ref-row-detail {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* ── Link card (section jump grid) ── */
+.link-card {
+  --r: 14px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  transition: transform 0.12s ease;
+}
+.link-card:hover {
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+.link-card-title {
+  font-family: var(--fd);
+  font-size: 16px;
+  color: var(--ink);
+}
+.link-card-desc {
+  font-family: var(--fu);
+  font-size: 12.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* two-column split */
+.split-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .split-2 {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* hero split: one big tile + one narrow tile */
+.split-hero {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .split-hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Campaign performance charts ── */
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.chart-card {
+  --r: 14px;
+  padding: 16px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.chart-head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.chart-title {
+  font-family: var(--fd);
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.2;
+}
+.chart-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.chart-value {
+  font-family: var(--fm);
+  font-size: 22px;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+.chart-delta {
+  font-family: var(--fm);
+  font-size: 12px;
+  color: var(--muted);
+}
+.chart-fig {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.chart-svg {
+  width: 100%;
+  display: block;
+}
+/* The one sanctioned graph drop-shadow (per the design language). */
+.chart-line {
+  filter: drop-shadow(0 2px 3px rgba(21, 48, 63, 0.28));
+}
+html[data-theme="dark"] .chart-line {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+.chart-x {
+  display: flex;
+  justify-content: space-between;
+}
+.chart-x span {
+  font-size: 9.5px;
+  color: var(--faint);
+}
+
+/* compact chip cloud (small Backend services tile) */
+.svc-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.svc-count {
+  font-family: var(--fm);
+  font-size: 22px;
+  color: var(--ink);
+  letter-spacing: -0.5px;
+}
+
+/* pagination */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}
+.pager-info {
+  font-family: var(--fm);
+  font-size: 12px;
+  color: var(--muted);
+}
+.pager-link {
+  font-family: var(--fu);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  padding: 6px 12px;
+  border-radius: 9px;
+  border: 1px solid var(--hair);
+}
+.pager-link[aria-disabled="true"] {
+  color: var(--faint);
+  pointer-events: none;
+}
+
+/* ── SSO login — a faithful mirror of the standalone Socrates (NCore) auth
+   screen: full-viewport, flat, dark, centered card, Marcellus wordmark, a
+   single white Google SSO control, status line. Intentionally self-contained
+   (as the Socrates auth pages are) so it renders identically regardless of the
+   console's theme/skin. ── */
+.sso-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0a0e17;
+  color: #e0e0e0;
+  font-family: var(--fu);
+  padding: 24px;
+}
+.sso-card {
+  background: #141822;
+  border: 1px solid #2a2f3d;
+  border-radius: 12px;
+  padding: 3rem;
+  text-align: center;
+  max-width: 420px;
+  width: 100%;
+}
+.sso-wordmark {
+  font-family: var(--fd);
+  font-size: 1.9rem;
+  color: #f4f4f4;
+  margin: 0 0 0.4rem;
+}
+.sso-wordmark em {
+  font-style: normal;
+  display: block;
+  font-family: var(--fu);
+  font-size: 0.72rem;
+  letter-spacing: 2.6px;
+  text-transform: uppercase;
+  color: #6f7891;
+  margin-top: 0.55rem;
+}
+.sso-sub {
+  color: #888;
+  margin: 0 0 2rem;
+  font-size: 0.95rem;
+}
+.sso-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  color: #333;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 28px;
+  font-family: var(--fu);
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: box-shadow 0.2s ease;
+}
+.sso-btn:hover {
+  text-decoration: none;
+  box-shadow: 0 2px 14px rgba(255, 255, 255, 0.12);
+}
+.sso-btn svg {
+  width: 20px;
+  height: 20px;
+}
+.sso-status {
+  color: #888;
+  margin: 1.3rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }

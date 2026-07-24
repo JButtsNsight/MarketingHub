@@ -18,10 +18,14 @@ describe('2026-07-05-templates.sql migration', () => {
   test('defines a generated stored tsvector search column with weighted sources', () => {
     expect(sql).toMatch(/search\s+tsvector\s+generated always as/i);
     expect(sql).toMatch(/stored/i);
-    // weighting over name/tags/category/body
-    expect(sql).toMatch(/setweight\(to_tsvector\('english',\s*coalesce\(name,\s*''\)\),\s*'A'\)/i);
-    expect(sql).toMatch(/array_to_string\(tags,\s*'\s*'\)/i);
-    expect(sql).toMatch(/setweight\(to_tsvector\('english',\s*coalesce\(body,\s*''\)\),\s*'C'\)/i);
+    // The column delegates to an IMMUTABLE wrapper (generated-column
+    // expressions must be immutable; bare to_tsvector('english',...) is only
+    // STABLE) that weights name(A) / tags+category(B) / body(C).
+    expect(sql).toMatch(/create or replace function marketinghub\.templates_search[\s\S]*immutable/i);
+    expect(sql).toMatch(/setweight\(to_tsvector\('english'::regconfig,\s*coalesce\(p_name,\s*''\)\),\s*'A'\)/i);
+    expect(sql).toMatch(/array_to_string\(coalesce\(p_tags,\s*'\{\}'::text\[\]\),\s*'\s*'\)/i);
+    expect(sql).toMatch(/setweight\(to_tsvector\('english'::regconfig,\s*coalesce\(p_body,\s*''\)\),\s*'C'\)/i);
+    expect(sql).toMatch(/generated always as\s*\(\s*marketinghub\.templates_search\(name,\s*tags,\s*category,\s*body\)\s*\)\s*stored/i);
   });
 
   test('creates a GIN index on the search tsvector', () => {

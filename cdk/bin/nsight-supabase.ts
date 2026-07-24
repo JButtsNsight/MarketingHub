@@ -20,11 +20,27 @@ const env = {
 const previewCtx = app.node.tryGetContext('previewMode');
 const preview = previewCtx === true || previewCtx === 'true';
 
-const foundation = new FoundationStack(app, 'SupabaseFoundation', { env, preview });
-const network = new NetworkStack(app, 'SupabaseNetwork', { env, preview, logsKey: foundation.logsKey });
+// CloudFormation STACK tags (StackProps.tags — the CLI passes these on every
+// deploy, and CloudFormation propagates them to supported resources). These
+// mirror the tags applied to the deployed Supabase* CloudFormation stacks
+// out-of-band on 2026-07-14 so the next `cdk deploy` preserves rather than
+// strips them.
+// NOTE: a CloudFormation update of SupabaseCompute replaces the EC2 host
+// (AMI resolved via SSM latest) — do not deploy for tags alone.
+const stackTags = {
+  Environment: preview ? 'preview' : 'production',
+  Project: 'marketinghub',
+  Owner: 'jbutts@nsightcare.com',
+  ManagedBy: 'cdk',
+  DataClassification: 'phi',
+};
+
+const foundation = new FoundationStack(app, 'SupabaseFoundation', { env, preview, tags: stackTags });
+const network = new NetworkStack(app, 'SupabaseNetwork', { env, preview, logsKey: foundation.logsKey, tags: stackTags });
 const data = new DataStack(app, 'SupabaseData', {
   env,
   preview,
+  tags: stackTags,
   dataKey: foundation.dataKey,
   backupKey: foundation.backupKey,
   secretsKey: foundation.secretsKey,
@@ -33,6 +49,7 @@ const data = new DataStack(app, 'SupabaseData', {
 const compute = new ComputeStack(app, 'SupabaseCompute', {
   env,
   preview,
+  tags: stackTags,
   vpc: network.vpc,
   ec2Sg: network.ec2Sg,
   dataKey: foundation.dataKey,
@@ -50,6 +67,7 @@ const compute = new ComputeStack(app, 'SupabaseCompute', {
 if (!preview) {
   new EdgeStack(app, 'SupabaseEdge', {
     env,
+    tags: stackTags,
     vpc: network.vpc,
     albSg: network.albSg,
     internalClientSg: network.internalClientSg,
@@ -58,6 +76,7 @@ if (!preview) {
 
   new ObservabilityStack(app, 'SupabaseObservability', {
     env,
+    tags: stackTags,
     instance: compute.instance,
     backupVault: data.backupVault,
     logsKey: foundation.logsKey,

@@ -1,12 +1,14 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Nav } from "./Nav";
+import { Surface } from "./Surface";
 import { ThemeSkinToggle } from "./ThemeSkinToggle";
 
 /**
- * The application shell: a masthead with the NSight wordmark and the global
- * theme/skin toggle, a left nav rail, and the main content region. No banned
- * "Claude look" patterns — no centered floating three-card hero, no violet
- * gradients, no frosted glass.
+ * The console shell: a masthead with the NSight wordmark (links home), a project
+ * chip, and the global theme/skin toggle; a left nav rail; and the main content
+ * region. No banned "Claude look" patterns — no centered floating three-card
+ * hero, no violet gradients, no frosted glass.
  */
 export function AppShell({
   children,
@@ -18,9 +20,14 @@ export function AppShell({
   return (
     <div className="app-shell">
       <header className="masthead">
-        <span className="word">
+        <Link href="/overview" className="word word-link">
           NSight <em>MarketingHub</em>
-        </span>
+        </Link>
+        <Surface className="project-chip" elevated={false}>
+          <span className="dot" aria-hidden="true" />
+          Console
+          <span className="env">us-east-1</span>
+        </Surface>
         <div className="masthead-right">
           <ThemeSkinToggle />
           {user}
