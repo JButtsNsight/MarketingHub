@@ -10,6 +10,7 @@ export type IconKey =
   | "database"
   | "storage"
   | "templates"
+  | "campaigns"
   | "auth"
   | "api"
   | "infra"
@@ -35,6 +36,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/database", label: "Database", icon: "database" },
       { href: "/storage", label: "Storage", icon: "storage" },
       { href: "/templates", label: "Templates", icon: "templates" },
+      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
     ],
   },
   {
@@ -84,6 +86,12 @@ const ICONS: Record<IconKey, ReactNode> = {
       <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
       <path d="M14 3v5h5" />
       <path d="M9 13h6M9 17h5" />
+    </>
+  ),
+  campaigns: (
+    <>
+      <path d="M21 11.5a8 8 0 0 1-8.5 8L7 21l1.2-3.6A8 8 0 1 1 21 11.5z" />
+      <path d="M8.5 10h7M8.5 13.5h4.5" />
     </>
   ),
   auth: (

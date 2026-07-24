@@ -18,6 +18,8 @@ const CONTEXT: Record<string, string> = {
     'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/supabase-service-role-AbCdEf',
   supabaseSecretsKmsKeyArn:
     'arn:aws:kms:us-east-1:439024109088:key/00000000-1111-2222-3333-444444444444',
+  smsSecretsArn:
+    'arn:aws:secretsmanager:us-east-1:439024109088:secret:marketinghub/sms-campaigns-GhIjKl',
   // The app runs INSIDE the Supabase VPC (created by the Supabase NetworkStack) and
   // joins its `internalClientSg` — the only path to the private data-API ALB + its
   // private DNS. These come from the NetworkStack CfnOutputs; no VPC is created here.
@@ -30,6 +32,12 @@ const CONTEXT: Record<string, string> = {
 
 /** The exact secret ARN the task consumes — IAM must be scoped to THIS, no wildcard. */
 const SERVICE_ROLE_SECRET_ARN = CONTEXT.supabaseServiceRoleSecretArn;
+
+/** The SMS-campaigns JSON secret (Monday + SimpleTexting tokens) app + worker consume. */
+const SMS_SECRETS_ARN = CONTEXT.smsSecretsArn;
+
+/** The ONLY exact secret ARNs any GetSecretValue statement may name (no wildcards). */
+const ALLOWED_SECRET_ARNS = [SERVICE_ROLE_SECRET_ARN, SMS_SECRETS_ARN];
 
 /** The imported Supabase networking the app must attach to (from NetworkStack outputs). */
 const SUPABASE_PRIVATE_SUBNET_IDS = CONTEXT.supabasePrivateSubnetIds.split(',');
@@ -187,7 +195,9 @@ test('the task carries AWS_REGION/ALB_REGION = the stack region for the ALB key 
 
 test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a plain env)', () => {
   const { template } = makeApp();
-  // It must be a Secret (ValueFrom), never a plaintext Environment value.
+  // It must be a Secret (ValueFrom), never a plaintext Environment value. The
+  // secret is JSON, so the ValueFrom carries the `:SERVICE_ROLE_KEY::` field
+  // selector (arn:...:secret:name-SUFFIX:FIELD:VERSION-STAGE:VERSION-ID).
   template.hasResourceProperties('AWS::ECS::TaskDefinition', {
     ContainerDefinitions: Match.arrayWith([
       Match.objectLike({
@@ -213,7 +223,24 @@ test('SUPABASE_SERVICE_ROLE_KEY is injected as a Secrets Manager secret (not a p
   }
 });
 
-test('the execution role may read ONLY the exact service-role secret ARN (no wildcard)', () => {
+test('the app container gets MONDAY_API_TOKEN + SIMPLETEXTING_WEBHOOK_TOKEN from the sms-campaigns secret', () => {
+  const { template } = makeApp();
+  for (const field of ['MONDAY_API_TOKEN', 'SIMPLETEXTING_WEBHOOK_TOKEN']) {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'app',
+          Secrets: Match.arrayWith([
+            // JSON-field extraction: ValueFrom = <arn>:FIELD::, never plaintext env.
+            Match.objectLike({ Name: field, ValueFrom: `${SMS_SECRETS_ARN}:${field}::` }),
+          ]),
+        }),
+      ]),
+    });
+  }
+});
+
+test('execution roles may read ONLY the exact allowlisted secret ARNs (no wildcard)', () => {
   const { template } = makeApp();
   const policies = template.findResources('AWS::IAM::Policy');
   const statements = Object.values(policies).flatMap((p: any) =>
@@ -227,9 +254,10 @@ test('the execution role may read ONLY the exact service-role secret ARN (no wil
   for (const s of getSecret) {
     const resources = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
     for (const r of resources) {
-      // Exact ARN string — never a "*" and never the "-??????" partial-ARN glob.
+      // Exact ARN strings from the allowlist (service-role + sms-campaigns
+      // secrets) — never a "*" and never the "-??????" partial-ARN glob.
       expect(typeof r).toBe('string');
-      expect(r).toBe(SERVICE_ROLE_SECRET_ARN);
+      expect(ALLOWED_SECRET_ARNS).toContain(r);
       expect(r).not.toContain('*');
       expect(r).not.toContain('??????');
     }
@@ -300,6 +328,37 @@ test('an UNAUTHENTICATED /api/health listener rule forwards without Cognito', ()
   const actions = healthRule.Properties.Actions ?? [];
   expect(actions.some((a: any) => a.Type === 'authenticate-cognito')).toBe(false);
   expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
+});
+
+test('an UNAUTHENTICATED POST /api/webhooks/simpletexting listener rule forwards without Cognito', () => {
+  const { template } = makeApp();
+  const rules = template.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+  const webhookRule = Object.values(rules).find((r: any) =>
+    (r.Properties.Conditions ?? []).some((c: any) =>
+      c.Field === 'path-pattern' &&
+      (c.PathPatternConfig?.Values ?? c.Values ?? []).includes('/api/webhooks/simpletexting'),
+    ),
+  ) as any;
+  expect(webhookRule).toBeDefined();
+  expect(webhookRule.Properties.Priority).toBe(20);
+  // Method-scoped: SimpleTexting only ever POSTs; a browser GET on the path
+  // still falls through to the Cognito default action.
+  const conditions = webhookRule.Properties.Conditions ?? [];
+  expect(
+    conditions.some(
+      (c: any) =>
+        c.Field === 'http-request-method' &&
+        (c.HttpRequestMethodConfig?.Values ?? []).includes('POST'),
+    ),
+  ).toBe(true);
+  const actions = webhookRule.Properties.Actions ?? [];
+  expect(actions.some((a: any) => a.Type === 'authenticate-cognito')).toBe(false);
+  expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
+});
+
+test('preview: NO listener rules at all (health + webhook exceptions are production-only)', () => {
+  const { template } = makePreviewApp();
+  template.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0);
 });
 
 test('a Fargate service runs desiredCount 2 with public IPs disabled (private subnets)', () => {
@@ -547,6 +606,22 @@ test('preview: SUPABASE_URL + region envs and the service-role SECRET are still 
   });
 });
 
+test('preview: the app container still gets the sms-campaigns secrets', () => {
+  const { template } = makePreviewApp();
+  for (const field of ['MONDAY_API_TOKEN', 'SIMPLETEXTING_WEBHOOK_TOKEN']) {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([
+        Match.objectLike({
+          Name: 'app',
+          Secrets: Match.arrayWith([
+            Match.objectLike({ Name: field, ValueFrom: `${SMS_SECRETS_ARN}:${field}::` }),
+          ]),
+        }),
+      ]),
+    });
+  }
+});
+
 test('preview: the Fargate service stays in the PRIVATE subnets with public IP disabled and the internalClientSg', () => {
   const { template } = makePreviewApp();
   template.hasResourceProperties('AWS::ECS::Service', {
@@ -593,4 +668,158 @@ test('preview: synthesizes with NO Google-SAML/Cognito/DNS context supplied', ()
   expect(() =>
     Template.fromStack(new AppStack(app, 'AppPreviewMinimal', { env })),
   ).not.toThrow();
+});
+
+// ---------------------------------------------------------------------------
+// SMS dispatcher worker: a SECOND, ALB-less Fargate service (BOTH modes) that
+// runs the same image with the worker.cjs entrypoint, polling the outbox. One
+// task, min 0 / max 100 so a deploy never runs two dispatchers at once.
+// ---------------------------------------------------------------------------
+
+/** The worker task definition — the one whose (only) container is named 'worker'. */
+function findWorkerTaskDef(template: ReturnType<typeof Template.fromStack>) {
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  return Object.values(taskDefs).find((td: any) =>
+    (td.Properties.ContainerDefinitions ?? []).some((c: any) => c.Name === 'worker'),
+  ) as any;
+}
+
+/** The worker Fargate service — the only service with DesiredCount 1. */
+function findWorkerService(template: ReturnType<typeof Template.fromStack>) {
+  const services = template.findResources('AWS::ECS::Service');
+  return Object.values(services).find((s: any) => s.Properties.DesiredCount === 1) as any;
+}
+
+const MODES: ReadonlyArray<[string, () => { template: ReturnType<typeof Template.fromStack> }]> =
+  [
+    ['production', makeApp],
+    ['preview', () => makePreviewApp()],
+  ];
+
+for (const [mode, make] of MODES) {
+  test(`worker (${mode}): small taskdef runs the SAME image with Command ['worker.cjs'] and NO ports`, () => {
+    const { template } = make();
+    const td = findWorkerTaskDef(template);
+    expect(td).toBeDefined();
+    expect(td.Properties.Cpu).toBe('256');
+    expect(td.Properties.Memory).toBe('512');
+    const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+    // Same image as the app — the worker bundle ships inside it; the distroless
+    // ENTRYPOINT is `node`, so the command override is just the bundle path.
+    expect(worker.Image).toBe(CONTEXT.appImageTag);
+    expect(worker.Command).toEqual(['worker.cjs']);
+    // No listener, no target group, no ports — the worker serves no traffic.
+    expect(worker.PortMappings).toBeUndefined();
+  });
+
+  test(`worker (${mode}): SUPABASE_URL env + service-role/SimpleTexting SECRETS + awslogs`, () => {
+    const { template } = make();
+    const td = findWorkerTaskDef(template);
+    const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+    expect(worker.Environment).toEqual(
+      expect.arrayContaining([{ Name: 'SUPABASE_URL', Value: CONTEXT.supabaseUrl }]),
+    );
+    expect(worker.Secrets).toEqual(
+      expect.arrayContaining([
+        {
+          Name: 'SUPABASE_SERVICE_ROLE_KEY',
+          ValueFrom: `${SERVICE_ROLE_SECRET_ARN}:SERVICE_ROLE_KEY::`,
+        },
+        {
+          Name: 'SIMPLETEXTING_API_TOKEN',
+          ValueFrom: `${SMS_SECRETS_ARN}:SIMPLETEXTING_API_TOKEN::`,
+        },
+      ]),
+    );
+    expect(worker.LogConfiguration.LogDriver).toBe('awslogs');
+    expect(worker.LogConfiguration.Options['awslogs-stream-prefix']).toBe(
+      'marketinghub-sms-worker',
+    );
+  });
+
+  test(`worker (${mode}): ONE task, min 0 / max 100 (a deploy never runs two dispatchers)`, () => {
+    const { template } = make();
+    const svc = findWorkerService(template);
+    expect(svc).toBeDefined();
+    expect(svc.Properties.LaunchType).toBe('FARGATE');
+    expect(svc.Properties.DeploymentConfiguration.MinimumHealthyPercent).toBe(0);
+    expect(svc.Properties.DeploymentConfiguration.MaximumPercent).toBe(100);
+    // Not attached to any load balancer.
+    expect(svc.Properties.LoadBalancers ?? []).toHaveLength(0);
+  });
+
+  test(`worker (${mode}): private subnets, no public IP, WorkerSg + internalClientSg`, () => {
+    const { template } = make();
+    const svc = findWorkerService(template);
+    const cfg = svc.Properties.NetworkConfiguration.AwsvpcConfiguration;
+    expect(cfg.AssignPublicIp).toBe('DISABLED');
+    expect(cfg.Subnets).toEqual(expect.arrayContaining(SUPABASE_PRIVATE_SUBNET_IDS));
+    expect(cfg.SecurityGroups).toEqual(
+      expect.arrayContaining([SUPABASE_INTERNAL_CLIENT_SG_ID]),
+    );
+    expect(JSON.stringify(cfg.SecurityGroups)).toContain('WorkerSg');
+  });
+
+  test(`worker (${mode}): the WorkerSg accepts NO ingress at all`, () => {
+    const { template } = make();
+    const sgs = template.findResources('AWS::EC2::SecurityGroup');
+    const entry = Object.entries(sgs).find(([id]) => id.startsWith('WorkerSg'));
+    expect(entry).toBeDefined();
+    const [, workerSg] = entry as [string, any];
+    expect(workerSg.Properties.SecurityGroupIngress ?? []).toHaveLength(0);
+    // ...including via standalone ingress resources.
+    const ingresses = template.findResources('AWS::EC2::SecurityGroupIngress');
+    for (const r of Object.values(ingresses) as any[]) {
+      expect(JSON.stringify(r.Properties.GroupId ?? '')).not.toContain('WorkerSg');
+    }
+  });
+
+  test(`worker (${mode}): the ECR-pull and kms:Decrypt exec-role grants are replicated`, () => {
+    // Both taskdefs use fromRegistry(<ecr-uri>) images and CMK-encrypted secrets,
+    // so BOTH execution roles need the ECR pull set + kms:Decrypt on the CMK.
+    const { template } = make();
+    const policies = Object.values(template.findResources('AWS::IAM::Policy'));
+    const withEcrPull = policies.filter((p: any) =>
+      (p.Properties.PolicyDocument.Statement as any[]).some((s) => {
+        const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+        return (
+          actions.includes('ecr:GetAuthorizationToken') && actions.includes('ecr:BatchGetImage')
+        );
+      }),
+    );
+    expect(withEcrPull.length).toBeGreaterThanOrEqual(2);
+    const withKmsDecrypt = policies.filter((p: any) =>
+      (p.Properties.PolicyDocument.Statement as any[]).some((s) => {
+        const actions = Array.isArray(s.Action) ? s.Action : [s.Action];
+        const resources = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
+        return (
+          actions.includes('kms:Decrypt') &&
+          resources.includes(CONTEXT.supabaseSecretsKmsKeyArn)
+        );
+      }),
+    );
+    expect(withKmsDecrypt.length).toBeGreaterThanOrEqual(2);
+  });
+}
+
+test('worker: optional simpletextingAccountPhone context becomes SIMPLETEXTING_ACCOUNT_PHONE', () => {
+  const app = new App({ context: { ...CONTEXT, simpletextingAccountPhone: '+15551234567' } });
+  const template = Template.fromStack(new AppStack(app, 'AppWithAccountPhone', { env }));
+  const td = findWorkerTaskDef(template);
+  const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+  expect(worker.Environment).toEqual(
+    expect.arrayContaining([{ Name: 'SIMPLETEXTING_ACCOUNT_PHONE', Value: '+15551234567' }]),
+  );
+});
+
+test('worker: WITHOUT the optional context, no SIMPLETEXTING_ACCOUNT_PHONE env anywhere', () => {
+  const { template } = makeApp();
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const td of Object.values(taskDefs) as any[]) {
+    for (const c of td.Properties.ContainerDefinitions ?? []) {
+      for (const e of c.Environment ?? []) {
+        expect(e.Name).not.toBe('SIMPLETEXTING_ACCOUNT_PHONE');
+      }
+    }
+  }
 });

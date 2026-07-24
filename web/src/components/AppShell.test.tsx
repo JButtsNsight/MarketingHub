@@ -37,6 +37,17 @@ describe("AppShell", () => {
     expect(link).toHaveAttribute("href", "/templates");
   });
 
+  it("renders an SMS Campaigns link to /campaigns in the left nav", () => {
+    render(
+      <AppShell>
+        <p>body</p>
+      </AppShell>,
+    );
+    const nav = screen.getByRole("navigation");
+    const link = within(nav).getByRole("link", { name: /sms campaigns/i });
+    expect(link).toHaveAttribute("href", "/campaigns");
+  });
+
   it("renders the theme/skin toggle", () => {
     render(
       <AppShell>

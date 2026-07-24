@@ -1243,6 +1243,22 @@ html[data-theme="dark"] .chart-line {
   pointer-events: none;
 }
 
+/* ── SMS campaigns ── */
+.campaign-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.board-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.board-row input {
+  flex: 1;
+}
+
 /* ── SSO login — a faithful mirror of the standalone Socrates (NCore) auth
    screen: full-viewport, flat, dark, centered card, Marcellus wordmark, a
    single white Google SSO control, status line. Intentionally self-contained

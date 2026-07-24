@@ -68,6 +68,16 @@ export class AppStack extends Stack {
     // does NOT know the CMK, so it can't grant kms:Decrypt — Fargate then fails with
     // "Access to KMS is not allowed". Pass the CMK ARN and grant Decrypt explicitly.
     const supabaseSecretsKmsKeyArn = req('supabaseSecretsKmsKeyArn');
+    // SMS campaigns credentials — one JSON secret with the MONDAY_API_TOKEN /
+    // SIMPLETEXTING_WEBHOOK_TOKEN / SIMPLETEXTING_API_TOKEN fields (fields may be
+    // empty = the feature degrades gracefully, but the secret must exist).
+    const smsSecretsArn = req('smsSecretsArn');
+    // OPTIONAL (tryGetContext, not req): the SimpleTexting account phone number
+    // some accounts must pass as `accountPhone` on POST /messages. Absent = the
+    // worker simply omits it.
+    const simpletextingAccountPhone = this.node.tryGetContext('simpletextingAccountPhone') as
+      | string
+      | undefined;
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
     // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
@@ -141,6 +151,16 @@ export class AppStack extends Stack {
       supabaseServiceRoleSecretArn,
     );
 
+    // The SMS-campaigns credentials secret (runbook §1.7). Encrypted with the
+    // SAME dedicated CMK as the service-role secret — mandated by the runbook —
+    // so the existing kms:Decrypt grant on that CMK covers this secret too and
+    // no new KMS statement is needed.
+    const smsSecrets = secretsmanager.Secret.fromSecretCompleteArn(
+      this,
+      'SmsSecrets',
+      smsSecretsArn,
+    );
+
     const taskDef = new ecs.FargateTaskDefinition(this, 'AppTaskDef', {
       cpu: 512,
       memoryLimitMiB: 1024,
@@ -168,6 +188,14 @@ export class AppStack extends Stack {
         SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
           supabaseServiceRoleSecret,
           'SERVICE_ROLE_KEY',
+        ),
+        // SMS campaigns: Monday board reads + SimpleTexting webhook auth. Both
+        // are JSON fields of the sms-campaigns secret (empty field = feature
+        // degrades gracefully; the app never sees the whole JSON blob).
+        MONDAY_API_TOKEN: ecs.Secret.fromSecretsManager(smsSecrets, 'MONDAY_API_TOKEN'),
+        SIMPLETEXTING_WEBHOOK_TOKEN: ecs.Secret.fromSecretsManager(
+          smsSecrets,
+          'SIMPLETEXTING_WEBHOOK_TOKEN',
         ),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-web' }),
@@ -227,6 +255,81 @@ export class AppStack extends Stack {
         timeout: Duration.seconds(10),
       },
       deregistrationDelay: Duration.seconds(30),
+    });
+
+    // --- SMS dispatcher worker (BOTH modes): a second, ALB-less Fargate service ---
+    // Same image as the app (the esbuild worker bundle ships inside it); the
+    // distroless ENTRYPOINT is `node`, so the command override is just the bundle
+    // path. ONE task polls the SMS outbox; minHealthyPercent 0 / maxHealthyPercent
+    // 100 makes a deploy STOP the old dispatcher before starting the new one, so
+    // two dispatchers never run at once.
+    const workerSg = new ec2.SecurityGroup(this, 'WorkerSg', {
+      vpc,
+      description: 'MarketingHub SMS dispatcher worker (no ingress - serves no traffic)',
+      allowAllOutbound: true,
+    });
+
+    const workerTaskDef = new ecs.FargateTaskDefinition(this, 'WorkerTaskDef', {
+      cpu: 256,
+      memoryLimitMiB: 512,
+    });
+    workerTaskDef.addContainer('worker', {
+      image: ecs.ContainerImage.fromRegistry(appImageTag),
+      command: ['worker.cjs'],
+      // NO portMappings: the dispatcher accepts no traffic (poll-only).
+      environment: {
+        SUPABASE_URL: supabaseUrl,
+        // Optional: some SimpleTexting accounts must pass their account phone
+        // as `accountPhone` on POST /messages. Omitted entirely when unset.
+        ...(simpletextingAccountPhone
+          ? { SIMPLETEXTING_ACCOUNT_PHONE: simpletextingAccountPhone }
+          : {}),
+      },
+      secrets: {
+        SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
+          supabaseServiceRoleSecret,
+          'SERVICE_ROLE_KEY',
+        ),
+        SIMPLETEXTING_API_TOKEN: ecs.Secret.fromSecretsManager(
+          smsSecrets,
+          'SIMPLETEXTING_API_TOKEN',
+        ),
+      },
+      logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-sms-worker' }),
+    });
+    // Replicate the app taskdef's execution-role grants (rationale above): the
+    // fromRegistry(<ecr-uri>) image needs the standard ECR pull set, and reading
+    // the CMK-encrypted secrets needs kms:Decrypt on that CMK.
+    workerTaskDef.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'ecr:GetAuthorizationToken',
+          'ecr:BatchCheckLayerAvailability',
+          'ecr:GetDownloadUrlForLayer',
+          'ecr:BatchGetImage',
+        ],
+        resources: ['*'],
+      }),
+    );
+    workerTaskDef.addToExecutionRolePolicy(
+      new iam.PolicyStatement({
+        actions: ['kms:Decrypt'],
+        resources: [supabaseSecretsKmsKeyArn],
+      }),
+    );
+
+    new ecs.FargateService(this, 'WorkerService', {
+      cluster,
+      taskDefinition: workerTaskDef,
+      desiredCount: 1,
+      // internalClientSg membership grants the data-API reachability (same as
+      // the app); WorkerSg exists only so the worker does NOT share the app's
+      // serviceSg (which admits :3000 from the ALB) — it needs NO ingress at all.
+      securityGroups: [workerSg, internalClientSg],
+      vpcSubnets: privateSubnets,
+      assignPublicIp: false,
+      minHealthyPercent: 0,
+      maxHealthyPercent: 100,
     });
 
     if (previewMode) {
@@ -414,6 +517,20 @@ export class AppStack extends Stack {
     listener.addAction('HealthCheckUnauthenticated', {
       priority: 10,
       conditions: [elbv2.ListenerCondition.pathPatterns(['/api/health'])],
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+
+    // Unauthenticated exception #2: SimpleTexting's delivery-report/unsubscribe
+    // webhooks POST here from their servers — no Cognito session possible. The
+    // route authenticates itself with its `?token=` shared secret (compared via
+    // timingSafeEqual, 401 before any storage). Method-scoped to POST so a
+    // browser GET on the path still falls through to the Cognito default action.
+    listener.addAction('SimpleTextingWebhookUnauthenticated', {
+      priority: 20,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/api/webhooks/simpletexting']),
+        elbv2.ListenerCondition.httpRequestMethods(['POST']),
+      ],
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
