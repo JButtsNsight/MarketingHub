@@ -21,7 +21,7 @@ function normalizeTag(raw: string): string {
  * Client upload form for a campaign template. Mirrors the server zod schema for
  * fast feedback (the server re-validates — the browser is never trusted). Posts
  * to the group-gated `/api/templates` route and redirects to the new template.
- * Built on `.surface` so it honors the global glass/flat skin.
+ * Built on `.surface` so it honors the surface tokens.
  */
 export function UploadForm() {
   const router = useRouter();

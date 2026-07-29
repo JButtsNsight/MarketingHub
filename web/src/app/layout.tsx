@@ -7,7 +7,7 @@ import "@fontsource/dm-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 import "../styles/globals.css";
-import { DEFAULT_SKIN, DEFAULT_THEME } from "@/lib/theme";
+import { DEFAULT_THEME } from "@/lib/theme";
 
 export const metadata = {
   title: "MarketingHub Console",
@@ -15,8 +15,8 @@ export const metadata = {
     "Console for the MarketingHub self-hosted Supabase-on-AWS backend.",
 };
 
-// Restore the persisted theme/skin before first paint to avoid a flash.
-const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');var s=localStorage.getItem('mh-skin');var e=document.documentElement;e.dataset.theme=(t==='light'||t==='dark')?t:'${DEFAULT_THEME}';e.dataset.skin=(s==='glass'||s==='flat')?s:'${DEFAULT_SKIN}';}catch(_){document.documentElement.dataset.theme='${DEFAULT_THEME}';document.documentElement.dataset.skin='${DEFAULT_SKIN}';}})();`;
+// Restore the persisted theme before first paint to avoid a flash.
+const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');document.documentElement.dataset.theme=(t==='light'||t==='dark')?t:'${DEFAULT_THEME}';}catch(_){document.documentElement.dataset.theme='${DEFAULT_THEME}';}})();`;
 
 /**
  * Root layout: the document shell only. The authenticated app chrome lives in
@@ -25,14 +25,9 @@ const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');v
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     // suppressHydrationWarning: the pre-paint themeBootstrap script mutates
-    // data-theme/data-skin from localStorage, so a returning non-default user's
-    // <html> attributes intentionally differ from the server-rendered defaults.
-    <html
-      lang="en"
-      data-theme={DEFAULT_THEME}
-      data-skin={DEFAULT_SKIN}
-      suppressHydrationWarning
-    >
+    // data-theme from localStorage, so a returning non-default user's
+    // <html> attribute intentionally differs from the server-rendered default.
+    <html lang="en" data-theme={DEFAULT_THEME} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>

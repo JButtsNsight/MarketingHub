@@ -1,47 +1,39 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { ThemeSkinToggle } from "./ThemeSkinToggle";
+import { ThemeToggle } from "./ThemeToggle";
 
 beforeEach(() => {
   localStorage.clear();
   delete document.documentElement.dataset.theme;
-  delete document.documentElement.dataset.skin;
 });
 
-describe("ThemeSkinToggle", () => {
-  it("renders theme (Light/Dark) and skin (Glass/Flat) segmented controls", () => {
-    render(<ThemeSkinToggle />);
+describe("ThemeToggle", () => {
+  it("renders the Light/Dark segmented control and nothing else", () => {
+    render(<ThemeToggle />);
     expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /glass/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /flat/i })).toBeInTheDocument();
+    // The glass/flat skin toggle is gone — the app is flat-only.
+    expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /flat/i })).toBeNull();
   });
 
-  it("built from the .surface primitive so it honors the global skin", () => {
-    const { container } = render(<ThemeSkinToggle />);
+  it("built from the .surface primitive so it honors the surface tokens", () => {
+    const { container } = render(<ThemeToggle />);
     expect(container.querySelectorAll(".surface").length).toBeGreaterThan(0);
   });
 
   it("clicking Dark sets data-theme=dark on <html>", async () => {
     const user = userEvent.setup();
-    render(<ThemeSkinToggle />);
+    render(<ThemeToggle />);
     await user.click(screen.getByRole("button", { name: /dark/i }));
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(localStorage.getItem("mh-theme")).toBe("dark");
   });
 
-  it("clicking Flat sets data-skin=flat on <html>", async () => {
-    const user = userEvent.setup();
-    render(<ThemeSkinToggle />);
-    await user.click(screen.getByRole("button", { name: /flat/i }));
-    expect(document.documentElement.dataset.skin).toBe("flat");
-    expect(localStorage.getItem("mh-skin")).toBe("flat");
-  });
-
   it("marks the active option with aria-pressed", async () => {
     const user = userEvent.setup();
-    render(<ThemeSkinToggle />);
+    render(<ThemeToggle />);
     await user.click(screen.getByRole("button", { name: /dark/i }));
     expect(screen.getByRole("button", { name: /dark/i })).toHaveAttribute(
       "aria-pressed",

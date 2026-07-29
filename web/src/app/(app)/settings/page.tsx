@@ -125,9 +125,9 @@ export default async function SettingsPage() {
           />
         </Section>
 
-        <Section eyebrow="Appearance" title="Theme & skin">
+        <Section eyebrow="Appearance" title="Theme">
           <p className="note">
-            Switch light/dark and glass/flat from the toggle in the masthead. Your
+            Switch between light and dark from the toggle in the masthead. Your
             choice persists in this browser.
           </p>
         </Section>

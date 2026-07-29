@@ -16,9 +16,8 @@ type SurfaceProps = SurfaceOwnProps & Record<string, unknown>;
 
 /**
  * The `.surface` primitive from the NSight design language. It consumes only the
- * `--surface-*` tokens, so it automatically ships both the glass and flat skins
- * across light/dark. It never applies a backdrop-filter — glass is light + shadow
- * on a transparent surface, with the page gradient reading through.
+ * `--surface-*` tokens (flat, resolved per light/dark theme). It never applies a
+ * backdrop-filter — the page gradient reads through the transparent surface.
  */
 export function Surface({
   as,

@@ -14,7 +14,7 @@ describe("UserMenu", () => {
     expect(link).toHaveAttribute("href", "/logout");
   });
 
-  it("is built on the .surface primitive (honors the glass/flat skin)", () => {
+  it("is built on the .surface primitive (honors the surface tokens)", () => {
     const { container } = render(<UserMenu email="casey@nsightcare.com" />);
     expect(container.querySelector(".surface")).not.toBeNull();
   });
