@@ -14,6 +14,7 @@ export type IconKey =
   | "auth"
   | "api"
   | "infra"
+  | "admin"
   | "settings";
 
 export interface NavItem {
@@ -49,7 +50,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "Project",
-    items: [{ href: "/settings", label: "Settings", icon: "settings" }],
+    items: [
+      { href: "/admin", label: "Admin", icon: "admin" },
+      { href: "/settings", label: "Settings", icon: "settings" },
+    ],
   },
 ];
 
@@ -113,6 +117,14 @@ const ICONS: Record<IconKey, ReactNode> = {
       <path d="M7 7h.01M7 17h.01" />
     </>
   ),
+  admin: (
+    <>
+      <path d="M4 6h16M4 12h16M4 18h16" />
+      <circle cx="9" cy="6" r="2" />
+      <circle cx="15" cy="12" r="2" />
+      <circle cx="7" cy="18" r="2" />
+    </>
+  ),
   settings: (
     <>
       <circle cx="12" cy="12" r="3" />
@@ -140,7 +152,7 @@ function NavIcon({ icon }: { icon: IconKey }) {
 
 /**
  * Left navigation rail. Built from the .surface primitive so it honors the
- * global glass/flat skin. Highlights the active section from the pathname.
+ * surface tokens. Highlights the active section from the pathname.
  */
 export function Nav({ groups = NAV_GROUPS }: { groups?: NavGroup[] }) {
   // usePathname() is null outside the App Router context (e.g. in unit tests);

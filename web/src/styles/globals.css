@@ -21,7 +21,7 @@ html {
 body {
   font-family: var(--fu);
   color: var(--ink);
-  /* A gentle page gradient — this is what reads THROUGH the glass surfaces. */
+  /* A gentle page gradient behind the flat surfaces. */
   background:
     linear-gradient(160deg, var(--paper), var(--canvas) 55%, var(--wash));
   background-attachment: fixed;
@@ -68,10 +68,9 @@ a:hover {
 
 /*
  * ── The .surface primitive ──
- * Consumes ONLY the --surface-* tokens (resolved per data-skin × data-theme),
- * so every elevated element ships both skins with zero per-component changes.
- * No backdrop-filter: the page gradient reads through a transparent surface,
- * lit from above-and-to-the-right by rim + inner shade + drop shadow.
+ * Consumes ONLY the --surface-* tokens (resolved per data-theme), so every
+ * elevated element restyles with zero per-component changes. No backdrop-filter;
+ * the page gradient reads through a transparent flat surface.
  */
 .surface {
   background: var(--surface-bg);
@@ -80,7 +79,7 @@ a:hover {
   border-radius: var(--r, 12px);
 }
 
-/* .glint — the refraction sheen. Large surfaces only (panels, cards, modals, tables). */
+/* .glint — the refraction sheen. Inert in the flat skin (--surface-glint is none). */
 .surface.glint {
   position: relative;
   overflow: hidden;
@@ -175,8 +174,8 @@ a:hover {
   }
 }
 
-/* ── Segmented control (theme / skin toggle) ── */
-.theme-skin-toggle {
+/* ── Segmented control (theme toggle) ── */
+.theme-toggle {
   display: inline-flex;
   gap: 10px;
 }

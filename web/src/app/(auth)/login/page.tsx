@@ -39,15 +39,15 @@ export default function LoginPage() {
       <div className="sso-card">
         <h1 className="sso-wordmark">
           MarketingHub
-          <em>NSight Console</em>
+          <em>Nsight Console</em>
         </h1>
-        <p className="sso-sub">Sign in with your NSight account</p>
+        <p className="sso-sub">Sign in with your Nsight account</p>
         <a className="sso-btn" href="/">
           <GoogleGlyph />
           Sign in with Google
         </a>
         <p className="sso-status">
-          Access is managed through NSight single sign-on — you&apos;ll be
+          Access is managed through Nsight single sign-on — you&apos;ll be
           redirected to your Google Workspace account.
         </p>
       </div>

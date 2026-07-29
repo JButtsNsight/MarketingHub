@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  getSkin,
-  getTheme,
-  setSkin,
-  setTheme,
-  type Skin,
-  type Theme,
-} from "@/lib/theme";
+import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { Surface } from "./Surface";
 
 type Segment<T extends string> = { value: T; label: string };
@@ -16,10 +9,6 @@ type Segment<T extends string> = { value: T; label: string };
 const THEME_SEGMENTS: Segment<Theme>[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
-];
-const SKIN_SEGMENTS: Segment<Skin>[] = [
-  { value: "glass", label: "Glass" },
-  { value: "flat", label: "Flat" },
 ];
 
 function Segmented<T extends string>({
@@ -60,20 +49,18 @@ function Segmented<T extends string>({
 }
 
 /**
- * The global Glass/Flat + Light/Dark control. This sets the app-wide skin and
- * theme (§2.4 of the spec) — every surface-bearing element honors the choice.
+ * The global Light/Dark control. This sets the app-wide theme (§2.4 of the
+ * spec) — every surface-bearing element honors the choice.
  */
-export function ThemeSkinToggle() {
+export function ThemeToggle() {
   const [theme, setThemeState] = useState<Theme>("light");
-  const [skin, setSkinState] = useState<Skin>("glass");
 
   useEffect(() => {
     setThemeState(getTheme());
-    setSkinState(getSkin());
   }, []);
 
   return (
-    <div className="theme-skin-toggle">
+    <div className="theme-toggle">
       <Segmented
         ariaLabel="Theme"
         segments={THEME_SEGMENTS}
@@ -83,17 +70,8 @@ export function ThemeSkinToggle() {
           setThemeState(v);
         }}
       />
-      <Segmented
-        ariaLabel="Skin"
-        segments={SKIN_SEGMENTS}
-        value={skin}
-        onSelect={(v) => {
-          setSkin(v);
-          setSkinState(v);
-        }}
-      />
     </div>
   );
 }
 
-export default ThemeSkinToggle;
+export default ThemeToggle;

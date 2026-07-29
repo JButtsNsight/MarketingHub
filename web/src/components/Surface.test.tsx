@@ -8,7 +8,7 @@ describe("Surface", () => {
     expect(screen.getByText("hello glass")).toBeInTheDocument();
   });
 
-  it("applies the .surface class so it consumes the skin tokens", () => {
+  it("applies the .surface class so it consumes the surface tokens", () => {
     render(<Surface data-testid="s">x</Surface>);
     expect(screen.getByTestId("s")).toHaveClass("surface");
   });

@@ -7,7 +7,7 @@ import { Surface } from "./Surface";
  * Sign-out points at `/logout`, a route that clears the ALB auth-session cookie
  * and redirects to the Cognito Hosted-UI logout endpoint (which in turn signs
  * out of the Google Workspace SAML session). Built on `.surface` so it honors
- * the global glass/flat skin.
+ * the surface tokens.
  */
 export function UserMenu({ email }: { email: string }) {
   return (

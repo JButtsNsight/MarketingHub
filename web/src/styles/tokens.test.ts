@@ -70,19 +70,17 @@ describe("tokens.css", () => {
     );
   });
 
-  it("defines all six surface tokens for every data-skin × data-theme combo", () => {
-    const combos = [
-      'html[data-skin="flat"]',
-      'html[data-skin="glass"]',
-      'html[data-theme="dark"][data-skin="flat"]',
-      'html[data-theme="dark"][data-skin="glass"]',
-    ];
-    for (const sel of combos) {
+  it("defines all six surface tokens in both themes (flat-only)", () => {
+    for (const sel of [":root", 'html[data-theme="dark"]']) {
       const body = ruleBody(sel);
       expect(body, `selector ${sel} not found`).not.toBe("");
       for (const t of SURFACE_TOKENS) {
         expect(body, `${sel} missing ${t}`).toContain(t + ":");
       }
     }
+  });
+
+  it("ships no glass skin — the data-skin axis is gone", () => {
+    expect(css).not.toContain("data-skin");
   });
 });

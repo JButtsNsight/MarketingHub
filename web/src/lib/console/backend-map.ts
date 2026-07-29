@@ -121,7 +121,7 @@ export interface CognitoModel {
 }
 
 export const COGNITO: CognitoModel = {
-  idp: "AWS Cognito federated to the NSight Google Workspace SAML app (idpid C00n27oyt); self-signup disabled (federated-only).",
+  idp: "AWS Cognito federated to the Nsight Google Workspace SAML app (idpid C00n27oyt); self-signup disabled (federated-only).",
   pools: [
     { name: "nsight-marketinghub", purpose: "The marketing web app front door", group: "marketing / marketinghub-admins" },
     { name: "nsight-supabase-studio", purpose: "Supabase Studio front door", group: "supabase-admins" },

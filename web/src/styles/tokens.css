@@ -1,8 +1,8 @@
 /*
  * NSight Design Language — token layer for MarketingHub.
  * Source of truth: ~/NSight-Design-Language/docs/STYLE-GUIDE.md (locked 2026-05-30).
- * Two independent axes on <html>: data-theme=light|dark, data-skin=glass|flat.
- * Every color / surface value is a token. No freehand hex; glass is never frosted.
+ * One axis on <html>: data-theme=light|dark. Surfaces are always flat.
+ * Every color / surface value is a token. No freehand hex.
  */
 
 /* ── LIGHT (warm sand) — base palette + type ── */
@@ -53,6 +53,16 @@
   --data-6: #97A0A8;
   --data-7: #7B86A8;
   --data-8: #45494C;
+
+  /* Surface system — flat: transparent / no chrome (the only drop shadow
+   * anywhere is on graph lines). Every elevated component consumes these six
+   * tokens (or the shared .surface primitive). */
+  --surface-bg: rgba(21, 48, 63, 0.035);
+  --surface-border: 1px solid transparent;
+  --surface-rim: 0 0 0 0 transparent;
+  --surface-shade: 0 0 0 0 transparent;
+  --surface-shadow: 0 0 0 0 transparent;
+  --surface-glint: none;
 }
 
 /* ── DARK (deep petrol) — palette overrides ── */
@@ -80,71 +90,12 @@ html[data-theme="dark"] {
   --ae: rgba(255, 99, 99, 0.5);
   --as: rgba(255, 99, 99, 0.2);
   --ag: rgba(255, 99, 99, 0.42);
-}
 
-/*
- * ── Surface system (the skin) ──
- * Six tokens resolve per data-skin × data-theme. Every elevated component is
- * built from these (or the shared .surface primitive), so flipping data-skin
- * reskins the whole app with zero per-component changes.
- * Flat = transparent / no chrome (the only drop shadow anywhere is on graph lines).
- * Glass = unfrosted liquid glass — directional light + shadow, gradient reads through.
- */
-
-html[data-skin="flat"] {
-  --surface-bg: rgba(21, 48, 63, 0.035);
-  --surface-border: 1px solid transparent;
-  --surface-rim: 0 0 0 0 transparent;
-  --surface-shade: 0 0 0 0 transparent;
-  --surface-shadow: 0 0 0 0 transparent;
-  --surface-glint: none;
-}
-
-html[data-skin="glass"] {
-  --surface-bg: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.18),
-    rgba(255, 255, 255, 0) 34%,
-    rgba(21, 48, 63, 0.06)
-  );
-  --surface-border: 1px solid rgba(255, 255, 255, 0.5);
-  --surface-rim: inset 0 1px 1px rgba(255, 255, 255, 0.85);
-  --surface-shade: inset 0 -11px 22px -12px rgba(21, 48, 63, 0.16);
-  --surface-shadow: 0 8px 22px -6px rgba(21, 48, 63, 0.13);
-  --surface-glint: linear-gradient(
-    122deg,
-    transparent 38%,
-    rgba(255, 255, 255, 0.3) 47%,
-    rgba(255, 255, 255, 0.05) 52%,
-    transparent 62%
-  );
-}
-
-html[data-theme="dark"][data-skin="flat"] {
+  /* Surface system — flat, dark values. */
   --surface-bg: rgba(255, 255, 255, 0.045);
   --surface-border: 1px solid transparent;
   --surface-rim: 0 0 0 0 transparent;
   --surface-shade: 0 0 0 0 transparent;
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
-}
-
-html[data-theme="dark"][data-skin="glass"] {
-  --surface-bg: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.12),
-    rgba(255, 255, 255, 0.03) 50%,
-    rgba(255, 255, 255, 0)
-  );
-  --surface-border: 1px solid rgba(255, 255, 255, 0.15);
-  --surface-rim: inset 0 1px 2px rgba(255, 255, 255, 0.16);
-  --surface-shade: inset 0 -2px 6px rgba(0, 0, 0, 0.2);
-  --surface-shadow: 0 8px 22px -6px rgba(0, 0, 0, 0.45);
-  --surface-glint: linear-gradient(
-    122deg,
-    transparent 41%,
-    rgba(255, 255, 255, 0.1) 48%,
-    rgba(255, 255, 255, 0.02) 53%,
-    transparent 62%
-  );
 }

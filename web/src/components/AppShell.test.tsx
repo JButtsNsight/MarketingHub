@@ -15,7 +15,7 @@ function appCss(): string {
 }
 
 describe("AppShell", () => {
-  it("renders the NSight wordmark in the display face (Marcellus)", () => {
+  it("renders the Nsight wordmark in the display face (Marcellus)", () => {
     render(
       <AppShell>
         <p>body</p>
@@ -48,14 +48,15 @@ describe("AppShell", () => {
     expect(link).toHaveAttribute("href", "/campaigns");
   });
 
-  it("renders the theme/skin toggle", () => {
+  it("renders the light/dark theme toggle without the retired skin toggle", () => {
     render(
       <AppShell>
         <p>body</p>
       </AppShell>,
     );
-    expect(screen.getByRole("button", { name: /glass/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
   });
 
   it("renders children inside a <main> landmark", () => {
