@@ -65,11 +65,11 @@
   --surface-glint: none;
 }
 
-/* ── DARK (deep petrol) — palette overrides ── */
+/* ── DARK (inky black-blue) — palette overrides ── */
 html[data-theme="dark"] {
-  --canvas: #0C1E22;
-  --paper: #13292E;
-  --wash: #0A191D;
+  --canvas: #060B15;
+  --paper: #0A1220;
+  --wash: #030509;
   --hair: rgba(255, 255, 255, 0.12);
 
   --ink: #EAF2EE;
