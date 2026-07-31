@@ -130,8 +130,12 @@ export class DataStack extends Stack {
     // permission) from landing PHI outside the segregated data/backup CMK. These Deny
     // statements close that hole while leaving the normal header-less path (default CMK) intact.
     const requireSseKms = (bucket: s3.Bucket, key: kms.IKey) => {
-      // Deny an explicit non-aws:kms scheme (IfExists → header-less requests still fall through
-      // to bucket default encryption with the CMK).
+      // Deny an explicit non-aws:kms scheme. The Null guard is LOAD-BEARING:
+      // a negated operator (with or without IfExists) evaluates TRUE when the
+      // header is absent, so without it this denies header-less uploads too —
+      // which is every supabase-storage write (it sends no SSE headers and
+      // relies on bucket default encryption with the CMK). Deny ONLY when the
+      // header is present AND wrong.
       bucket.addToResourcePolicy(new iam.PolicyStatement({
         sid: 'DenyNonKmsEncryption',
         effect: iam.Effect.DENY,
@@ -139,11 +143,12 @@ export class DataStack extends Stack {
         actions: ['s3:PutObject'],
         resources: [`${bucket.bucketArn}/*`],
         conditions: {
-          StringNotEqualsIfExists: { 's3:x-amz-server-side-encryption': 'aws:kms' },
+          Null: { 's3:x-amz-server-side-encryption': 'false' },
+          StringNotEquals: { 's3:x-amz-server-side-encryption': 'aws:kms' },
         },
       }));
-      // Deny an explicit KMS key that isn't this bucket's segregated CMK (IfExists → requests
-      // that don't name a key use the bucket default CMK).
+      // Deny an explicit KMS key that isn't this bucket's segregated CMK
+      // (same Null guard: requests that don't name a key use the default CMK).
       bucket.addToResourcePolicy(new iam.PolicyStatement({
         sid: 'DenyWrongKmsKey',
         effect: iam.Effect.DENY,
@@ -151,7 +156,8 @@ export class DataStack extends Stack {
         actions: ['s3:PutObject'],
         resources: [`${bucket.bucketArn}/*`],
         conditions: {
-          StringNotEqualsIfExists: { 's3:x-amz-server-side-encryption-aws-kms-key-id': key.keyArn },
+          Null: { 's3:x-amz-server-side-encryption-aws-kms-key-id': 'false' },
+          StringNotEquals: { 's3:x-amz-server-side-encryption-aws-kms-key-id': key.keyArn },
         },
       }));
     };
