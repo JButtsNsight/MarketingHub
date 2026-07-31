@@ -9,7 +9,7 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
 }));
 
-import { NewCampaignForm, PHI_WARNING } from "./NewCampaignForm";
+import { NewCampaignForm } from "./NewCampaignForm";
 
 const CLEAN_ID = "11111111-1111-4111-8111-111111111111";
 const DIRTY_ID = "22222222-2222-4222-8222-222222222222";
@@ -139,14 +139,6 @@ describe("NewCampaignForm", () => {
     expect(screen.getByLabelText(/contact list/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/send date/i)).toBeInTheDocument();
     expect(container.querySelector(".surface")).not.toBeNull();
-  });
-
-  test("shows the permanent PHI warning with the exact governed copy", () => {
-    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
-    expect(PHI_WARNING).toBe(
-      "SimpleTexting has not signed a BAA. Message content must contain NO PHI — no conditions, medications, appointment or treatment details. Keep it generic.",
-    );
-    expect(screen.getByText(PHI_WARNING)).toBeInTheDocument();
   });
 
   test("the send-date input is floored at today in America/New_York", () => {

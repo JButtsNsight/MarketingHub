@@ -8,14 +8,10 @@ import type { ContactList } from "@/lib/contacts/schema";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
 import { Surface } from "../Surface";
-import { Badge } from "../ui/Badge";
 
-/**
- * PERMANENT compliance copy — SimpleTexting signs no BAA, so message content
- * must never carry PHI. Do not soften or remove this warning.
- */
-export const PHI_WARNING =
-  "SimpleTexting has not signed a BAA. Message content must contain NO PHI — no conditions, medications, appointment or treatment details. Keep it generic.";
+// Compliance note (not user-facing, removed from the UI 2026-07-31 at owner
+// direction): SimpleTexting has signed no BAA, so message content must never
+// carry PHI — no conditions, medications, appointment or treatment details.
 
 /** Shared "Monday is unconfigured" copy (surfaced on a create 503). */
 const MONDAY_UNCONFIGURED =
@@ -141,12 +137,6 @@ export function NewCampaignForm({
       noValidate
     >
       <h1>New SMS campaign</h1>
-
-      {/* Permanent compliance callout — never remove. */}
-      <div className="ref-note" role="note">
-        <Badge tone="var(--warn)">no phi</Badge>
-        <span>{PHI_WARNING}</span>
-      </div>
 
       <div className="field">
         <label htmlFor="camp-name">Campaign name</label>
