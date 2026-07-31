@@ -1,13 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { Template } from "@/lib/templates/schema";
+import type { ContactList } from "@/lib/contacts/schema";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
 import { Surface } from "../Surface";
 import { Badge } from "../ui/Badge";
-import { DataTable, type Column } from "../ui/DataTable";
 
 /**
  * PERMANENT compliance copy — SimpleTexting signs no BAA, so message content
@@ -16,53 +17,9 @@ import { DataTable, type Column } from "../ui/DataTable";
 export const PHI_WARNING =
   "SimpleTexting has not signed a BAA. Message content must contain NO PHI — no conditions, medications, appointment or treatment details. Keep it generic.";
 
-/** Shared "Monday is unconfigured" copy (preview 503 and create 503 alike). */
+/** Shared "Monday is unconfigured" copy (surfaced on a create 503). */
 const MONDAY_UNCONFIGURED =
   "Monday.com is not configured — MONDAY_API_TOKEN is not set in this environment. See the deploy runbook (docs/runbooks/marketinghub-app-deploy.md).";
-
-/** Response shape of POST /api/monday/board-preview (200). */
-interface BoardPreview {
-  boardId: string;
-  boardName: string;
-  columns: Array<{ id: string; title: string; type: string }>;
-  phoneColumns: Array<{ id: string; title: string; type: string }>;
-  suggestedPhoneColumnId: string | null;
-  sample: Array<{
-    name: string;
-    phoneE164: string | null;
-    reason: "ok" | "invalid" | "duplicate";
-  }>;
-  pageCounts: {
-    fetched: number;
-    valid: number;
-    invalid: number;
-    duplicate: number;
-  };
-}
-
-type SampleRow = BoardPreview["sample"][number];
-
-const SAMPLE_COLUMNS: Column<SampleRow>[] = [
-  { key: "name", header: "name" },
-  {
-    key: "phone",
-    header: "phone",
-    mono: true,
-    width: "160px",
-    render: (r) => r.phoneE164 ?? "—",
-  },
-  {
-    key: "reason",
-    header: "reason",
-    width: "110px",
-    // invalid/duplicate are data classifications, not failures — never red.
-    render: (r) => (
-      <Badge tone={r.reason === "ok" ? "var(--ok)" : undefined}>
-        {r.reason}
-      </Badge>
-    ),
-  },
-];
 
 /** Today in America/New_York as YYYY-MM-DD — the send-date floor. */
 function todayInEastern(): string {
@@ -77,82 +34,32 @@ function todayInEastern(): string {
 /**
  * Client creation form for an SMS campaign. Mirrors the server zod schema for
  * fast feedback (the server re-validates — the browser is never trusted):
- * template select with body preview + merge-field lint, board id/URL input
- * with a first-page preview via `/api/monday/board-preview`, phone-column
- * choice (suggested column pre-selected, any column allowed), and a send date
+ * template select with body preview + merge-field lint, a contact-list select
+ * (audiences are managed under Campaigns → Contact lists), and a send date
  * floored at today in America/New_York. Posts to the group-gated
  * `/api/campaigns` route and redirects to the new campaign.
  */
-export function NewCampaignForm({ templates }: { templates: Template[] }) {
+export function NewCampaignForm({
+  templates,
+  lists,
+}: {
+  templates: Template[];
+  lists: ContactList[];
+}) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [board, setBoard] = useState("");
+  const [contactListId, setContactListId] = useState("");
   const [sendDate, setSendDate] = useState("");
-  const [phoneColumnId, setPhoneColumnId] = useState("");
-  const [preview, setPreview] = useState<BoardPreview | null>(null);
-  const [loadingBoard, setLoadingBoard] = useState(false);
-  const [boardError, setBoardError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const minDate = useMemo(() => todayInEastern(), []);
   const selectedTemplate = templates.find((t) => t.id === templateId) ?? null;
+  const selectedList = lists.find((l) => l.id === contactListId) ?? null;
   const unsupported = selectedTemplate
     ? unsupportedMergeFields(selectedTemplate.body)
     : [];
-
-  // Suggested (phone-type) columns first; every column stays choosable — some
-  // boards keep phone numbers in plain text columns.
-  const orderedColumns = useMemo(() => {
-    if (!preview) return [];
-    const phoneIds = new Set(preview.phoneColumns.map((c) => c.id));
-    return [
-      ...preview.phoneColumns,
-      ...preview.columns.filter((c) => !phoneIds.has(c.id)),
-    ];
-  }, [preview]);
-
-  const onLoadBoard = async () => {
-    setBoardError(null);
-    const value = board.trim();
-    if (!value) {
-      setBoardError("Enter a Monday board id or a pasted board URL.");
-      return;
-    }
-    setLoadingBoard(true);
-    try {
-      const res = await fetch("/api/monday/board-preview", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ board: value }),
-      });
-      if (!res.ok) {
-        setPreview(null);
-        setPhoneColumnId("");
-        setBoardError(
-          res.status === 503
-            ? MONDAY_UNCONFIGURED
-            : res.status === 404
-              ? "Board not found — check the id/URL and the token's board access."
-              : res.status === 400
-                ? "Enter a numeric Monday board id or a pasted board URL."
-                : "Board preview failed. Please try again.",
-        );
-        return;
-      }
-      const data = (await res.json()) as BoardPreview;
-      setPreview(data);
-      setPhoneColumnId(data.suggestedPhoneColumnId ?? "");
-    } catch {
-      // fetch itself rejected (offline, DNS, CORS) — never a bare rejection.
-      setPreview(null);
-      setPhoneColumnId("");
-      setBoardError("Network error — please try again.");
-    } finally {
-      setLoadingBoard(false);
-    }
-  };
 
   /** Client-side mirror of the server rules; returns an error string or null. */
   const validate = (): string | null => {
@@ -160,8 +67,7 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
     if (!selectedTemplate) return "Choose a text template.";
     if (unsupported.length > 0)
       return "The selected template has unsupported merge fields — fix the template first.";
-    if (!preview || !phoneColumnId)
-      return "Load the board and choose a phone column.";
+    if (!selectedList) return "Choose a contact list.";
     if (!sendDate) return "Send date is required.";
     return null;
   };
@@ -174,13 +80,11 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
       return;
     }
 
-    // Same zod schema as the server — the pasted board URL is reduced to its
-    // numeric id here, exactly like the API will do again.
+    // Same zod schema as the server.
     const parsed = CampaignCreateInputSchema.safeParse({
       name: name.trim(),
       templateId,
-      mondayBoardId: board.trim(),
-      mondayPhoneColumnId: phoneColumnId,
+      contactListId,
       sendDate,
     });
     if (!parsed.success) {
@@ -282,73 +186,55 @@ export function NewCampaignForm({ templates }: { templates: Template[] }) {
             ) : null}
           </>
         ) : null}
+        <p className="note">
+          Templates are managed under{" "}
+          <Link href="/templates">Templates</Link> — edits there show up here.
+        </p>
       </div>
 
       <div className="field">
-        <label htmlFor="camp-board">Monday board</label>
-        <div className="board-row">
-          <input
-            id="camp-board"
-            className="surface control"
-            value={board}
-            onChange={(e) => setBoard(e.target.value)}
-            placeholder="Board id or pasted board URL"
-          />
-          <button
-            type="button"
-            className="type-chip"
-            onClick={onLoadBoard}
-            disabled={loadingBoard}
-          >
-            {loadingBoard ? "Loading…" : "Load board"}
-          </button>
-        </div>
-        {boardError ? (
-          <p className="form-error" role="alert">
-            {boardError}
-          </p>
-        ) : null}
-      </div>
-
-      {preview ? (
-        <>
+        <label htmlFor="camp-list">Contact list</label>
+        <select
+          id="camp-list"
+          className="surface control"
+          value={contactListId}
+          onChange={(e) => setContactListId(e.target.value)}
+        >
+          <option value="">Choose a contact list…</option>
+          {lists.map((l) => (
+            <option key={l.id} value={l.id}>
+              {l.name}
+              {l.source === "monday"
+                ? ` — Monday: ${l.monday_board_name ?? l.monday_board_id} (live)`
+                : ` — sheet, ${l.contact_count} contacts`}
+            </option>
+          ))}
+        </select>
+        {selectedList ? (
           <p className="note">
-            Board <span className="mono">{preview.boardId}</span> —{" "}
-            {preview.boardName}
+            {selectedList.source === "monday" ? (
+              <>
+                Linked board{" "}
+                <span className="mono">#{selectedList.monday_board_id}</span> —
+                recipients are fetched live at creation.
+              </>
+            ) : (
+              <>
+                <span className="mono">{selectedList.contact_count}</span>{" "}
+                usable contacts from{" "}
+                <span className="mono">{selectedList.original_filename}</span>.
+              </>
+            )}{" "}
+            <Link href={`/campaigns/lists/${selectedList.id}`}>View list</Link>
           </p>
-
-          <div className="field">
-            <label htmlFor="camp-phone-column">Phone column</label>
-            <select
-              id="camp-phone-column"
-              className="surface control"
-              value={phoneColumnId}
-              onChange={(e) => setPhoneColumnId(e.target.value)}
-            >
-              {phoneColumnId === "" ? (
-                <option value="">Choose a column…</option>
-              ) : null}
-              {orderedColumns.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.title} ({c.type})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <p className="note mono">
-            {preview.pageCounts.fetched} fetched · {preview.pageCounts.valid}{" "}
-            valid · {preview.pageCounts.invalid} invalid ·{" "}
-            {preview.pageCounts.duplicate} duplicate (first page)
+        ) : (
+          <p className="note">
+            Audiences are managed under{" "}
+            <Link href="/campaigns/lists">Contact lists</Link> — upload a sheet
+            or link a Monday board there.
           </p>
-          <DataTable
-            columns={SAMPLE_COLUMNS}
-            rows={preview.sample}
-            getRowKey={(r, i) => `${r.name}-${i}`}
-            empty="No rows in the sampled page."
-          />
-        </>
-      ) : null}
+        )}
+      </div>
 
       <div className="field">
         <label htmlFor="camp-date">Send date (11:30 AM Eastern)</label>

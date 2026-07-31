@@ -3,9 +3,11 @@ import "server-only";
 import { getServiceClient } from "../supabase";
 import {
   TemplateInputSchema,
+  TemplateUpdateSchema,
   type Template,
   type TemplateInput,
   type TemplateType,
+  type TemplateUpdate,
 } from "./schema";
 
 const SCHEMA = "marketinghub";
@@ -163,6 +165,44 @@ export async function searchTemplates(
   const { data, error } = await query;
   if (error) fail("search", error.message);
   return (data ?? []) as Template[];
+}
+
+/**
+ * Edit a template's content/metadata (PATCH semantics — absent fields stay).
+ * Re-validates at the boundary like createTemplate. `type` is immutable and
+ * `subject` on email templates must not be blanked (campaign snapshots make
+ * past sends safe; this guards future ones). Returns null for an unknown id.
+ */
+export async function updateTemplate(
+  id: string,
+  patch: TemplateUpdate,
+): Promise<Template | null> {
+  const parsed = TemplateUpdateSchema.parse(patch);
+
+  const existing = await getTemplate(id);
+  if (!existing) return null;
+  if (
+    existing.type === "email" &&
+    parsed.subject !== undefined &&
+    parsed.subject.length === 0
+  ) {
+    throw new Error("[templates] update failed: subject is required for email templates");
+  }
+
+  const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
+  if (parsed.name !== undefined) row.name = parsed.name;
+  if (parsed.category !== undefined) row.category = parsed.category;
+  if (parsed.tags !== undefined) row.tags = parsed.tags;
+  if (parsed.subject !== undefined) row.subject = parsed.subject || null;
+  if (parsed.body !== undefined) row.body = parsed.body;
+
+  const { data, error } = await templates()
+    .update(row)
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) fail("update", error.message);
+  return (data as Template) ?? null;
 }
 
 /** Fetch a single template by id, or null if it does not exist. */

@@ -36,6 +36,7 @@ function campaign(
     id,
     name,
     template_id: "11111111-1111-4111-8111-111111111111",
+    contact_list_id: null,
     monday_board_id: "4567890123",
     monday_phone_column_id: "phone",
     message_body: "Hi {{firstName}}",

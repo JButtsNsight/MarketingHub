@@ -11,7 +11,10 @@ const h = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/templates/repo", () => ({ getTemplate: h.getTemplate }));
-vi.mock("next/navigation", () => ({ notFound: h.notFound }));
+vi.mock("next/navigation", () => ({
+  notFound: h.notFound,
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 // Gated server-side on the marketing group; stub the gate (unit-tested in
 // requireMarketingUser.test.ts) so these tests focus on the detail render.
 vi.mock("@/lib/requireMarketingUser", () => ({

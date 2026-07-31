@@ -1,6 +1,7 @@
 import { AuthError, requireUser } from "@/lib/auth";
 import { MondayConfigError } from "@/lib/monday/client";
 import { fetchBoardRecipients, getBoardMeta } from "@/lib/monday/boards";
+import { getContactList, getSendableMembers } from "@/lib/contacts/repo";
 import {
   createCampaign,
   findActiveDuplicateCampaign,
@@ -8,6 +9,7 @@ import {
   listCampaignsWithCounts,
   prepareRecipients,
   type PreparedRecipient,
+  type SourceRecipientRow,
 } from "@/lib/sms/repo";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
@@ -19,7 +21,9 @@ import { getTemplate } from "@/lib/templates/repo";
  * `marketing` group (via `requireUser`); the service-role Supabase client is
  * only reached through the repos. POST snapshots everything at creation time:
  * the template body, the computed 11:30 AM America/New_York send instant, and
- * the full Monday board (every page) classified into outbox rows.
+ * the audience of the chosen contact list — a linked Monday board fetched
+ * live (every page), or an uploaded sheet's stored members — classified into
+ * outbox rows.
  */
 
 // Reads request-time headers (ALB identity); never prerender/cache.
@@ -95,11 +99,16 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // Idempotency backstop BEFORE the (slow) Monday fetch: the same template +
-  // board + send date still live means a double-submit, not a new campaign.
+  const list = await getContactList(input.contactListId);
+  if (!list) {
+    return Response.json({ error: "Contact list not found" }, { status: 400 });
+  }
+
+  // Idempotency backstop BEFORE the (slow) audience fetch: the same template +
+  // list + send date still live means a double-submit, not a new campaign.
   const duplicate = await findActiveDuplicateCampaign(
     input.templateId,
-    input.mondayBoardId,
+    input.contactListId,
     input.sendDate,
   );
   if (duplicate) {
@@ -109,28 +118,39 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  // Every page of the board — the preview's first-page sample is advisory.
-  let mondayRows;
-  try {
-    // Verify the board exists first: fetchBoardRecipients returns [] for an
-    // unknown/typo'd board id, which would otherwise become an empty 201.
-    const board = await getBoardMeta(input.mondayBoardId);
-    if (!board) {
-      return Response.json({ error: "board-not-found" }, { status: 404 });
+  let sourceRows: SourceRecipientRow[];
+  if (list.source === "monday") {
+    // Every page of the board — a linked board is live membership.
+    try {
+      // Verify the board still exists: fetchBoardRecipients returns [] for an
+      // unknown/deleted board, which would otherwise become an empty 201.
+      const board = await getBoardMeta(list.monday_board_id!);
+      if (!board) {
+        return Response.json({ error: "board-not-found" }, { status: 404 });
+      }
+      sourceRows = await fetchBoardRecipients(
+        list.monday_board_id!,
+        list.monday_phone_column_id!,
+      );
+    } catch (err) {
+      if (err instanceof MondayConfigError) {
+        return Response.json({ error: "monday-not-configured" }, { status: 503 });
+      }
+      throw err;
     }
-    mondayRows = await fetchBoardRecipients(
-      input.mondayBoardId,
-      input.mondayPhoneColumnId,
-    );
-  } catch (err) {
-    if (err instanceof MondayConfigError) {
-      return Response.json({ error: "monday-not-configured" }, { status: 503 });
-    }
-    throw err;
+  } else {
+    // Uploaded sheet: the parsed, already-classified members ARE the audience.
+    const members = await getSendableMembers(list.id);
+    sourceRows = members.map((m) => ({
+      name: m.name,
+      firstName: m.first_name,
+      phoneE164: m.phone_e164,
+      rawPhone: m.raw_phone,
+    }));
   }
 
-  const suppressed = await getSuppressedSet(mondayRows.map((r) => r.phoneE164));
-  const prepared = prepareRecipients(mondayRows, template.body, suppressed);
+  const suppressed = await getSuppressedSet(sourceRows.map((r) => r.phoneE164));
+  const prepared = prepareRecipients(sourceRows, template.body, suppressed);
 
   // A campaign nothing would send from is a mistake, not a campaign.
   const counts = summarize(prepared);
@@ -140,16 +160,24 @@ export async function POST(req: Request): Promise<Response> {
         error:
           `Nothing would send: ${counts.pending} pending, ` +
           `${counts.skipped} skipped, ${counts.suppressed} suppressed ` +
-          `of ${counts.total} board rows`,
+          `of ${counts.total} audience rows`,
         counts,
       },
       { status: 400 },
     );
   }
 
-  const campaign = await createCampaign(input, template.body, prepared, {
-    email: user.email,
-  });
+  const campaign = await createCampaign(
+    input,
+    {
+      mondayBoardId: list.source === "monday" ? list.monday_board_id : null,
+      mondayPhoneColumnId:
+        list.source === "monday" ? list.monday_phone_column_id : null,
+    },
+    template.body,
+    prepared,
+    { email: user.email },
+  );
 
   return Response.json({ id: campaign.id, counts }, { status: 201 });
 }

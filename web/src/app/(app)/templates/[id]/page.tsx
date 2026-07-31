@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getTemplate } from "@/lib/templates/repo";
 import { TemplatePreview } from "@/components/templates/TemplatePreview";
+import { TemplateEditor } from "@/components/templates/TemplateEditor";
 import { categoryColorVar } from "@/components/templates/categoryColor";
 import { Surface } from "@/components/Surface";
 
@@ -48,6 +49,7 @@ export default async function TemplateDetailPage({
       <div className="tpl-detail-body">
         <div className="tpl-detail-preview">
           <TemplatePreview template={template} />
+          <TemplateEditor key={template.updated_at} template={template} />
         </div>
 
         <Surface as="aside" className="tpl-detail-meta" glint>

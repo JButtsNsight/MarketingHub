@@ -97,9 +97,14 @@ export default async function CampaignsPage() {
         title="SMS Campaigns"
         count={`${campaigns.length} total`}
         actions={
-          <Link className="btn-primary" href="/campaigns/new">
-            New campaign
-          </Link>
+          <>
+            <Link className="type-chip" href="/campaigns/lists">
+              Contact lists
+            </Link>
+            <Link className="btn-primary" href="/campaigns/new">
+              New campaign
+            </Link>
+          </>
         }
       />
 

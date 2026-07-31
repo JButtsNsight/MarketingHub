@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { listTemplates } from "@/lib/templates/repo";
-import { isMondayConfigured } from "@/lib/monday/client";
+import { listContactLists } from "@/lib/contacts/repo";
 import { NewCampaignForm } from "@/components/campaigns/NewCampaignForm";
 import { Surface } from "@/components/Surface";
 
-// Reads request-time identity + live template rows; never prerender.
+// Reads request-time identity + live template/list rows; never prerender.
 export const dynamic = "force-dynamic";
 
 export const metadata = {
@@ -12,38 +13,43 @@ export const metadata = {
 };
 
 /**
- * Campaign creation page. Server component: it gates on the marketing group,
- * loads the text templates the form can send, and degrades to a configuration
- * callout when the Monday.com integration is not set up (no board is linked
- * at first deploy — this state is expected, not an error).
+ * Campaign creation page. Server component: it gates on the marketing group
+ * and loads the text templates + contact lists the form selects from. No
+ * Monday gate — uploaded-sheet lists need no integration at all, and creating
+ * from a Monday-linked list surfaces the configuration callout only when it
+ * actually applies (the create 503).
  */
 export default async function NewCampaignPage() {
   // Server-side group gate: mirrors the API handlers so this page can't be
   // browsed by an authenticated employee outside the `marketing` group.
   await requireMarketingUser();
 
-  if (!isMondayConfigured()) {
+  const [templates, lists] = await Promise.all([
+    listTemplates({ type: "text" }),
+    listContactLists(),
+  ]);
+
+  if (lists.length === 0) {
     return (
       <div className="page-narrow">
         <Surface className="empty-state" glint>
-          <h2>Monday.com is not configured</h2>
+          <h2>No contact lists yet</h2>
           <p>
-            Campaign creation reads recipients from a Monday.com board, and
-            this environment has no <span className="mono">MONDAY_API_TOKEN</span>{" "}
-            set. Add the token to the{" "}
-            <span className="mono">marketinghub/sms-campaigns</span> secret and
-            redeploy — see the deploy runbook{" "}
-            <span className="mono">docs/runbooks/marketinghub-app-deploy.md</span>.
+            A campaign needs an audience. Upload a sheet of contacts (CSV) or
+            link a Monday.com board first — saved lists are reusable across
+            campaigns.
           </p>
+          <Link className="btn-primary" href="/campaigns/lists/new">
+            Create a contact list
+          </Link>
         </Surface>
       </div>
     );
   }
 
-  const templates = await listTemplates({ type: "text" });
   return (
     <div className="page-narrow">
-      <NewCampaignForm templates={templates} />
+      <NewCampaignForm templates={templates} lists={lists} />
     </div>
   );
 }

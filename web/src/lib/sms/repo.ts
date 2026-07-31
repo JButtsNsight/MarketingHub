@@ -44,6 +44,16 @@ export interface CampaignCreator {
   email: string;
 }
 
+/**
+ * The Monday coordinates snapshotted onto the campaign row when the chosen
+ * contact list is a linked board — both null for uploaded sheets. (The list
+ * id itself travels in CampaignCreateInput.)
+ */
+export interface CampaignSource {
+  mondayBoardId: string | null;
+  mondayPhoneColumnId: string | null;
+}
+
 function campaigns() {
   return getServiceClient().schema(SCHEMA).from(CAMPAIGNS);
 }
@@ -87,16 +97,20 @@ function inChunks<T>(values: T[]): T[][] {
 // ---------------------------------------------------------------------------
 
 /**
- * One recipient as extracted from a Monday board (Phase 4
- * `fetchBoardRecipients` output is structurally compatible).
+ * One recipient as extracted from a source: a Monday board (Phase 4
+ * `fetchBoardRecipients` output is structurally compatible) or a CSV
+ * contact-list member (`mondayItemId` absent).
  */
-export interface MondayRecipientRow {
-  mondayItemId: string;
+export interface SourceRecipientRow {
+  mondayItemId?: string | null;
   name: string;
   firstName: string;
   phoneE164: string | null;
   rawPhone: string;
 }
+
+/** Back-compat alias — the Monday fetch path predates CSV lists. */
+export type MondayRecipientRow = SourceRecipientRow;
 
 /** Creation-time statuses — everything else is owned by the dispatcher. */
 export type PreparedRecipientStatus = Extract<
@@ -106,7 +120,7 @@ export type PreparedRecipientStatus = Extract<
 
 /** An outbox row ready to insert (campaign_id/send_after added by create). */
 export interface PreparedRecipient {
-  monday_item_id: string;
+  monday_item_id: string | null;
   name: string;
   first_name: string;
   phone_e164: string | null;
@@ -116,7 +130,7 @@ export interface PreparedRecipient {
 }
 
 /**
- * Pure creation-time classification of Monday rows into outbox rows:
+ * Pure creation-time classification of source rows into outbox rows:
  *
  * - unusable phone (`phoneE164` null)  → `skipped`, raw phone in last_error;
  * - duplicate phone (first row wins)   → `skipped` with `phone_e164 = null` —
@@ -129,16 +143,16 @@ export interface PreparedRecipient {
  * `rendered_text` is snapshotted for every row (audit trail), even skipped.
  */
 export function prepareRecipients(
-  mondayRows: MondayRecipientRow[],
+  sourceRows: SourceRecipientRow[],
   body: string,
   suppressedSet: ReadonlySet<string>,
 ): PreparedRecipient[] {
   const seenPhones = new Set<string>();
 
-  return mondayRows.map((row) => {
+  return sourceRows.map((row) => {
     const firstName = row.firstName.trim() || firstNameOf(row.name);
     const base = {
-      monday_item_id: row.mondayItemId,
+      monday_item_id: row.mondayItemId ?? null,
       name: row.name,
       first_name: firstName,
       rendered_text: renderSms(body, { name: row.name, firstName }),
@@ -219,6 +233,7 @@ export async function getSuppressedSet(
  */
 export async function createCampaign(
   input: CampaignCreateInput,
+  source: CampaignSource,
   messageBody: string,
   prepared: PreparedRecipient[],
   user: CampaignCreator,
@@ -230,8 +245,9 @@ export async function createCampaign(
     .insert({
       name: parsed.name,
       template_id: parsed.templateId,
-      monday_board_id: parsed.mondayBoardId,
-      monday_phone_column_id: parsed.mondayPhoneColumnId,
+      contact_list_id: parsed.contactListId,
+      monday_board_id: source.mondayBoardId,
+      monday_phone_column_id: source.mondayPhoneColumnId,
       message_body: messageBody,
       send_date: parsed.sendDate,
       send_at: sendAt,
@@ -288,19 +304,19 @@ export async function createCampaign(
 
 /**
  * Idempotency backstop for creation: an existing campaign with the same
- * template + board + send date that is still live (`scheduled`/`sending`/
- * `paused`) — a double-submit would text the same board twice. Terminal
- * campaigns (completed/canceled) never block a deliberate re-create.
+ * template + contact list + send date that is still live (`scheduled`/
+ * `sending`/`paused`) — a double-submit would text the same audience twice.
+ * Terminal campaigns (completed/canceled) never block a deliberate re-create.
  */
 export async function findActiveDuplicateCampaign(
   templateId: string,
-  mondayBoardId: string,
+  contactListId: string,
   sendDate: string,
 ): Promise<SmsCampaign | null> {
   const { data, error } = await campaigns()
     .select("*")
     .eq("template_id", templateId)
-    .eq("monday_board_id", mondayBoardId)
+    .eq("contact_list_id", contactListId)
     .eq("send_date", sendDate)
     .in("status", ["scheduled", "sending", "paused"])
     .limit(1);

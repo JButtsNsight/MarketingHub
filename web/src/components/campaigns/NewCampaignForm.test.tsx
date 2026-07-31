@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { Template } from "@/lib/templates/schema";
+import type { ContactList } from "@/lib/contacts/schema";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({
@@ -12,6 +13,8 @@ import { NewCampaignForm, PHI_WARNING } from "./NewCampaignForm";
 
 const CLEAN_ID = "11111111-1111-4111-8111-111111111111";
 const DIRTY_ID = "22222222-2222-4222-8222-222222222222";
+const CSV_LIST_ID = "33333333-3333-4333-8333-333333333333";
+const MONDAY_LIST_ID = "44444444-4444-4444-8444-444444444444";
 
 function tpl(id: string, name: string, body: string): Template {
   return {
@@ -34,22 +37,40 @@ const TEMPLATES: Template[] = [
   tpl(DIRTY_ID, "Broken merge", "Hi {{firstName}} {{lastName}}!"),
 ];
 
-const PREVIEW = {
-  boardId: "4567890123",
-  boardName: "Patient list",
-  columns: [
-    { id: "name_col", title: "Name", type: "name" },
-    { id: "notes_col", title: "Notes", type: "text" },
-    { id: "phone_col", title: "Phone", type: "phone" },
-  ],
-  phoneColumns: [{ id: "phone_col", title: "Phone", type: "phone" }],
-  suggestedPhoneColumnId: "phone_col",
-  sample: [
-    { name: "Jane Doe", phoneE164: "+15559234567", reason: "ok" },
-    { name: "No Phone", phoneE164: null, reason: "invalid" },
-  ],
-  pageCounts: { fetched: 4, valid: 2, invalid: 1, duplicate: 1 },
-};
+const LISTS: ContactList[] = [
+  {
+    id: CSV_LIST_ID,
+    name: "August recall patients",
+    source: "csv",
+    storage_path: `${CSV_LIST_ID}/patients.csv`,
+    original_filename: "patients.csv",
+    monday_board_id: null,
+    monday_board_name: null,
+    monday_phone_column_id: null,
+    contact_count: 42,
+    invalid_count: 3,
+    duplicate_count: 1,
+    created_by: "amy@nsight.example",
+    created_at: "2026-07-28T12:00:00Z",
+    updated_at: "2026-07-28T12:00:00Z",
+  },
+  {
+    id: MONDAY_LIST_ID,
+    name: "Wellness board",
+    source: "monday",
+    storage_path: null,
+    original_filename: null,
+    monday_board_id: "4567890123",
+    monday_board_name: "Patient list",
+    monday_phone_column_id: "phone_col",
+    contact_count: 0,
+    invalid_count: 0,
+    duplicate_count: 0,
+    created_by: "amy@nsight.example",
+    created_at: "2026-07-28T12:00:00Z",
+    updated_at: "2026-07-28T12:00:00Z",
+  },
+];
 
 type Route = { status: number; body: unknown };
 
@@ -71,28 +92,9 @@ function stubFetch(routes: Record<string, Route>) {
   return fn;
 }
 
-/**
- * Fetch stub routed by URL prefix where each route either resolves with a
- * response or rejects at the network level (fetch's TypeError).
- */
-function stubFetchWithRejects(
-  routes: Record<string, Route | { reject: true }>,
-) {
-  const fn = vi.fn((url: string, _init?: RequestInit) => {
-    const hit = Object.entries(routes).find(([prefix]) =>
-      url.startsWith(prefix),
-    );
-    if (!hit) throw new Error(`unexpected fetch: ${url}`);
-    const route = hit[1];
-    if ("reject" in route) {
-      return Promise.reject(new TypeError("Failed to fetch"));
-    }
-    return Promise.resolve({
-      ok: route.status >= 200 && route.status < 300,
-      status: route.status,
-      json: () => Promise.resolve(route.body),
-    } as Response);
-  });
+/** Fetch stub that rejects at the network level (fetch's TypeError). */
+function stubFetchReject() {
+  const fn = vi.fn(() => Promise.reject(new TypeError("Failed to fetch")));
   vi.stubGlobal("fetch", fn);
   return fn;
 }
@@ -107,13 +109,17 @@ function todayInEastern(): string {
   }).format(new Date());
 }
 
-async function loadBoard(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(
-    screen.getByLabelText(/monday board/i),
-    "https://acme.monday.com/boards/4567890123/views/9",
-  );
-  await user.click(screen.getByRole("button", { name: /load board/i }));
-  await screen.findByLabelText(/phone column/i);
+/** Fill every field with valid values (CSV list unless told otherwise). */
+async function fillForm(
+  user: ReturnType<typeof userEvent.setup>,
+  listId: string = CSV_LIST_ID,
+) {
+  await user.type(screen.getByLabelText(/campaign name/i), "August recall");
+  await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
+  await user.selectOptions(screen.getByLabelText(/contact list/i), listId);
+  fireEvent.change(screen.getByLabelText(/send date/i), {
+    target: { value: "2030-01-15" },
+  });
 }
 
 describe("NewCampaignForm", () => {
@@ -124,17 +130,19 @@ describe("NewCampaignForm", () => {
     vi.unstubAllGlobals();
   });
 
-  test("renders name, template, board, and date fields on a .surface", () => {
-    const { container } = render(<NewCampaignForm templates={TEMPLATES} />);
+  test("renders name, template, contact list, and date fields on a .surface", () => {
+    const { container } = render(
+      <NewCampaignForm templates={TEMPLATES} lists={LISTS} />,
+    );
     expect(screen.getByLabelText(/campaign name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/template/i)).toBeInTheDocument();
-    expect(screen.getByLabelText(/monday board/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/contact list/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/send date/i)).toBeInTheDocument();
     expect(container.querySelector(".surface")).not.toBeNull();
   });
 
   test("shows the permanent PHI warning with the exact governed copy", () => {
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
     expect(PHI_WARNING).toBe(
       "SimpleTexting has not signed a BAA. Message content must contain NO PHI — no conditions, medications, appointment or treatment details. Keep it generic.",
     );
@@ -142,7 +150,7 @@ describe("NewCampaignForm", () => {
   });
 
   test("the send-date input is floored at today in America/New_York", () => {
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
     expect(screen.getByLabelText(/send date/i)).toHaveAttribute(
       "min",
       todayInEastern(),
@@ -151,7 +159,7 @@ describe("NewCampaignForm", () => {
 
   test("selecting a template previews its body", async () => {
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
     await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
     expect(
       screen.getByText(/hi \{\{firstName\}\}, time for a visit/i),
@@ -160,135 +168,67 @@ describe("NewCampaignForm", () => {
 
   test("flags a template whose body has unsupported merge fields", async () => {
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
     await user.selectOptions(screen.getByLabelText(/template/i), DIRTY_ID);
     const alert = screen.getByRole("alert");
     expect(alert).toHaveTextContent(/unsupported merge field/i);
     expect(alert).toHaveTextContent(/lastName/);
   });
 
-  test("Load board posts the raw input and renders columns, sample, and counts", async () => {
-    const fetchFn = stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
-    });
-    const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
-    await loadBoard(user);
-
-    const [url, init] = fetchFn.mock.calls[0];
-    expect(url).toBe("/api/monday/board-preview");
-    expect(init?.method).toBe("POST");
-    expect(JSON.parse(init?.body as string)).toEqual({
-      board: "https://acme.monday.com/boards/4567890123/views/9",
-    });
-
-    // Board identity + classified sample + whole-page counts.
-    expect(screen.getByText(/patient list/i)).toBeInTheDocument();
-    expect(screen.getByText("Jane Doe")).toBeInTheDocument();
-    expect(screen.getByText("+15559234567")).toBeInTheDocument();
-    expect(screen.getByText(/4 fetched/i)).toBeInTheDocument();
-    expect(screen.getByText(/2 valid/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 invalid/i)).toBeInTheDocument();
-    expect(screen.getByText(/1 duplicate/i)).toBeInTheDocument();
-
-    // The suggested phone column is pre-selected, phone columns listed first,
-    // but every column stays choosable (some boards keep phones in text cols).
-    const select = screen.getByLabelText(/phone column/i) as HTMLSelectElement;
-    expect(select.value).toBe("phone_col");
-    const options = within(select).getAllByRole("option");
-    expect(options.map((o) => (o as HTMLOptionElement).value)).toEqual([
-      "phone_col",
-      "name_col",
-      "notes_col",
-    ]);
+  test("list options label their source (sheet count vs live Monday board)", () => {
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    const select = screen.getByLabelText(/contact list/i);
+    expect(select).toHaveTextContent(/sheet, 42 contacts/i);
+    expect(select).toHaveTextContent(/Monday: Patient list \(live\)/i);
   });
 
-  test("a 503 preview surfaces the Monday configuration error", async () => {
-    stubFetch({
-      "/api/monday/board-preview": {
-        status: 503,
-        body: { error: "monday-not-configured" },
-      },
-    });
+  test("selecting a csv list shows its usable-contact summary", async () => {
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
-    await user.type(screen.getByLabelText(/monday board/i), "4567890123");
-    await user.click(screen.getByRole("button", { name: /load board/i }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /MONDAY_API_TOKEN/,
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    await user.selectOptions(
+      screen.getByLabelText(/contact list/i),
+      CSV_LIST_ID,
     );
+    expect(screen.getByText(/usable contacts from/i)).toBeInTheDocument();
+    expect(screen.getByText("patients.csv")).toBeInTheDocument();
   });
 
-  test("a network-level board-preview failure shows an error, no unhandled rejection", async () => {
-    stubFetchWithRejects({ "/api/monday/board-preview": { reject: true } });
+  test("selecting a monday list explains live fetching", async () => {
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
-
-    await user.type(screen.getByLabelText(/monday board/i), "4567890123");
-    await user.click(screen.getByRole("button", { name: /load board/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /network error — please try again/i,
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    await user.selectOptions(
+      screen.getByLabelText(/contact list/i),
+      MONDAY_LIST_ID,
     );
-    // The busy flag resets so the user can retry.
-    expect(screen.getByRole("button", { name: /load board/i })).toBeEnabled();
-  });
-
-  test("a network-level create failure shows an error and re-enables submit", async () => {
-    stubFetchWithRejects({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
-      "/api/campaigns": { reject: true },
-    });
-    const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
-
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
-    await user.click(screen.getByRole("button", { name: /create campaign/i }));
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      /network error — please try again/i,
-    );
-    expect(push).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", { name: /create campaign/i }),
-    ).toBeEnabled();
+      screen.getByText(/recipients are fetched live at creation/i),
+    ).toBeInTheDocument();
   });
 
-  test("blocks submit until a board is loaded and a phone column chosen", async () => {
+  test("blocks submit until a contact list is chosen", async () => {
     const fetchFn = stubFetch({});
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
     await user.type(screen.getByLabelText(/campaign name/i), "August recall");
     await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
     await user.click(screen.getByRole("button", { name: /create campaign/i }));
 
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(screen.getByRole("alert")).toHaveTextContent(/load the board/i);
+    expect(screen.getByRole("alert")).toHaveTextContent(/choose a contact list/i);
   });
 
-  test("posts a valid campaign (board URL reduced to its id) and redirects", async () => {
+  test("posts a valid campaign and redirects", async () => {
     const fetchFn = stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
       "/api/campaigns": {
         status: 201,
-        body: { id: "camp-9", counts: { pending: 2, skipped: 1, suppressed: 0, total: 3 } },
+        body: { id: "camp-9", counts: { pending: 42, skipped: 0, suppressed: 0, total: 42 } },
       },
     });
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
+    await fillForm(user);
     await user.click(screen.getByRole("button", { name: /create campaign/i }));
 
     const create = fetchFn.mock.calls.find(([u]) => u === "/api/campaigns");
@@ -297,8 +237,7 @@ describe("NewCampaignForm", () => {
     expect(JSON.parse(create?.[1]?.body as string)).toEqual({
       name: "August recall",
       templateId: CLEAN_ID,
-      mondayBoardId: "4567890123",
-      mondayPhoneColumnId: "phone_col",
+      contactListId: CSV_LIST_ID,
       sendDate: "2030-01-15",
     });
     expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
@@ -308,18 +247,12 @@ describe("NewCampaignForm", () => {
     // router.push is async — re-enabling the button on success opens a
     // double-submit window that double-creates the campaign.
     stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
       "/api/campaigns": { status: 201, body: { id: "camp-9" } },
     });
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
+    await fillForm(user);
     const submit = screen.getByRole("button", { name: /create campaign/i });
     await user.click(submit);
 
@@ -329,21 +262,12 @@ describe("NewCampaignForm", () => {
 
   test("a 409 duplicate-campaign response shows a clear duplicate message", async () => {
     stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
-      "/api/campaigns": {
-        status: 409,
-        body: { error: "duplicate-campaign" },
-      },
+      "/api/campaigns": { status: 409, body: { error: "duplicate-campaign" } },
     });
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
+    await fillForm(user);
     await user.click(screen.getByRole("button", { name: /create campaign/i }));
 
     const alert = await screen.findByRole("alert");
@@ -359,21 +283,15 @@ describe("NewCampaignForm", () => {
 
   test("surfaces the server's 400 error message on create", async () => {
     stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
       "/api/campaigns": {
         status: 400,
         body: { error: "sendDate must be in the future (11:30 AM Eastern)" },
       },
     });
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
+    await fillForm(user);
     await user.click(screen.getByRole("button", { name: /create campaign/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -382,28 +300,39 @@ describe("NewCampaignForm", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
-  test("a 503 create surfaces the configuration error", async () => {
+  test("a 503 create (monday list, token unset) surfaces the configuration error", async () => {
     stubFetch({
-      "/api/monday/board-preview": { status: 200, body: PREVIEW },
       "/api/campaigns": {
         status: 503,
         body: { error: "monday-not-configured" },
       },
     });
     const user = userEvent.setup();
-    render(<NewCampaignForm templates={TEMPLATES} />);
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
 
-    await user.type(screen.getByLabelText(/campaign name/i), "August recall");
-    await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
-    await loadBoard(user);
-    fireEvent.change(screen.getByLabelText(/send date/i), {
-      target: { value: "2030-01-15" },
-    });
+    await fillForm(user, MONDAY_LIST_ID);
     await user.click(screen.getByRole("button", { name: /create campaign/i }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /MONDAY_API_TOKEN/,
     );
     expect(push).not.toHaveBeenCalled();
+  });
+
+  test("a network-level create failure shows an error and re-enables submit", async () => {
+    stubFetchReject();
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+
+    await fillForm(user);
+    await user.click(screen.getByRole("button", { name: /create campaign/i }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      /network error — please try again/i,
+    );
+    expect(push).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: /create campaign/i }),
+    ).toBeEnabled();
   });
 });

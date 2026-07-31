@@ -25,6 +25,8 @@ const h = vi.hoisted(() => ({
   getTemplate: vi.fn(),
   getBoardMeta: vi.fn(),
   fetchBoardRecipients: vi.fn(),
+  getContactList: vi.fn(),
+  getSendableMembers: vi.fn(),
   getSuppressedSet: vi.fn(),
   prepareRecipients: vi.fn(),
   createCampaign: vi.fn(),
@@ -39,6 +41,11 @@ vi.mock("@/lib/templates/repo", () => ({
 vi.mock("@/lib/monday/boards", () => ({
   getBoardMeta: h.getBoardMeta,
   fetchBoardRecipients: h.fetchBoardRecipients,
+}));
+
+vi.mock("@/lib/contacts/repo", () => ({
+  getContactList: h.getContactList,
+  getSendableMembers: h.getSendableMembers,
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
@@ -85,12 +92,12 @@ function marketingHeaders(): HeadersInit {
 }
 
 const TEMPLATE_ID = "3e2f8c1a-6a51-4a2e-9d3e-2f1b7c9d0e4f";
+const LIST_ID = "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d";
 
 const validBody = {
   name: "July Reminders",
   templateId: TEMPLATE_ID,
-  mondayBoardId: "https://acme.monday.com/boards/123456/views/789",
-  mondayPhoneColumnId: "phone_col",
+  contactListId: LIST_ID,
   sendDate: "2999-01-02",
 };
 
@@ -99,6 +106,27 @@ const textTemplate = {
   name: "Reminder",
   type: "text",
   body: "Hi {{firstName}}, our summer special starts soon.",
+};
+
+const mondayList = {
+  id: LIST_ID,
+  name: "Patient board",
+  source: "monday",
+  monday_board_id: "123456",
+  monday_board_name: "Patients",
+  monday_phone_column_id: "phone_col",
+  contact_count: 0,
+};
+
+const csvList = {
+  id: LIST_ID,
+  name: "August sheet",
+  source: "csv",
+  storage_path: `${LIST_ID}/patients.csv`,
+  original_filename: "patients.csv",
+  monday_board_id: null,
+  monday_phone_column_id: null,
+  contact_count: 2,
 };
 
 const mondayRows = [
@@ -147,9 +175,10 @@ function postReq(body: unknown, headers: HeadersInit = marketingHeaders()) {
   });
 }
 
-/** Wire the full happy path; individual tests override single mocks. */
+/** Wire the full Monday-list happy path; tests override single mocks. */
 function primeHappyPath() {
   h.getTemplate.mockResolvedValue(textTemplate);
+  h.getContactList.mockResolvedValue(mondayList);
   h.findActiveDuplicateCampaign.mockResolvedValue(null);
   h.getBoardMeta.mockResolvedValue({
     id: "123456",
@@ -240,7 +269,18 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
-  test("409 duplicate-campaign BEFORE the Monday fetch when an active twin exists", async () => {
+  test("400 when the contact list does not exist", async () => {
+    primeHappyPath();
+    h.getContactList.mockResolvedValue(null);
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/contact list/i);
+    expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
+  test("409 duplicate-campaign BEFORE the audience fetch when an active twin exists", async () => {
     primeHappyPath();
     h.findActiveDuplicateCampaign.mockResolvedValue({
       id: "camp-existing",
@@ -252,13 +292,14 @@ describe("POST /api/campaigns", () => {
     expect(json.error).toBe("duplicate-campaign");
     expect(json.existingId).toBe("camp-existing");
 
-    // matched on the snapshot triple (board URL already reduced to its id)
+    // matched on the snapshot triple: template + contact list + send date
     expect(h.findActiveDuplicateCampaign).toHaveBeenCalledWith(
       TEMPLATE_ID,
-      "123456",
+      LIST_ID,
       "2999-01-02",
     );
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.getSendableMembers).not.toHaveBeenCalled();
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
@@ -282,7 +323,7 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
-  test("404 board-not-found when the board id does not resolve (no zero-recipient 201)", async () => {
+  test("404 board-not-found when the linked board no longer resolves (no zero-recipient 201)", async () => {
     primeHappyPath();
     h.getBoardMeta.mockResolvedValue(null);
     const res = await POST(postReq(validBody));
@@ -313,7 +354,7 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
-  test("201 with id + counts on the happy path (board URL reduced to its id)", async () => {
+  test("201 on the Monday-list happy path (board fetched live off the list row)", async () => {
     primeHappyPath();
     const res = await POST(postReq(validBody));
     expect(res.status).toBe(201);
@@ -326,10 +367,11 @@ describe("POST /api/campaigns", () => {
       total: 4,
     });
 
-    // The board's existence is verified up front, by its numeric id.
+    // The board's existence is verified up front, by the list's saved id.
     expect(h.getBoardMeta).toHaveBeenCalledWith("123456");
-    // The pasted board URL travels as its numeric id.
     expect(h.fetchBoardRecipients).toHaveBeenCalledWith("123456", "phone_col");
+    // Sheet members are never consulted on the Monday path.
+    expect(h.getSendableMembers).not.toHaveBeenCalled();
     // Suppressions are looked up for every fetched phone (nulls included —
     // the repo filters them).
     expect(h.getSuppressedSet).toHaveBeenCalledWith(
@@ -341,21 +383,85 @@ describe("POST /api/campaigns", () => {
       textTemplate.body,
       new Set(["+15550000003"]),
     );
-    // createCampaign(input, messageBody, prepared, user) — template body is
-    // passed explicitly and the creator is the authed user.
+    // createCampaign(input, source, messageBody, prepared, user) — the list's
+    // Monday coordinates are snapshotted and the creator is the authed user.
     expect(h.createCampaign).toHaveBeenCalledTimes(1);
-    const [input, messageBody, preparedArg, user] =
+    const [input, source, messageBody, preparedArg, user] =
       h.createCampaign.mock.calls[0];
     expect(input).toMatchObject({
       name: "July Reminders",
       templateId: TEMPLATE_ID,
+      contactListId: LIST_ID,
+      sendDate: "2999-01-02",
+    });
+    expect(source).toEqual({
       mondayBoardId: "123456",
       mondayPhoneColumnId: "phone_col",
-      sendDate: "2999-01-02",
     });
     expect(messageBody).toBe(textTemplate.body);
     expect(preparedArg).toBe(prepared);
     expect(user).toMatchObject({ email: "amy@nsight.example" });
+  });
+
+  test("201 on the sheet-list happy path (stored members, Monday never touched)", async () => {
+    primeHappyPath();
+    h.getContactList.mockResolvedValue(csvList);
+    h.getSendableMembers.mockResolvedValue([
+      {
+        id: "m1",
+        list_id: LIST_ID,
+        name: "Ada Lovelace",
+        first_name: "Ada",
+        phone_e164: "+15550000001",
+        raw_phone: "(555) 000-0001",
+        reason: "ok",
+      },
+      {
+        id: "m2",
+        list_id: LIST_ID,
+        name: "Grace Hopper",
+        first_name: "Grace",
+        phone_e164: "+15550000002",
+        raw_phone: "(555) 000-0002",
+        reason: "ok",
+      },
+    ]);
+    h.prepareRecipients.mockReturnValue([
+      { monday_item_id: null, status: "pending" },
+      { monday_item_id: null, status: "pending" },
+    ]);
+
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(201);
+
+    // The whole Monday integration is bypassed for sheet lists.
+    expect(h.getBoardMeta).not.toHaveBeenCalled();
+    expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.getSendableMembers).toHaveBeenCalledWith(LIST_ID);
+
+    // Members map to source rows (no mondayItemId).
+    expect(h.prepareRecipients).toHaveBeenCalledWith(
+      [
+        {
+          name: "Ada Lovelace",
+          firstName: "Ada",
+          phoneE164: "+15550000001",
+          rawPhone: "(555) 000-0001",
+        },
+        {
+          name: "Grace Hopper",
+          firstName: "Grace",
+          phoneE164: "+15550000002",
+          rawPhone: "(555) 000-0002",
+        },
+      ],
+      textTemplate.body,
+      new Set(["+15550000003"]),
+    );
+
+    // Sheet-sourced campaigns snapshot NULL Monday coordinates.
+    const [, source] = h.createCampaign.mock.calls[0];
+    expect(source).toEqual({ mondayBoardId: null, mondayPhoneColumnId: null });
   });
 });
 

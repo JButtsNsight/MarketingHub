@@ -22,6 +22,11 @@ vi.mock("@/lib/sms/repo", () => ({
   getCampaignCounts: h.getCampaignCounts,
   getCampaignRecipients: h.getCampaignRecipients,
 }));
+// Legacy fixture campaigns carry contact_list_id: null, so the page never
+// fetches the list — the mock exists to keep the server-only import inert.
+vi.mock("@/lib/contacts/repo", () => ({
+  getContactList: vi.fn().mockResolvedValue(null),
+}));
 // CampaignActions/RecipientsTable are client components using useRouter.
 vi.mock("next/navigation", () => ({
   notFound: h.notFound,
@@ -39,6 +44,7 @@ const campaign: SmsCampaign = {
   id: "c1",
   name: "August recall",
   template_id: "11111111-1111-4111-8111-111111111111",
+  contact_list_id: null,
   monday_board_id: "4567890123",
   monday_phone_column_id: "phone_col",
   message_body: "Hi {{firstName}}, time for a visit.",
