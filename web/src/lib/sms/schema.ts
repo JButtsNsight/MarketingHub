@@ -30,23 +30,6 @@ export const RECIPIENT_STATUSES = [
 export type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
 
 /**
- * Board input: a raw numeric board id, or a pasted Monday board URL
- * (`https://<acct>.monday.com/boards/<id>[/views/...]`) from which the id is
- * extracted. Anything else is rejected.
- */
-const mondayBoardIdSchema = z
-  .string()
-  .trim()
-  .min(1, "mondayBoardId is required")
-  .transform((value) => {
-    const fromUrl = value.match(/boards\/(\d+)/);
-    return fromUrl ? fromUrl[1] : value;
-  })
-  .refine((value) => /^\d+$/.test(value), {
-    message: "mondayBoardId must be a numeric board id or a Monday board URL",
-  });
-
-/**
  * `YYYY-MM-DD` and a real calendar date (rejects 2026-02-30 etc.). The
  * 11:30 AM America/New_York instant is computed from this in schedule.ts.
  */
@@ -66,19 +49,19 @@ const sendDateSchema = z
     { message: "sendDate must be a real calendar date" },
   );
 
-/** Validated input for creating an SMS campaign. */
+/**
+ * Validated input for creating an SMS campaign. The audience is a saved
+ * contact list (uploaded sheet or linked Monday board) — its Monday
+ * coordinates, when it has them, are read from the list row server-side.
+ */
 export const CampaignCreateInputSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   templateId: z.string().uuid("templateId must be a UUID"),
-  mondayBoardId: mondayBoardIdSchema,
-  mondayPhoneColumnId: z
-    .string()
-    .trim()
-    .min(1, "mondayPhoneColumnId is required"),
+  contactListId: z.string().uuid("contactListId must be a UUID"),
   sendDate: sendDateSchema,
 });
 
-/** Validated create-input (post-transform: board URL reduced to its id). */
+/** Validated create-input. */
 export type CampaignCreateInput = z.infer<typeof CampaignCreateInputSchema>;
 
 /** A row of `marketinghub.sms_campaigns`. */
@@ -86,8 +69,11 @@ export interface SmsCampaign {
   id: string;
   name: string;
   template_id: string;
-  monday_board_id: string;
-  monday_phone_column_id: string;
+  /** The saved recipient source; null only on pre-lists legacy campaigns. */
+  contact_list_id: string | null;
+  /** Monday coordinates — null for campaigns built from an uploaded sheet. */
+  monday_board_id: string | null;
+  monday_phone_column_id: string | null;
   /** Template body snapshot taken at creation time. */
   message_body: string;
   /** `YYYY-MM-DD` chosen by the user (interpreted in America/New_York). */
@@ -104,7 +90,8 @@ export interface SmsCampaign {
 export interface SmsCampaignRecipient {
   id: string;
   campaign_id: string;
-  monday_item_id: string;
+  /** Null for recipients that came from an uploaded sheet, not Monday. */
+  monday_item_id: string | null;
   name: string;
   first_name: string;
   /** Null for skipped rows (invalid/duplicate phone) — raw noted in last_error. */

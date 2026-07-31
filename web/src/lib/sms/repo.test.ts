@@ -187,6 +187,7 @@ const campaignRow = {
   id: "c1",
   name: "August outreach",
   template_id: "3b9f8a52-6a1e-4c85-9d5e-2f6f6f6f6f6f",
+  contact_list_id: "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
   monday_board_id: "12345",
   monday_phone_column_id: "phone",
   message_body: "Hi {{firstName}}",
@@ -229,10 +230,12 @@ function expectRecentIso(value: unknown) {
 const validInput = {
   name: "August outreach",
   templateId: "3b9f8a52-6a1e-4c85-9d5e-2f6f6f6f6f6f",
-  mondayBoardId: "12345",
-  mondayPhoneColumnId: "phone",
+  contactListId: "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
   sendDate: "2026-08-05",
 };
+
+/** Monday coordinates as read off a linked-board contact list. */
+const mondaySource = { mondayBoardId: "12345", mondayPhoneColumnId: "phone" };
 
 const user = { email: "amy@nsight.example" };
 
@@ -419,6 +422,7 @@ describe("createCampaign", () => {
 
     const created = await createCampaign(
       validInput,
+      mondaySource,
       "Hi {{firstName}}",
       prepared(450),
       user,
@@ -431,6 +435,7 @@ describe("createCampaign", () => {
     expect(queries[0].insert).toMatchObject({
       name: "August outreach",
       template_id: validInput.templateId,
+      contact_list_id: validInput.contactListId,
       monday_board_id: "12345",
       monday_phone_column_id: "phone",
       message_body: "Hi {{firstName}}",
@@ -477,12 +482,12 @@ describe("createCampaign", () => {
     h.client = client;
 
     await expect(
-      createCampaign(validInput, "Hi {{firstName}}", prepared(10), user),
+      createCampaign(validInput, mondaySource, "Hi {{firstName}}", prepared(10), user),
     ).rejects.toThrow(/\[sms\] create-activate failed/);
     expect(queries).toHaveLength(3);
   });
 
-  test("accepts a pasted Monday board URL (schema transform reduces it to the id)", async () => {
+  test("a sheet-sourced campaign snapshots NULL Monday coordinates", async () => {
     const { client, queries } = buildClient([
       ok({ ...campaignRow, status: "paused" }),
       ok(null),
@@ -491,18 +496,17 @@ describe("createCampaign", () => {
     h.client = client;
 
     await createCampaign(
-      {
-        ...validInput,
-        mondayBoardId: "https://acme.monday.com/boards/998877/views/1",
-      },
+      validInput,
+      { mondayBoardId: null, mondayPhoneColumnId: null },
       "Hi {{firstName}}",
       prepared(1),
       user,
     );
 
-    expect(
-      (queries[0].insert as Record<string, unknown>).monday_board_id,
-    ).toBe("998877");
+    const insert = queries[0].insert as Record<string, unknown>;
+    expect(insert.monday_board_id).toBeNull();
+    expect(insert.monday_phone_column_id).toBeNull();
+    expect(insert.contact_list_id).toBe(validInput.contactListId);
   });
 
   test("chunk-insert failure best-effort cancels the campaign, then fails loud", async () => {
@@ -514,7 +518,7 @@ describe("createCampaign", () => {
     h.client = client;
 
     await expect(
-      createCampaign(validInput, "Hi {{firstName}}", prepared(10), user),
+      createCampaign(validInput, mondaySource, "Hi {{firstName}}", prepared(10), user),
     ).rejects.toThrow(/\[sms\].*unique violation/);
 
     const cancel = queries[2];
@@ -528,7 +532,7 @@ describe("createCampaign", () => {
     h.client = client;
 
     await expect(
-      createCampaign(validInput, "Hi {{firstName}}", prepared(3), user),
+      createCampaign(validInput, mondaySource, "Hi {{firstName}}", prepared(3), user),
     ).rejects.toThrow(/\[sms\] create failed: nope/);
     expect(queries).toHaveLength(1);
   });
@@ -538,20 +542,23 @@ describe("createCampaign", () => {
 // findActiveDuplicateCampaign — creation idempotency backstop
 // ---------------------------------------------------------------------------
 describe("findActiveDuplicateCampaign", () => {
-  test("matches template_id + monday_board_id + send_date among scheduled|sending|paused", async () => {
+  test("matches template_id + contact_list_id + send_date among scheduled|sending|paused", async () => {
     const { client, queries } = buildClient([ok([campaignRow])]);
     h.client = client;
 
     const dupe = await findActiveDuplicateCampaign(
       validInput.templateId,
-      "12345",
+      validInput.contactListId,
       "2026-08-05",
     );
 
     expect(dupe?.id).toBe("c1");
     expect(queries[0].source).toBe("sms_campaigns");
     expect(queries[0].eq).toContainEqual(["template_id", validInput.templateId]);
-    expect(queries[0].eq).toContainEqual(["monday_board_id", "12345"]);
+    expect(queries[0].eq).toContainEqual([
+      "contact_list_id",
+      validInput.contactListId,
+    ]);
     expect(queries[0].eq).toContainEqual(["send_date", "2026-08-05"]);
     // terminal campaigns (completed/canceled) never block a re-create
     expect(queries[0].in).toContainEqual([
@@ -567,7 +574,7 @@ describe("findActiveDuplicateCampaign", () => {
     expect(
       await findActiveDuplicateCampaign(
         validInput.templateId,
-        "12345",
+        validInput.contactListId,
         "2026-08-05",
       ),
     ).toBeNull();
@@ -577,7 +584,7 @@ describe("findActiveDuplicateCampaign", () => {
     const { client } = buildClient([err("db down")]);
     h.client = client;
     await expect(
-      findActiveDuplicateCampaign(validInput.templateId, "12345", "2026-08-05"),
+      findActiveDuplicateCampaign(validInput.templateId, validInput.contactListId, "2026-08-05"),
     ).rejects.toThrow(/\[sms\].*db down/);
   });
 });

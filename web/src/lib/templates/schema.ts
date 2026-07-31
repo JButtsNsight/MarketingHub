@@ -57,6 +57,27 @@ export const TemplateInputSchema = z
 /** Validated create-input (post-transform: tags normalized). */
 export type TemplateInput = z.infer<typeof TemplateInputSchema>;
 
+/**
+ * Validated input for editing a template. Everything content-ish is editable;
+ * `type` is deliberately NOT — flipping text↔email would strand campaigns
+ * built on it (create a new template instead). All fields optional (PATCH
+ * semantics), but a present field must still be valid.
+ */
+export const TemplateUpdateSchema = z
+  .object({
+    name: z.string().trim().min(1, "name must not be blank").optional(),
+    category: z.string().trim().min(1, "category must not be blank").optional(),
+    tags: tagsSchema.optional(),
+    subject: z.string().trim().optional(),
+    body: z.string().min(1, "body must not be blank").optional(),
+  })
+  .refine((val) => Object.values(val).some((v) => v !== undefined), {
+    message: "at least one field must be provided",
+  });
+
+/** Validated update-input (PATCH semantics: absent = unchanged). */
+export type TemplateUpdate = z.infer<typeof TemplateUpdateSchema>;
+
 /** A full template row as stored in `marketinghub.templates`. */
 export interface Template {
   id: string;

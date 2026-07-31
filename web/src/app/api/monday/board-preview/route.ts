@@ -4,7 +4,7 @@ import { AuthError, requireUser } from "@/lib/auth";
 import { getBoardMeta, type MondayColumn } from "@/lib/monday/boards";
 import { MondayConfigError, mondayGraphQL } from "@/lib/monday/client";
 import { normalizeUsPhone } from "@/lib/sms/phone";
-import { CampaignCreateInputSchema } from "@/lib/sms/schema";
+import { MondayBoardInputSchema } from "@/lib/contacts/schema";
 
 /**
  * Board preview for the campaign-creation form: paste a board (id or URL) and
@@ -29,9 +29,9 @@ function authErrorResponse(err: unknown): Response {
   throw err;
 }
 
-/** `{board}` accepts the same raw-id-or-URL input as campaign creation. */
+/** `{board}` accepts the same raw-id-or-URL input as list creation. */
 const BodySchema = z.object({
-  board: CampaignCreateInputSchema.shape.mondayBoardId,
+  board: MondayBoardInputSchema,
 });
 
 /** First page only — no cursor chasing here, by design. */

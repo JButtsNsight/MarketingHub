@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import {
@@ -5,6 +6,7 @@ import {
   getCampaignCounts,
   getCampaignRecipients,
 } from "@/lib/sms/repo";
+import { getContactList } from "@/lib/contacts/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
@@ -35,9 +37,12 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaign(id);
   if (!campaign) notFound();
 
-  const [counts, recipients] = await Promise.all([
+  const [counts, recipients, list] = await Promise.all([
     getCampaignCounts(id),
     getCampaignRecipients(id),
+    campaign.contact_list_id
+      ? getContactList(campaign.contact_list_id)
+      : Promise.resolve(null),
   ]);
 
   return (
@@ -53,10 +58,20 @@ export default async function CampaignDetailPage({
             <span className="mono">11:30 AM ET, {campaign.send_date}</span>
             {" · template "}
             <span className="mono">{campaign.template_id}</span>
-            {" · board "}
-            <span className="mono">{campaign.monday_board_id}</span>
-            {" · column "}
-            <span className="mono">{campaign.monday_phone_column_id}</span>
+            {list ? (
+              <>
+                {" · list "}
+                <Link href={`/campaigns/lists/${list.id}`}>{list.name}</Link>
+              </>
+            ) : null}
+            {campaign.monday_board_id ? (
+              <>
+                {" · board "}
+                <span className="mono">{campaign.monday_board_id}</span>
+                {" · column "}
+                <span className="mono">{campaign.monday_phone_column_id}</span>
+              </>
+            ) : null}
           </>
         }
         actions={
