@@ -13,6 +13,8 @@ const validInput = {
   templateId: "5f0c4e0a-9b1d-4f6e-8b3a-2c7d9e1f0a2b",
   contactListId: "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
   sendDate: "2026-07-30",
+  sendTime: "10:30",
+  sendTimezone: "America/Los_Angeles",
 };
 
 describe("status constants", () => {
@@ -86,6 +88,32 @@ describe("CampaignCreateInputSchema", () => {
     }
   });
 
+  test("rejects weekend sendDates (blasts are Mon–Fri)", () => {
+    // 2026-08-01 is a Saturday, 2026-08-02 a Sunday, 2026-08-03 a Monday.
+    for (const [sendDate, ok] of [
+      ["2026-08-01", false],
+      ["2026-08-02", false],
+      ["2026-08-03", true],
+    ] as const) {
+      const res = CampaignCreateInputSchema.safeParse({ ...validInput, sendDate });
+      expect(res.success, `sendDate ${sendDate}`).toBe(ok);
+    }
+  });
+
+  test("rejects a sendTime outside the 30-minute 08:00–13:00 slot grid", () => {
+    for (const sendTime of ["07:30", "13:30", "09:15", "8:00", ""]) {
+      const res = CampaignCreateInputSchema.safeParse({ ...validInput, sendTime });
+      expect(res.success, `sendTime ${JSON.stringify(sendTime)}`).toBe(false);
+    }
+  });
+
+  test("rejects a sendTimezone outside the four US send zones", () => {
+    for (const sendTimezone of ["America/Anchorage", "UTC", "Eastern", ""]) {
+      const res = CampaignCreateInputSchema.safeParse({ ...validInput, sendTimezone });
+      expect(res.success, `sendTimezone ${JSON.stringify(sendTimezone)}`).toBe(false);
+    }
+  });
+
   test("rejects a sendDate that is not a real calendar date", () => {
     for (const sendDate of ["2026-02-30", "2026-13-01", "2026-00-10", "2026-04-31"]) {
       const res = CampaignCreateInputSchema.safeParse({ ...validInput, sendDate });
@@ -105,6 +133,8 @@ describe("row interfaces (compile-time contract with the DDL)", () => {
       monday_phone_column_id: "phone",
       message_body: "Hi {{firstName}}, time for your visit.",
       send_date: "2026-07-30",
+      send_time: "10:30",
+      send_timezone: "America/Los_Angeles",
       send_at: "2026-07-30T15:30:00.000Z",
       status: "scheduled",
       created_by: "user@example.com",

@@ -49,6 +49,8 @@ const campaign: SmsCampaign = {
   monday_phone_column_id: "phone_col",
   message_body: "Hi {{firstName}}, time for a visit.",
   send_date: "2026-08-03",
+  send_time: "11:30",
+  send_timezone: "America/New_York",
   send_at: "2026-08-03T15:30:00Z",
   status: "sending",
   created_by: "amy@nsight.example",
@@ -112,13 +114,13 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     expect(h.getCampaignRecipients).toHaveBeenCalledWith("c1");
   });
 
-  test("renders name, status badge, the 11:30 AM ET send instant, and metadata", async () => {
+  test("renders name, status badge, the send slot, and metadata", async () => {
     await renderPage();
     expect(
       screen.getByRole("heading", { name: /august recall/i }),
     ).toBeInTheDocument();
     expect(screen.getByText("sending")).toBeInTheDocument();
-    expect(screen.getByText(/11:30 AM ET, 2026-08-03/)).toBeInTheDocument();
+    expect(screen.getByText(/2026-08-03, 11:30 AM ET/)).toBeInTheDocument();
     // template / board provenance
     expect(
       screen.getByText("11111111-1111-4111-8111-111111111111"),

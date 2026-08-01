@@ -118,8 +118,9 @@ async function fillForm(
   await user.selectOptions(screen.getByLabelText(/template/i), CLEAN_ID);
   await user.selectOptions(screen.getByLabelText(/contact list/i), listId);
   fireEvent.change(screen.getByLabelText(/send date/i), {
-    target: { value: "2030-01-15" },
+    target: { value: "2030-01-15" }, // a Tuesday
   });
+  await user.selectOptions(screen.getByLabelText(/send time/i), "09:30");
 }
 
 describe("NewCampaignForm", () => {
@@ -138,6 +139,8 @@ describe("NewCampaignForm", () => {
     expect(screen.getByLabelText(/template/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/contact list/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/send date/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/time zone/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/send time/i)).toBeInTheDocument();
     expect(container.querySelector(".surface")).not.toBeNull();
   });
 
@@ -210,6 +213,36 @@ describe("NewCampaignForm", () => {
     expect(screen.getByRole("alert")).toHaveTextContent(/choose a contact list/i);
   });
 
+  test("rejects a weekend send date client-side", async () => {
+    const fetchFn = stubFetch({});
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+
+    await fillForm(user);
+    fireEvent.change(screen.getByLabelText(/send date/i), {
+      target: { value: "2030-01-19" }, // a Saturday
+    });
+    await user.click(screen.getByRole("button", { name: /create campaign/i }));
+
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(
+      screen.getAllByText(/only go out monday–friday/i).length,
+    ).toBeGreaterThan(0);
+  });
+
+  test("offers exactly the eleven 30-minute slots from 8:00 AM to 1:00 PM", () => {
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    const select = screen.getByLabelText(/send time/i) as HTMLSelectElement;
+    const values = Array.from(select.options)
+      .map((o) => o.value)
+      .filter(Boolean);
+    expect(values).toHaveLength(11);
+    expect(values[0]).toBe("08:00");
+    expect(values[values.length - 1]).toBe("13:00");
+    expect(select).toHaveTextContent("8:00 AM");
+    expect(select).toHaveTextContent("1:00 PM");
+  });
+
   test("posts a valid campaign and redirects", async () => {
     const fetchFn = stubFetch({
       "/api/campaigns": {
@@ -231,6 +264,8 @@ describe("NewCampaignForm", () => {
       templateId: CLEAN_ID,
       contactListId: CSV_LIST_ID,
       sendDate: "2030-01-15",
+      sendTime: "09:30",
+      sendTimezone: "America/New_York",
     });
     expect(push).toHaveBeenCalledWith("/campaigns/camp-9");
   });

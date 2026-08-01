@@ -1334,3 +1334,54 @@ html[data-theme="dark"] .chart-line {
   font-size: 0.85rem;
   line-height: 1.5;
 }
+
+/* ── Blast schedule (/campaigns/schedule) ── */
+.schedule-day {
+  padding: 18px 22px;
+}
+.schedule-day-head {
+  font-family: var(--fd);
+  font-size: 1.05rem;
+  margin: 0 0 10px;
+}
+.schedule-day-head .muted {
+  font-size: 0.8rem;
+}
+.schedule-day-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.schedule-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--hair);
+  padding-top: 8px;
+}
+.schedule-slot {
+  min-width: 96px;
+  color: var(--ink-2);
+}
+.schedule-entry .muted,
+.schedule-day-head .muted {
+  color: var(--muted);
+}
+
+/* ── Reschedule popover (campaign detail header) ── */
+.reschedule-pop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.reschedule-pop .field {
+  margin: 0;
+}
+.reschedule-pop .form-actions {
+  margin: 0;
+}
