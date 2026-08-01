@@ -9,6 +9,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
+import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
 
 // Reads request-time identity + live campaign rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -40,8 +41,9 @@ const COLUMNS: Column<CampaignWithCounts>[] = [
     key: "send",
     header: "sends",
     mono: true,
-    width: "200px",
-    render: (c) => `${c.send_date} · 11:30 AM ET`,
+    width: "220px",
+    render: (c) =>
+      `${c.send_date} · ${formatSlot(c.send_time)} ${zoneAbbr(c.send_timezone)}`,
   },
   {
     key: "total",
@@ -98,6 +100,9 @@ export default async function CampaignsPage() {
         count={`${campaigns.length} total`}
         actions={
           <>
+            <Link className="type-chip" href="/campaigns/schedule">
+              Schedule
+            </Link>
             <Link className="type-chip" href="/campaigns/lists">
               Contact lists
             </Link>
@@ -119,9 +124,9 @@ export default async function CampaignsPage() {
         <Surface className="empty-state" glint>
           <h2>No campaigns yet</h2>
           <p>
-            Create your first SMS campaign — pick a text template, a Monday.com
-            board of recipients, and a send date. Messages go out at 11:30 AM
-            Eastern.
+            Create your first SMS campaign — pick a text template, a contact
+            list, and a weekday send slot (8:00 AM – 1:00 PM in your chosen US
+            time zone).
           </p>
           <Link className="btn-primary" href="/campaigns/new">
             New campaign

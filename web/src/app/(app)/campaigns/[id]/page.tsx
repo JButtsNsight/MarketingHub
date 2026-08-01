@@ -12,7 +12,9 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { CampaignActions } from "@/components/campaigns/CampaignActions";
 import { RecipientsTable } from "@/components/campaigns/RecipientsTable";
+import { RescheduleControl } from "@/components/campaigns/RescheduleControl";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
+import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
 
 // Reads request-time identity + live outbox rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -55,7 +57,10 @@ export default async function CampaignDetailPage({
             <Badge tone={statusTone(campaign.status)}>
               {statusLabel(campaign.status)}
             </Badge>{" "}
-            <span className="mono">11:30 AM ET, {campaign.send_date}</span>
+            <span className="mono">
+              {campaign.send_date}, {formatSlot(campaign.send_time)}{" "}
+              {zoneAbbr(campaign.send_timezone)}
+            </span>
             {" · template "}
             <span className="mono">{campaign.template_id}</span>
             {list ? (
@@ -75,10 +80,19 @@ export default async function CampaignDetailPage({
           </>
         }
         actions={
-          <CampaignActions
-            campaignId={campaign.id}
-            status={campaign.status}
-          />
+          <>
+            <RescheduleControl
+              campaignId={campaign.id}
+              status={campaign.status}
+              sendDate={campaign.send_date}
+              sendTime={campaign.send_time}
+              sendTimezone={campaign.send_timezone}
+            />
+            <CampaignActions
+              campaignId={campaign.id}
+              status={campaign.status}
+            />
+          </>
         }
       />
 

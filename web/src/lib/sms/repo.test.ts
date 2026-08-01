@@ -192,6 +192,8 @@ const campaignRow = {
   monday_phone_column_id: "phone",
   message_body: "Hi {{firstName}}",
   send_date: "2026-08-05",
+  send_time: "11:30",
+  send_timezone: "America/New_York",
   send_at: "2026-08-05T15:30:00.000Z",
   status: "scheduled",
   created_by: "amy@nsight.example",
@@ -232,6 +234,8 @@ const validInput = {
   templateId: "3b9f8a52-6a1e-4c85-9d5e-2f6f6f6f6f6f",
   contactListId: "9d8c7b6a-5f4e-4d3c-8b2a-1f0e9d8c7b6a",
   sendDate: "2026-08-05",
+  sendTime: "11:30" as const,
+  sendTimezone: "America/New_York" as const,
 };
 
 /** Monday coordinates as read off a linked-board contact list. */
@@ -440,6 +444,8 @@ describe("createCampaign", () => {
       monday_phone_column_id: "phone",
       message_body: "Hi {{firstName}}",
       send_date: "2026-08-05",
+      send_time: "11:30",
+      send_timezone: "America/New_York",
       // 2026-08-05 is EDT: 11:30 America/New_York === 15:30Z
       send_at: "2026-08-05T15:30:00.000Z",
       status: "paused",

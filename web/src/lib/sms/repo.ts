@@ -3,16 +3,18 @@ import "server-only";
 import { getServiceClient } from "../supabase";
 import {
   CampaignCreateInputSchema,
+  CampaignRescheduleInputSchema,
   RECIPIENT_STATUSES,
   type CampaignCounts,
   type CampaignCreateInput,
+  type CampaignRescheduleInput,
   type CampaignStatus,
   type RecipientStatus,
   type SmsCampaign,
   type SmsCampaignRecipient,
 } from "./schema";
 import { firstNameOf, renderSms } from "./render";
-import { sendAtForEasternDate } from "./schedule";
+import { sendAtForZonedSlot } from "./schedule";
 
 /**
  * Data access for SMS campaigns — the durable outbox behind the dispatcher
@@ -239,7 +241,11 @@ export async function createCampaign(
   user: CampaignCreator,
 ): Promise<SmsCampaign> {
   const parsed = CampaignCreateInputSchema.parse(input);
-  const sendAt = sendAtForEasternDate(parsed.sendDate).toISOString();
+  const sendAt = sendAtForZonedSlot(
+    parsed.sendDate,
+    parsed.sendTime,
+    parsed.sendTimezone,
+  ).toISOString();
 
   const { data, error } = await campaigns()
     .insert({
@@ -250,6 +256,8 @@ export async function createCampaign(
       monday_phone_column_id: source.mondayPhoneColumnId,
       message_body: messageBody,
       send_date: parsed.sendDate,
+      send_time: parsed.sendTime,
+      send_timezone: parsed.sendTimezone,
       send_at: sendAt,
       status: "paused",
       created_by: user.email,
@@ -464,6 +472,50 @@ export async function resumeCampaign(id: string): Promise<SmsCampaign | null> {
     .maybeSingle();
   if (error) fail("resume", error.message);
   return (data as SmsCampaign) ?? null;
+}
+
+/**
+ * Reschedule a campaign that has not started sending (`scheduled`/`paused`):
+ * recompute send_at from the new date + slot + zone, then sweep every
+ * still-`pending` outbox row's send_after to the new instant — including
+ * retry-backoff rows in a paused campaign (a reschedule means "everything
+ * not yet sent goes at the new time"). Guarded like every transition:
+ * `null` = the guard lost (e.g. the dispatcher promoted it to `sending`
+ * mid-request) and the caller routes 409.
+ */
+export async function rescheduleCampaign(
+  id: string,
+  input: CampaignRescheduleInput,
+): Promise<SmsCampaign | null> {
+  const parsed = CampaignRescheduleInputSchema.parse(input);
+  const sendAt = sendAtForZonedSlot(
+    parsed.sendDate,
+    parsed.sendTime,
+    parsed.sendTimezone,
+  ).toISOString();
+
+  const { data, error } = await campaigns()
+    .update({
+      send_date: parsed.sendDate,
+      send_time: parsed.sendTime,
+      send_timezone: parsed.sendTimezone,
+      send_at: sendAt,
+      updated_at: nowIso(),
+    })
+    .eq("id", id)
+    .in("status", ["scheduled", "paused"])
+    .select()
+    .maybeSingle();
+  if (error) fail("reschedule", error.message);
+  if (!data) return null;
+
+  const { error: sweepError } = await recipients()
+    .update({ send_after: sendAt, updated_at: nowIso() })
+    .eq("campaign_id", id)
+    .eq("status", "pending");
+  if (sweepError) fail("reschedule-recipients", sweepError.message);
+
+  return data as SmsCampaign;
 }
 
 /**

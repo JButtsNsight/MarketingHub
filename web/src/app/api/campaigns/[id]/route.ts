@@ -7,9 +7,14 @@ import {
   getCampaignCounts,
   getCampaignRecipients,
   pauseCampaign,
+  rescheduleCampaign,
   resumeCampaign,
 } from "@/lib/sms/repo";
-import type { SmsCampaign } from "@/lib/sms/schema";
+import {
+  CampaignRescheduleInputSchema,
+  type SmsCampaign,
+} from "@/lib/sms/schema";
+import { sendAtForZonedSlot } from "@/lib/sms/schedule";
 
 /**
  * Single-campaign API. Group-gated server-side on the Cognito `marketing`
@@ -39,14 +44,13 @@ function isUuid(value: string): boolean {
   return UuidSchema.safeParse(value).success;
 }
 
-const PatchBodySchema = z.object({
-  action: z.enum(["pause", "resume", "cancel"]),
-});
-
-type CampaignAction = z.infer<typeof PatchBodySchema>["action"];
+const PatchBodySchema = z.discriminatedUnion("action", [
+  z.object({ action: z.enum(["pause", "resume", "cancel"]) }),
+  CampaignRescheduleInputSchema.extend({ action: z.literal("reschedule") }),
+]);
 
 const TRANSITIONS: Record<
-  CampaignAction,
+  "pause" | "resume" | "cancel",
   (id: string) => Promise<SmsCampaign | null>
 > = {
   pause: pauseCampaign,
@@ -108,6 +112,31 @@ export async function PATCH(
       { error: "Validation failed", issues: parsed.error.issues },
       { status: 400 },
     );
+  }
+
+  if (parsed.data.action === "reschedule") {
+    const { sendDate, sendTime, sendTimezone } = parsed.data;
+    if (
+      sendAtForZonedSlot(sendDate, sendTime, sendTimezone).getTime() <=
+      Date.now()
+    ) {
+      return Response.json(
+        { error: "The chosen send slot is already in the past" },
+        { status: 400 },
+      );
+    }
+    const campaign = await rescheduleCampaign(id, {
+      sendDate,
+      sendTime,
+      sendTimezone,
+    });
+    if (!campaign) {
+      return Response.json(
+        { error: "Campaign is not in a state that allows reschedule" },
+        { status: 409 },
+      );
+    }
+    return Response.json({ campaign });
   }
 
   const campaign = await TRANSITIONS[parsed.data.action](id);

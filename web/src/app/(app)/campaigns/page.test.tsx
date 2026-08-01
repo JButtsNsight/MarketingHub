@@ -41,6 +41,8 @@ function campaign(
     monday_phone_column_id: "phone",
     message_body: "Hi {{firstName}}",
     send_date: "2026-08-03",
+    send_time: "11:30",
+    send_timezone: "America/New_York",
     send_at: "2026-08-03T15:30:00Z",
     status,
     created_by: "amy@nsight.example",

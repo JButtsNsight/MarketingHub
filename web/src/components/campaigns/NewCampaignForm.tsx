@@ -7,6 +7,12 @@ import type { Template } from "@/lib/templates/schema";
 import type { ContactList } from "@/lib/contacts/schema";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
+import {
+  formatSlot,
+  isWeekday,
+  SEND_SLOTS,
+  SEND_TIMEZONES,
+} from "@/lib/sms/schedule";
 import { Surface } from "../Surface";
 
 // Compliance note (not user-facing, removed from the UI 2026-07-31 at owner
@@ -47,6 +53,8 @@ export function NewCampaignForm({
   const [templateId, setTemplateId] = useState("");
   const [contactListId, setContactListId] = useState("");
   const [sendDate, setSendDate] = useState("");
+  const [sendTime, setSendTime] = useState("");
+  const [sendTimezone, setSendTimezone] = useState("America/New_York");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -65,6 +73,8 @@ export function NewCampaignForm({
       return "The selected template has unsupported merge fields — fix the template first.";
     if (!selectedList) return "Choose a contact list.";
     if (!sendDate) return "Send date is required.";
+    if (!isWeekday(sendDate)) return "Blasts only go out Monday–Friday.";
+    if (!sendTime) return "Choose a send time slot.";
     return null;
   };
 
@@ -82,6 +92,8 @@ export function NewCampaignForm({
       templateId,
       contactListId,
       sendDate,
+      sendTime,
+      sendTimezone,
     });
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? "Validation failed.");
@@ -227,7 +239,7 @@ export function NewCampaignForm({
       </div>
 
       <div className="field">
-        <label htmlFor="camp-date">Send date (11:30 AM Eastern)</label>
+        <label htmlFor="camp-date">Send date (Mon–Fri)</label>
         <input
           id="camp-date"
           type="date"
@@ -236,6 +248,48 @@ export function NewCampaignForm({
           min={minDate}
           onChange={(e) => setSendDate(e.target.value)}
         />
+        {sendDate && !isWeekday(sendDate) ? (
+          <p className="form-error" role="alert">
+            Blasts only go out Monday–Friday.
+          </p>
+        ) : null}
+      </div>
+
+      <div className="field">
+        <label htmlFor="camp-zone">Time zone</label>
+        <select
+          id="camp-zone"
+          className="surface control"
+          value={sendTimezone}
+          onChange={(e) => setSendTimezone(e.target.value)}
+        >
+          {SEND_TIMEZONES.map((z) => (
+            <option key={z.id} value={z.id}>
+              {z.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="field">
+        <label htmlFor="camp-time">Send time</label>
+        <select
+          id="camp-time"
+          className="surface control"
+          value={sendTime}
+          onChange={(e) => setSendTime(e.target.value)}
+        >
+          <option value="">Choose a time slot…</option>
+          {SEND_SLOTS.map((s) => (
+            <option key={s} value={s}>
+              {formatSlot(s)}
+            </option>
+          ))}
+        </select>
+        <p className="note">
+          Blast slots run 8:00 AM – 1:00 PM in the chosen time zone, in
+          30-minute increments.
+        </p>
       </div>
 
       {error ? (

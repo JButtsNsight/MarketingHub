@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   pauseCampaign: vi.fn(),
   resumeCampaign: vi.fn(),
   cancelCampaign: vi.fn(),
+  rescheduleCampaign: vi.fn(),
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
@@ -35,6 +36,7 @@ vi.mock("@/lib/sms/repo", () => ({
   pauseCampaign: h.pauseCampaign,
   resumeCampaign: h.resumeCampaign,
   cancelCampaign: h.cancelCampaign,
+  rescheduleCampaign: h.rescheduleCampaign,
 }));
 
 import { GET, PATCH } from "./route";
@@ -193,5 +195,53 @@ describe("PATCH /api/campaigns/[id]", () => {
     mock.mockResolvedValue(null);
     const res = await PATCH(patchReq({ action }), ctx());
     expect(res.status).toBe(409);
+  });
+
+  const reschedule = {
+    action: "reschedule",
+    sendDate: "2999-01-04", // a Friday
+    sendTime: "08:30",
+    sendTimezone: "America/Los_Angeles",
+  };
+
+  test("reschedule → 200, passing the new slot to the repo", async () => {
+    h.rescheduleCampaign.mockResolvedValue({ id: ID, status: "scheduled" });
+    const res = await PATCH(patchReq(reschedule), ctx());
+    expect(res.status).toBe(200);
+    expect(h.rescheduleCampaign).toHaveBeenCalledWith(ID, {
+      sendDate: "2999-01-04",
+      sendTime: "08:30",
+      sendTimezone: "America/Los_Angeles",
+    });
+  });
+
+  test("reschedule → 409 when the campaign already started sending", async () => {
+    h.rescheduleCampaign.mockResolvedValue(null);
+    const res = await PATCH(patchReq(reschedule), ctx());
+    expect(res.status).toBe(409);
+  });
+
+  test("reschedule → 400 for a weekend date, before any repo call", async () => {
+    const res = await PATCH(
+      patchReq({ ...reschedule, sendDate: "2999-01-06" }), // a Sunday
+      ctx(),
+    );
+    expect(res.status).toBe(400);
+    expect(h.rescheduleCampaign).not.toHaveBeenCalled();
+  });
+
+  test("reschedule → 400 for an off-grid time slot", async () => {
+    const res = await PATCH(patchReq({ ...reschedule, sendTime: "14:00" }), ctx());
+    expect(res.status).toBe(400);
+    expect(h.rescheduleCampaign).not.toHaveBeenCalled();
+  });
+
+  test("reschedule → 400 when the slot is already in the past", async () => {
+    const res = await PATCH(
+      patchReq({ ...reschedule, sendDate: "2020-01-03" }), // a past Friday
+      ctx(),
+    );
+    expect(res.status).toBe(400);
+    expect(h.rescheduleCampaign).not.toHaveBeenCalled();
   });
 });

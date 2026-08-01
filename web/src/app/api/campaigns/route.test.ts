@@ -99,6 +99,8 @@ const validBody = {
   templateId: TEMPLATE_ID,
   contactListId: LIST_ID,
   sendDate: "2999-01-02",
+  sendTime: "09:00",
+  sendTimezone: "America/Chicago",
 };
 
 const textTemplate = {
@@ -259,12 +261,12 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
-  test("400 when the sendDate's 11:30 ET instant is in the past", async () => {
+  test("400 when the chosen send slot is in the past", async () => {
     primeHappyPath();
     const res = await POST(postReq({ ...validBody, sendDate: "2020-01-01" }));
     expect(res.status).toBe(400);
     const json = await res.json();
-    expect(json.error).toMatch(/future/i);
+    expect(json.error).toMatch(/already in the past/i);
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
     expect(h.createCampaign).not.toHaveBeenCalled();
   });

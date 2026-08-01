@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isWeekday, SEND_SLOTS, SEND_TIMEZONE_IDS } from "./schedule";
 
 // Pure module — imported by client components and the worker alike. Nothing
 // server-only or node-only may be imported here.
@@ -30,8 +31,9 @@ export const RECIPIENT_STATUSES = [
 export type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
 
 /**
- * `YYYY-MM-DD` and a real calendar date (rejects 2026-02-30 etc.). The
- * 11:30 AM America/New_York instant is computed from this in schedule.ts.
+ * `YYYY-MM-DD`, a real calendar date (rejects 2026-02-30 etc.), and a
+ * Monday–Friday — blasts only go out on weekdays. The send instant is
+ * computed from date + slot + zone in schedule.ts.
  */
 const sendDateSchema = z
   .string()
@@ -47,7 +49,22 @@ const sendDateSchema = z
       );
     },
     { message: "sendDate must be a real calendar date" },
-  );
+  )
+  .refine(isWeekday, {
+    message: "sendDate must be a weekday (Mon–Fri)",
+  });
+
+/** One of the 30-minute blast slots (8:00 AM – 1:00 PM wall clock). */
+const sendTimeSchema = z.enum(SEND_SLOTS, {
+  errorMap: () => ({
+    message: "sendTime must be a 30-minute slot between 08:00 and 13:00",
+  }),
+});
+
+/** One of the four US send zones. */
+const sendTimezoneSchema = z.enum(SEND_TIMEZONE_IDS, {
+  errorMap: () => ({ message: "sendTimezone must be a US send zone" }),
+});
 
 /**
  * Validated input for creating an SMS campaign. The audience is a saved
@@ -59,10 +76,22 @@ export const CampaignCreateInputSchema = z.object({
   templateId: z.string().uuid("templateId must be a UUID"),
   contactListId: z.string().uuid("contactListId must be a UUID"),
   sendDate: sendDateSchema,
+  sendTime: sendTimeSchema,
+  sendTimezone: sendTimezoneSchema,
 });
 
 /** Validated create-input. */
 export type CampaignCreateInput = z.infer<typeof CampaignCreateInputSchema>;
+
+/** Validated input for rescheduling a not-yet-sending campaign. */
+export const CampaignRescheduleInputSchema = z.object({
+  sendDate: sendDateSchema,
+  sendTime: sendTimeSchema,
+  sendTimezone: sendTimezoneSchema,
+});
+export type CampaignRescheduleInput = z.infer<
+  typeof CampaignRescheduleInputSchema
+>;
 
 /** A row of `marketinghub.sms_campaigns`. */
 export interface SmsCampaign {
@@ -76,9 +105,13 @@ export interface SmsCampaign {
   monday_phone_column_id: string | null;
   /** Template body snapshot taken at creation time. */
   message_body: string;
-  /** `YYYY-MM-DD` chosen by the user (interpreted in America/New_York). */
+  /** `YYYY-MM-DD` chosen by the user (a weekday, in the chosen zone). */
   send_date: string;
-  /** The computed 11:30 AM America/New_York instant, as timestamptz. */
+  /** The chosen 30-minute slot, wall clock `HH:MM` (08:00–13:00). */
+  send_time: string;
+  /** IANA zone the slot is anchored to (one of the four US send zones). */
+  send_timezone: string;
+  /** The computed send instant, as timestamptz. */
   send_at: string;
   status: CampaignStatus;
   created_by: string;

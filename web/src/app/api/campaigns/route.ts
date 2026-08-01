@@ -13,7 +13,7 @@ import {
 } from "@/lib/sms/repo";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
-import { sendAtForEasternDate } from "@/lib/sms/schedule";
+import { sendAtForZonedSlot } from "@/lib/sms/schedule";
 import { getTemplate } from "@/lib/templates/repo";
 
 /**
@@ -92,9 +92,14 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  if (sendAtForEasternDate(input.sendDate).getTime() <= Date.now()) {
+  const sendAt = sendAtForZonedSlot(
+    input.sendDate,
+    input.sendTime,
+    input.sendTimezone,
+  );
+  if (sendAt.getTime() <= Date.now()) {
     return Response.json(
-      { error: "sendDate must be in the future (11:30 AM Eastern)" },
+      { error: "The chosen send slot is already in the past" },
       { status: 400 },
     );
   }
