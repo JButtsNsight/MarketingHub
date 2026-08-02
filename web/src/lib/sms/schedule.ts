@@ -12,6 +12,7 @@ export const SEND_TIMEZONES = [
   { id: "America/Chicago", label: "Central", abbr: "CT" },
   { id: "America/Denver", label: "Mountain", abbr: "MT" },
   { id: "America/Los_Angeles", label: "Pacific", abbr: "PT" },
+  { id: "Pacific/Honolulu", label: "Hawaii", abbr: "HT" },
 ] as const;
 export type SendTimezone = (typeof SEND_TIMEZONES)[number]["id"];
 export const SEND_TIMEZONE_IDS = SEND_TIMEZONES.map((z) => z.id) as [

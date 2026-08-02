@@ -69,6 +69,11 @@ describe("sendAtForZonedSlot", () => {
     expect(sendAtForZonedSlot("2026-07-15", "08:00", "America/Los_Angeles").toISOString()).toBe("2026-07-15T15:00:00.000Z");
   });
 
+  test("Hawaii is UTC-10 year-round (no DST)", () => {
+    expect(sendAtForZonedSlot("2026-07-15", "08:00", "Pacific/Honolulu").toISOString()).toBe("2026-07-15T18:00:00.000Z");
+    expect(sendAtForZonedSlot("2026-01-15", "13:00", "Pacific/Honolulu").toISOString()).toBe("2026-01-15T23:00:00.000Z");
+  });
+
   test("computes the slot instant per zone (winter: EST/PST)", () => {
     expect(sendAtForZonedSlot("2026-01-15", "13:00", "America/New_York").toISOString()).toBe("2026-01-15T18:00:00.000Z");
     expect(sendAtForZonedSlot("2026-01-15", "13:00", "America/Los_Angeles").toISOString()).toBe("2026-01-15T21:00:00.000Z");
@@ -111,6 +116,7 @@ describe("slot grid + helpers", () => {
   test("zoneAbbr maps the four send zones and falls back to the id", () => {
     expect(zoneAbbr("America/New_York")).toBe("ET");
     expect(zoneAbbr("America/Los_Angeles")).toBe("PT");
+    expect(zoneAbbr("Pacific/Honolulu")).toBe("HT");
     expect(zoneAbbr("Europe/Paris")).toBe("Europe/Paris");
   });
 

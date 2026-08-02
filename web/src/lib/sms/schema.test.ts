@@ -107,7 +107,15 @@ describe("CampaignCreateInputSchema", () => {
     }
   });
 
-  test("rejects a sendTimezone outside the four US send zones", () => {
+  test("accepts Hawaii as a send zone", () => {
+    const res = CampaignCreateInputSchema.safeParse({
+      ...validInput,
+      sendTimezone: "Pacific/Honolulu",
+    });
+    expect(res.success).toBe(true);
+  });
+
+  test("rejects a sendTimezone outside the US send zones", () => {
     for (const sendTimezone of ["America/Anchorage", "UTC", "Eastern", ""]) {
       const res = CampaignCreateInputSchema.safeParse({ ...validInput, sendTimezone });
       expect(res.success, `sendTimezone ${JSON.stringify(sendTimezone)}`).toBe(false);

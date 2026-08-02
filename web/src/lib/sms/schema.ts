@@ -61,7 +61,7 @@ const sendTimeSchema = z.enum(SEND_SLOTS, {
   }),
 });
 
-/** One of the four US send zones. */
+/** One of the US send zones (ET/CT/MT/PT/HT). */
 const sendTimezoneSchema = z.enum(SEND_TIMEZONE_IDS, {
   errorMap: () => ({ message: "sendTimezone must be a US send zone" }),
 });
@@ -109,7 +109,7 @@ export interface SmsCampaign {
   send_date: string;
   /** The chosen 30-minute slot, wall clock `HH:MM` (08:00–13:00). */
   send_time: string;
-  /** IANA zone the slot is anchored to (one of the four US send zones). */
+  /** IANA zone the slot is anchored to (one of the US send zones). */
   send_timezone: string;
   /** The computed send instant, as timestamptz. */
   send_at: string;
