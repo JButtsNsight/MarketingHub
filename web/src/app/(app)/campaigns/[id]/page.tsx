@@ -4,13 +4,17 @@ import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import {
   getCampaign,
   getCampaignCounts,
+  getCampaignEngagement,
   getCampaignRecipients,
+  listInboundMessages,
 } from "@/lib/sms/repo";
 import { getContactList } from "@/lib/contacts/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Section } from "@/components/ui/Section";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { CampaignActions } from "@/components/campaigns/CampaignActions";
+import { InboxTable } from "@/components/campaigns/InboxTable";
 import { RecipientsTable } from "@/components/campaigns/RecipientsTable";
 import { RescheduleControl } from "@/components/campaigns/RescheduleControl";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
@@ -39,13 +43,23 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaign(id);
   if (!campaign) notFound();
 
-  const [counts, recipients, list] = await Promise.all([
+  const [counts, recipients, list, engagement, replies] = await Promise.all([
     getCampaignCounts(id),
     getCampaignRecipients(id),
     campaign.contact_list_id
       ? getContactList(campaign.contact_list_id)
       : Promise.resolve(null),
+    getCampaignEngagement(id),
+    listInboundMessages({ campaignId: id, limit: 50 }),
   ]);
+
+  // Click-through denominator: rows that reached a phone. `sent` rows may
+  // still settle either way; `undelivered` provably never arrived.
+  const reached = counts.sent + counts.delivered;
+  const ctr =
+    engagement.tracked_links > 0 && reached > 0
+      ? `${((engagement.recipients_clicked / reached) * 100).toFixed(1)}%`
+      : "—";
 
   return (
     <>
@@ -119,6 +133,58 @@ export default async function CampaignDetailPage({
               the cards do not add up to the loaded audience. */}
           <StatCard label="Skipped" value={counts.skipped} />
         </div>
+
+        <Section
+          eyebrow="Engagement"
+          title="After the send"
+          description="Clicks come from the tracked short links rewritten into each message; replies from the SimpleTexting webhook; opt-outs are STOP events after this campaign's send."
+        >
+          <div className="stat-grid">
+            <StatCard
+              label="Clicked"
+              value={engagement.recipients_clicked}
+              hint={
+                engagement.tracked_links > 0
+                  ? `${engagement.total_clicks} total clicks`
+                  : "no tracked links in this message"
+              }
+              accent="var(--data-1)"
+            />
+            <StatCard
+              label="Click-through"
+              value={ctr}
+              hint={`of ${reached} reached`}
+              accent="var(--data-4)"
+            />
+            <StatCard
+              label="Replies"
+              value={engagement.replies}
+              hint={
+                engagement.unhandled_replies > 0
+                  ? `${engagement.unhandled_replies} unhandled`
+                  : "all handled"
+              }
+              accent="var(--data-2)"
+            />
+            {/* No accent: an opt-out is an attention signal, and StatCard
+                accents are data-pool only. */}
+            <StatCard
+              label="Opt-outs"
+              value={engagement.opt_outs}
+              hint="STOPs after this send"
+            />
+          </div>
+        </Section>
+
+        {replies.length > 0 ? (
+          <Section
+            eyebrow="Inbox"
+            title="Replies to this campaign"
+            description="Newest first — the full inbox lives under Engage → Inbox."
+          >
+            <InboxTable messages={replies} showCampaign={false} />
+          </Section>
+        ) : null}
 
         <RecipientsTable
           campaignId={campaign.id}

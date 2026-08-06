@@ -8,20 +8,31 @@ vi.mock("../supabase", () => ({
 }));
 
 import {
+  addManualSuppression,
   applyDeliveryReport,
   cancelCampaign,
   claimDueRecipients,
   completeDrainedCampaigns,
+  countSuppressions,
+  countUnhandledInbound,
   createCampaign,
   findActiveDuplicateCampaign,
   findRecipientForDeliveryReport,
+  findRecipientForInbound,
   getCampaign,
   getCampaignCounts,
+  getCampaignEngagement,
   getCampaignRecipients,
   getCampaignStatuses,
+  getEngagementForCampaigns,
+  getLinkTarget,
   getSuppressedSet,
+  getSuppression,
   isSuppressed,
+  listAttentionRecipients,
   listCampaignsWithCounts,
+  listInboundMessages,
+  listSuppressions,
   markAmbiguous,
   markFailed,
   markRecipientFailed,
@@ -31,12 +42,17 @@ import {
   pauseCampaign,
   prepareRecipients,
   promoteDueCampaigns,
+  recordInboundMessage,
+  recordLinkClick,
   recordSuppression,
   recordWebhookEvent,
   releaseClaim,
   releaseForConfigError,
+  removeManualSuppression,
+  resolveRecipientSent,
   resumeCampaign,
   retryRecipient,
+  setInboundHandled,
   suppressActiveRecipientsByPhone,
   type MondayRecipientRow,
 } from "./repo";
@@ -53,12 +69,15 @@ interface QueryLog {
   rpcArgs: unknown;
   schema: string | null;
   select: string | null;
+  selectOptions: unknown;
   insert: unknown;
   update: Record<string, unknown> | null;
   upsert: { row: unknown; options: unknown } | null;
+  delete: boolean;
   eq: Array<[string, unknown]>;
   in: Array<[string, unknown[]]>;
   is: Array<[string, unknown]>;
+  ilike: Array<[string, unknown]>;
   lte: Array<[string, unknown]>;
   order: Array<[string, unknown]>;
   limit: number | null;
@@ -66,12 +85,22 @@ interface QueryLog {
   maybeSingle: boolean;
 }
 
-type MockResult = { data: unknown; error: { message: string } | null };
+type MockResult = {
+  data: unknown;
+  error: { message: string } | null;
+  count?: number | null;
+};
 
 const ok = (data: unknown): MockResult => ({ data, error: null });
 const err = (message: string): MockResult => ({
   data: null,
   error: { message },
+});
+/** For `{count: 'exact', head: true}` queries — data stays null. */
+const okCount = (count: number): MockResult => ({
+  data: null,
+  error: null,
+  count,
 });
 
 /**
@@ -91,12 +120,15 @@ function buildClient(results: MockResult[] = []) {
       rpcArgs,
       schema: currentSchema,
       select: null,
+      selectOptions: null,
       insert: null,
       update: null,
       upsert: null,
+      delete: false,
       eq: [],
       in: [],
       is: [],
+      ilike: [],
       lte: [],
       order: [],
       limit: null,
@@ -107,8 +139,17 @@ function buildClient(results: MockResult[] = []) {
     const result = results[next++] ?? { data: null, error: null };
 
     const q: Record<string, unknown> = {};
-    q.select = vi.fn((cols?: string) => {
+    q.select = vi.fn((cols?: string, options?: unknown) => {
       log.select = cols ?? "*";
+      log.selectOptions = options ?? null;
+      return q;
+    });
+    q.delete = vi.fn(() => {
+      log.delete = true;
+      return q;
+    });
+    q.ilike = vi.fn((col: string, val: unknown) => {
+      log.ilike.push([col, val]);
       return q;
     });
     q.insert = vi.fn((rows: unknown) => {
@@ -928,12 +969,29 @@ describe("dispatcher accessors", () => {
 
     expect(queries[0].schema).toBe("marketinghub");
     expect(queries[0].source).toBe("rpc:claim_due_sms_recipients");
+    // The frequency-cap args default to 0/0 — the RPC treats that as OFF.
     expect(queries[0].rpcArgs).toEqual({
       batch_size: 25,
       claim_ttl_seconds: 180,
+      freq_cap_count: 0,
+      freq_cap_days: 0,
     });
     expect(claimed).toHaveLength(1);
     expect(claimed[0].status).toBe("claimed");
+  });
+
+  test("claimDueRecipients passes an explicit frequency cap through to the RPC", async () => {
+    const { client, queries } = buildClient([ok([])]);
+    h.client = client;
+
+    await claimDueRecipients(25, 180, 2, 7);
+
+    expect(queries[0].rpcArgs).toEqual({
+      batch_size: 25,
+      claim_ttl_seconds: 180,
+      freq_cap_count: 2,
+      freq_cap_days: 7,
+    });
   });
 
   test("claimDueRecipients fails loud when the RPC errors", async () => {
@@ -1469,5 +1527,505 @@ describe("webhook accessors", () => {
     const { client } = buildClient([ok(null)]);
     h.client = client;
     expect(await applyDeliveryReport("r1", { delivered: true })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tracked links — creation-time persistence + redirect accessors
+// ---------------------------------------------------------------------------
+describe("tracked links", () => {
+  test("createCampaign with links selects fresh ids, then inserts sms_links rows keyed on them", async () => {
+    const prepared = [
+      {
+        monday_item_id: null,
+        name: "Jane Doe",
+        first_name: "Jane",
+        phone_e164: "+15552000001",
+        rendered_text: "Hi Jane https://x/l/s1s1s1s1",
+        status: "pending" as const,
+        last_error: null,
+        links: [{ slug: "s1s1s1s1", targetUrl: "https://book.example.com/a" }],
+      },
+      {
+        monday_item_id: null,
+        name: "Sam Roe",
+        first_name: "Sam",
+        phone_e164: "+15552000002",
+        rendered_text: "Hi Sam, no links here",
+        status: "pending" as const,
+        last_error: null,
+      },
+    ];
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok([
+        { id: "r-a", rendered_text: "Hi Jane https://x/l/s1s1s1s1" },
+        { id: "r-b", rendered_text: "Hi Sam, no links here" },
+      ]),
+      ok(null), // sms_links insert
+      ok(campaignRow), // the final paused → scheduled flip
+    ]);
+    h.client = client;
+
+    await createCampaign(
+      validInput,
+      mondaySource,
+      "Hi {{firstName}}",
+      prepared,
+      user,
+    );
+
+    // The recipient chunk insert must NOT carry the bookkeeping `links` key…
+    const chunk = queries[1];
+    expect(chunk.source).toBe("sms_campaign_recipients");
+    const chunkRows = chunk.insert as Array<Record<string, unknown>>;
+    expect(chunkRows[0]).not.toHaveProperty("links");
+    // …and asks the fresh ids back for the link rows.
+    expect(chunk.select).toBe("id, rendered_text");
+
+    const linkInsert = queries[2];
+    expect(linkInsert.source).toBe("sms_links");
+    expect(linkInsert.insert).toEqual([
+      {
+        slug: "s1s1s1s1",
+        campaign_id: "c1",
+        recipient_id: "r-a",
+        target_url: "https://book.example.com/a",
+      },
+    ]);
+
+    // go-live flip still last
+    expect(queries[3].update?.status).toBe("scheduled");
+  });
+
+  test("createCampaign without links keeps the plain insert (no select round-trip)", async () => {
+    const prepared = [
+      {
+        monday_item_id: null,
+        name: "Jane Doe",
+        first_name: "Jane",
+        phone_e164: "+15552000001",
+        rendered_text: "Hi Jane",
+        status: "pending" as const,
+        last_error: null,
+      },
+    ];
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    await createCampaign(
+      validInput,
+      mondaySource,
+      "Hi {{firstName}}",
+      prepared,
+      user,
+    );
+
+    expect(queries).toHaveLength(3);
+    expect(queries[1].select).toBeNull();
+  });
+
+  test("createCampaign cancels and fails loud when returned rows do not match insert order", async () => {
+    const prepared = [
+      {
+        monday_item_id: null,
+        name: "Jane Doe",
+        first_name: "Jane",
+        phone_e164: "+15552000001",
+        rendered_text: "Hi Jane https://x/l/s1s1s1s1",
+        status: "pending" as const,
+        last_error: null,
+        links: [{ slug: "s1s1s1s1", targetUrl: "https://book.example.com/a" }],
+      },
+    ];
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok([{ id: "r-a", rendered_text: "SOMETHING ELSE" }]),
+      ok(null), // best-effort cancel update
+    ]);
+    h.client = client;
+
+    await expect(
+      createCampaign(validInput, mondaySource, "Hi {{firstName}}", prepared, user),
+    ).rejects.toThrow(/\[sms\] create-links failed/);
+
+    const cancel = queries[2];
+    expect(cancel.source).toBe("sms_campaigns");
+    expect(cancel.update?.status).toBe("canceled");
+  });
+
+  test("getLinkTarget resolves a slug to id + target, null when unknown", async () => {
+    const { client, queries } = buildClient([
+      ok({ id: "l1", target_url: "https://book.example.com/a" }),
+    ]);
+    h.client = client;
+
+    const link = await getLinkTarget("s1s1s1s1");
+
+    expect(queries[0].source).toBe("sms_links");
+    expect(queries[0].select).toBe("id, target_url");
+    expect(queries[0].eq).toContainEqual(["slug", "s1s1s1s1"]);
+    expect(queries[0].maybeSingle).toBe(true);
+    expect(link).toEqual({ id: "l1", target_url: "https://book.example.com/a" });
+
+    const { client: emptyClient } = buildClient([ok(null)]);
+    h.client = emptyClient;
+    expect(await getLinkTarget("unknown1")).toBeNull();
+  });
+
+  test("recordLinkClick inserts a click row and truncates absurd user agents", async () => {
+    const { client, queries } = buildClient([ok(null), ok(null)]);
+    h.client = client;
+
+    await recordLinkClick("l1", "TestAgent/1.0");
+    await recordLinkClick("l1", "x".repeat(9000));
+
+    expect(queries[0].source).toBe("sms_link_clicks");
+    expect(queries[0].insert).toEqual({
+      link_id: "l1",
+      user_agent: "TestAgent/1.0",
+    });
+    const longAgent = (queries[1].insert as { user_agent: string }).user_agent;
+    expect(longAgent).toHaveLength(512);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inbound messages — the reply inbox
+// ---------------------------------------------------------------------------
+describe("inbound messages", () => {
+  test("recordInboundMessage inserts the reply with attribution and returns the id", async () => {
+    const { client, queries } = buildClient([ok({ id: "in-1" })]);
+    h.client = client;
+
+    const id = await recordInboundMessage({
+      phone: "+15550000004",
+      body: "Yes please",
+      raw: { text: "Yes please" },
+      matchedRecipientId: "r7",
+      matchedCampaignId: "c-3",
+    });
+
+    expect(id).toBe("in-1");
+    expect(queries[0].source).toBe("sms_inbound_messages");
+    expect(queries[0].insert).toEqual({
+      phone_e164: "+15550000004",
+      body: "Yes please",
+      raw: { text: "Yes please" },
+      matched_recipient_id: "r7",
+      matched_campaign_id: "c-3",
+    });
+  });
+
+  test("findRecipientForInbound picks the newest row that actually left our system", async () => {
+    const { client, queries } = buildClient([ok([recipientRow])]);
+    h.client = client;
+
+    const row = await findRecipientForInbound("+15550000004");
+
+    expect(row?.id).toBe(recipientRow.id);
+    expect(queries[0].eq).toContainEqual(["phone_e164", "+15550000004"]);
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["sent", "delivered", "undelivered", "failed_ambiguous"],
+    ]);
+    expect(queries[0].order).toContainEqual([
+      "updated_at",
+      { ascending: false },
+    ]);
+    expect(queries[0].limit).toBe(1);
+  });
+
+  test("listInboundMessages embeds the campaign and honors the filters", async () => {
+    const { client, queries } = buildClient([ok([])]);
+    h.client = client;
+
+    await listInboundMessages({ unhandledOnly: true, campaignId: "c-3" });
+
+    expect(queries[0].source).toBe("sms_inbound_messages");
+    expect(queries[0].select).toBe("*, campaign:sms_campaigns(id, name)");
+    expect(queries[0].eq).toContainEqual(["handled", false]);
+    expect(queries[0].eq).toContainEqual(["matched_campaign_id", "c-3"]);
+    expect(queries[0].order).toContainEqual([
+      "received_at",
+      { ascending: false },
+    ]);
+    expect(queries[0].limit).toBe(200);
+  });
+
+  test("setInboundHandled stamps who/when on handle and clears both on reopen", async () => {
+    const { client, queries } = buildClient([
+      ok({ id: "in-1", handled: true }),
+      ok({ id: "in-1", handled: false }),
+    ]);
+    h.client = client;
+
+    await setInboundHandled("in-1", true, "amy@nsight.example");
+    await setInboundHandled("in-1", false, "amy@nsight.example");
+
+    expect(queries[0].update?.handled).toBe(true);
+    expect(queries[0].update?.handled_by).toBe("amy@nsight.example");
+    expect(queries[0].update?.handled_at).toEqual(expect.any(String));
+    expect(queries[1].update).toEqual({
+      handled: false,
+      handled_by: null,
+      handled_at: null,
+    });
+  });
+
+  test("setInboundHandled returns null for an unknown row", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await setInboundHandled("nope", true, "amy@x")).toBeNull();
+  });
+
+  test("countUnhandledInbound issues a head count over handled=false", async () => {
+    const { client, queries } = buildClient([okCount(3)]);
+    h.client = client;
+
+    expect(await countUnhandledInbound()).toBe(3);
+    expect(queries[0].selectOptions).toEqual({ count: "exact", head: true });
+    expect(queries[0].eq).toContainEqual(["handled", false]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Suppression management — the /suppressions page
+// ---------------------------------------------------------------------------
+describe("suppression management", () => {
+  const suppressionRow = {
+    phone_e164: "+15550000006",
+    reason: "manual" as const,
+    raw: { added_by: "amy@nsight.example", note: null },
+    created_at: "2026-08-05T12:00:00Z",
+  };
+
+  test("listSuppressions searches by digits (input stripped) and lists newest first", async () => {
+    const { client, queries } = buildClient([ok([suppressionRow])]);
+    h.client = client;
+
+    const rows = await listSuppressions({ query: "(555) 000" });
+
+    expect(rows).toHaveLength(1);
+    expect(queries[0].ilike).toContainEqual(["phone_e164", "%555000%"]);
+    expect(queries[0].order).toContainEqual([
+      "created_at",
+      { ascending: false },
+    ]);
+    expect(queries[0].limit).toBe(200);
+  });
+
+  test("listSuppressions with a digit-free query returns [] without querying", async () => {
+    const { client, queries } = buildClient([]);
+    h.client = client;
+    expect(await listSuppressions({ query: "hello" })).toEqual([]);
+    expect(queries).toHaveLength(0);
+  });
+
+  test("countSuppressions issues a head count", async () => {
+    const { client, queries } = buildClient([okCount(42)]);
+    h.client = client;
+    expect(await countSuppressions()).toBe(42);
+    expect(queries[0].selectOptions).toEqual({ count: "exact", head: true });
+  });
+
+  test("addManualSuppression inserts, sweeps the outbox, and writes the audit row", async () => {
+    const { client, queries } = buildClient([
+      ok(null), // getSuppression — not yet on the list
+      ok(suppressionRow), // insert
+      ok([{ id: "r1" }]), // suppressActiveRecipientsByPhone sweep
+      ok(null), // audit insert
+    ]);
+    h.client = client;
+
+    const result = await addManualSuppression(
+      "+15550000006",
+      "amy@nsight.example",
+      "asked by phone",
+    );
+
+    expect(result.created).toBe(true);
+    expect(queries[1].source).toBe("sms_suppressions");
+    expect(queries[1].insert).toEqual({
+      phone_e164: "+15550000006",
+      reason: "manual",
+      raw: { added_by: "amy@nsight.example", note: "asked by phone" },
+    });
+    expect(queries[2].source).toBe("sms_campaign_recipients");
+    expect(queries[2].update?.status).toBe("suppressed");
+    expect(queries[3].source).toBe("sms_suppression_audit");
+    expect(queries[3].insert).toEqual({
+      phone_e164: "+15550000006",
+      action: "added",
+      reason: "manual",
+      actor: "amy@nsight.example",
+      note: "asked by phone",
+    });
+  });
+
+  test("addManualSuppression leaves an existing entry untouched (created: false, no sweep/audit)", async () => {
+    const stopRow = { ...suppressionRow, reason: "stop" as const };
+    const { client, queries } = buildClient([ok(stopRow)]);
+    h.client = client;
+
+    const result = await addManualSuppression("+15550000006", "amy@x");
+
+    expect(result).toEqual({ created: false, suppression: stopRow });
+    expect(queries).toHaveLength(1);
+  });
+
+  test("addManualSuppression treats an insert race as created: false via read-back", async () => {
+    const { client, queries } = buildClient([
+      ok(null), // getSuppression — not there yet
+      err("duplicate key value violates unique constraint"),
+      ok(suppressionRow), // raced read-back
+    ]);
+    h.client = client;
+
+    const result = await addManualSuppression("+15550000006", "amy@x");
+
+    expect(result.created).toBe(false);
+    expect(queries).toHaveLength(3);
+  });
+
+  test("removeManualSuppression deletes ONLY manual entries and audits the removal", async () => {
+    const { client, queries } = buildClient([
+      ok(suppressionRow), // guarded delete returns the removed row
+      ok(null), // audit insert
+    ]);
+    h.client = client;
+
+    const removed = await removeManualSuppression(
+      "+15550000006",
+      "amy@nsight.example",
+    );
+
+    expect(removed?.phone_e164).toBe("+15550000006");
+    expect(queries[0].delete).toBe(true);
+    expect(queries[0].eq).toContainEqual(["phone_e164", "+15550000006"]);
+    expect(queries[0].eq).toContainEqual(["reason", "manual"]);
+    expect(queries[1].source).toBe("sms_suppression_audit");
+    expect(queries[1].insert).toMatchObject({
+      phone_e164: "+15550000006",
+      action: "removed",
+      actor: "amy@nsight.example",
+    });
+  });
+
+  test("removeManualSuppression returns null (no audit) when the guard loses", async () => {
+    const { client, queries } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await removeManualSuppression("+15550000006", "amy@x")).toBeNull();
+    expect(queries).toHaveLength(1);
+  });
+
+  test("getSuppression reads one row by phone", async () => {
+    const { client, queries } = buildClient([ok(suppressionRow)]);
+    h.client = client;
+    const row = await getSuppression("+15550000006");
+    expect(row?.reason).toBe("manual");
+    expect(queries[0].eq).toContainEqual(["phone_e164", "+15550000006"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Needs-attention queue + manual mark-sent resolution
+// ---------------------------------------------------------------------------
+describe("attention queue", () => {
+  test("listAttentionRecipients embeds the campaign and scopes to the attention statuses", async () => {
+    const { client, queries } = buildClient([ok([])]);
+    h.client = client;
+
+    await listAttentionRecipients();
+
+    expect(queries[0].source).toBe("sms_campaign_recipients");
+    expect(queries[0].select).toBe("*, campaign:sms_campaigns(id, name, status)");
+    expect(queries[0].in).toContainEqual([
+      "status",
+      ["failed_ambiguous", "failed", "undelivered"],
+    ]);
+    expect(queries[0].order).toContainEqual([
+      "updated_at",
+      { ascending: false },
+    ]);
+    expect(queries[0].limit).toBe(500);
+  });
+
+  test("resolveRecipientSent settles failed_ambiguous → sent with the note as audit", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...recipientRow, status: "sent" }),
+    ]);
+    h.client = client;
+
+    const row = await resolveRecipientSent("r1", "recipient replied");
+
+    expect(row?.status).toBe("sent");
+    expect(queries[0].update?.status).toBe("sent");
+    expect(queries[0].update?.last_error).toBe("recipient replied");
+    expect(queries[0].eq).toContainEqual(["id", "r1"]);
+    expect(queries[0].eq).toContainEqual(["status", "failed_ambiguous"]);
+  });
+
+  test("resolveRecipientSent returns null when the row is not failed_ambiguous", async () => {
+    const { client } = buildClient([ok(null)]);
+    h.client = client;
+    expect(await resolveRecipientSent("r1")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Engagement aggregates
+// ---------------------------------------------------------------------------
+describe("engagement aggregates", () => {
+  const engagementRow = {
+    campaign_id: "c1",
+    tracked_links: 2,
+    recipients_clicked: 5,
+    total_clicks: 9,
+    replies: 3,
+    unhandled_replies: 1,
+    opt_outs: 1,
+  };
+
+  test("getCampaignEngagement reads the view, zero-filling a missing row", async () => {
+    const { client, queries } = buildClient([ok(engagementRow)]);
+    h.client = client;
+
+    const row = await getCampaignEngagement("c1");
+    expect(row).toEqual(engagementRow);
+    expect(queries[0].source).toBe("sms_campaign_engagement");
+
+    const { client: emptyClient } = buildClient([ok(null)]);
+    h.client = emptyClient;
+    const zero = await getCampaignEngagement("c-none");
+    expect(zero).toEqual({
+      campaign_id: "c-none",
+      tracked_links: 0,
+      recipients_clicked: 0,
+      total_clicks: 0,
+      replies: 0,
+      unhandled_replies: 0,
+      opt_outs: 0,
+    });
+  });
+
+  test("getEngagementForCampaigns dedupes ids, chunks the .in(), and maps by campaign", async () => {
+    const ids = Array.from({ length: 250 }, (_, i) => `c${i}`);
+    const { client, queries } = buildClient([
+      ok([engagementRow]),
+      ok([]),
+    ]);
+    h.client = client;
+
+    const map = await getEngagementForCampaigns([...ids, ...ids]);
+
+    expect(queries).toHaveLength(2);
+    expect((queries[0].in[0][1] as unknown[]).length).toBe(200);
+    expect((queries[1].in[0][1] as unknown[]).length).toBe(50);
+    expect(map.get("c1")).toEqual(engagementRow);
   });
 });

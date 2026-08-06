@@ -31,6 +31,7 @@ const TONES: Record<SmsStatus, string | undefined> = {
   canceled: "var(--idle)",
   skipped: "var(--idle)",
   suppressed: "var(--idle)",
+  frequency_capped: "var(--idle)",
 };
 
 /** Badge tone for a status, or undefined for the neutral badge. */

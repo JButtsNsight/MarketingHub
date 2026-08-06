@@ -27,6 +27,7 @@ export const RECIPIENT_STATUSES = [
   "suppressed",
   "skipped",
   "canceled",
+  "frequency_capped",
 ] as const;
 export type RecipientStatus = (typeof RECIPIENT_STATUSES)[number];
 
@@ -150,4 +151,48 @@ export interface CampaignCounts {
   campaign_id: string;
   status: RecipientStatus;
   count: number;
+}
+
+/** A row of `marketinghub.sms_links` — one tracked short link per recipient × URL. */
+export interface SmsLink {
+  id: string;
+  slug: string;
+  campaign_id: string;
+  recipient_id: string;
+  target_url: string;
+  created_at: string;
+}
+
+/** A row of `marketinghub.sms_inbound_messages` — the reply inbox. */
+export interface SmsInboundMessage {
+  id: string;
+  phone_e164: string | null;
+  body: string;
+  received_at: string;
+  /** Best-effort match to the outbox row that prompted the reply. */
+  matched_recipient_id: string | null;
+  matched_campaign_id: string | null;
+  handled: boolean;
+  handled_by: string | null;
+  handled_at: string | null;
+  raw: unknown;
+}
+
+/** A row of `marketinghub.sms_suppressions` — the permanent STOP list. */
+export interface SmsSuppression {
+  phone_e164: string;
+  reason: "stop" | "manual";
+  raw: unknown;
+  created_at: string;
+}
+
+/** A row of the `sms_campaign_engagement` view — per-campaign aggregates. */
+export interface CampaignEngagement {
+  campaign_id: string;
+  tracked_links: number;
+  recipients_clicked: number;
+  total_clicks: number;
+  replies: number;
+  unhandled_replies: number;
+  opt_outs: number;
 }

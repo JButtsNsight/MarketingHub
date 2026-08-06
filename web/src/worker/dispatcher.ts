@@ -33,6 +33,14 @@ export interface DispatcherConfig {
   ratePerSecond: number;
   /** POST attempts a recipient may consume before `failed`. */
   maxAttempts: number;
+  /**
+   * Frequency cap, enforced inside the claim RPC: a due row whose phone
+   * already received `frequencyCapCount` messages in the last
+   * `frequencyCapDays` days is parked as `frequency_capped` instead of
+   * claimed. Either value 0 disables the cap entirely (the default).
+   */
+  frequencyCapCount: number;
+  frequencyCapDays: number;
 }
 
 /** Injected dependencies — shapes match `lib/sms/repo` and `sendSms` exactly. */
@@ -41,6 +49,8 @@ export interface DispatcherDeps {
   claimDueRecipients(
     batchSize: number,
     claimTtlSeconds: number,
+    freqCapCount: number,
+    freqCapDays: number,
   ): Promise<SmsCampaignRecipient[]>;
   getCampaignStatuses(ids: string[]): Promise<Map<string, CampaignStatus>>;
   isSuppressed(phone: string): Promise<boolean>;
@@ -131,6 +141,8 @@ export function createDispatcher(
       const batch = await deps.claimDueRecipients(
         config.batchSize,
         config.claimTtlSeconds,
+        config.frequencyCapCount,
+        config.frequencyCapDays,
       );
       if (batch.length === 0) break;
       stats.claimed += batch.length;

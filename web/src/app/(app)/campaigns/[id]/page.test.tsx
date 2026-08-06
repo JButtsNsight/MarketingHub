@@ -11,6 +11,8 @@ const h = vi.hoisted(() => ({
   getCampaign: vi.fn(),
   getCampaignCounts: vi.fn(),
   getCampaignRecipients: vi.fn(),
+  getCampaignEngagement: vi.fn(),
+  listInboundMessages: vi.fn(),
   requireMarketingUser: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -21,6 +23,8 @@ vi.mock("@/lib/sms/repo", () => ({
   getCampaign: h.getCampaign,
   getCampaignCounts: h.getCampaignCounts,
   getCampaignRecipients: h.getCampaignRecipients,
+  getCampaignEngagement: h.getCampaignEngagement,
+  listInboundMessages: h.listInboundMessages,
 }));
 // Legacy fixture campaigns carry contact_list_id: null, so the page never
 // fetches the list — the mock exists to keep the server-only import inert.
@@ -104,6 +108,18 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     h.getCampaign.mockResolvedValue(campaign);
     h.getCampaignCounts.mockResolvedValue(counts());
     h.getCampaignRecipients.mockResolvedValue([recipient]);
+    h.getCampaignEngagement.mockReset();
+    h.getCampaignEngagement.mockResolvedValue({
+      campaign_id: "c1",
+      tracked_links: 0,
+      recipients_clicked: 0,
+      total_clicks: 0,
+      replies: 0,
+      unhandled_replies: 0,
+      opt_outs: 0,
+    });
+    h.listInboundMessages.mockReset();
+    h.listInboundMessages.mockResolvedValue([]);
   });
 
   test("enforces the marketing group gate and reads by the route param", async () => {

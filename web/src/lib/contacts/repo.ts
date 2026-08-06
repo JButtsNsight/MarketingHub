@@ -124,6 +124,8 @@ export async function createCsvList(
     phone_e164: c.phoneE164,
     raw_phone: c.rawPhone,
     reason: c.reason,
+    consent_source: c.consentSource ?? null,
+    consent_date: c.consentDate ?? null,
   }));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);

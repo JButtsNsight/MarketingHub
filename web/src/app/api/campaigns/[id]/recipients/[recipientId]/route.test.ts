@@ -22,12 +22,14 @@ import {
 const h = vi.hoisted(() => ({
   retryRecipient: vi.fn(),
   markRecipientFailed: vi.fn(),
+  resolveRecipientSent: vi.fn(),
   getCampaign: vi.fn(),
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
   retryRecipient: h.retryRecipient,
   markRecipientFailed: h.markRecipientFailed,
+  resolveRecipientSent: h.resolveRecipientSent,
   getCampaign: h.getCampaign,
 }));
 
@@ -202,6 +204,33 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
   test("mark_failed → 409 when the recipient is not failed_ambiguous", async () => {
     h.markRecipientFailed.mockResolvedValue(null);
     const res = await PATCH(patchReq({ action: "mark_failed" }), ctx());
+    expect(res.status).toBe(409);
+  });
+
+  test("mark_sent → 200 with the recipient, passing the optional note", async () => {
+    const recipient = {
+      id: RECIPIENT_ID,
+      campaign_id: CAMPAIGN_ID,
+      status: "sent",
+    };
+    h.resolveRecipientSent.mockResolvedValue(recipient);
+    const res = await PATCH(
+      patchReq({ action: "mark_sent", note: "recipient replied" }),
+      ctx(),
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.recipient).toEqual(recipient);
+    expect(h.resolveRecipientSent).toHaveBeenCalledWith(
+      RECIPIENT_ID,
+      "recipient replied",
+    );
+    expect(h.markRecipientFailed).not.toHaveBeenCalled();
+  });
+
+  test("mark_sent → 409 when the recipient is not failed_ambiguous", async () => {
+    h.resolveRecipientSent.mockResolvedValue(null);
+    const res = await PATCH(patchReq({ action: "mark_sent" }), ctx());
     expect(res.status).toBe(409);
   });
 });

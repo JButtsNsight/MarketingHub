@@ -4,6 +4,7 @@ import { AuthError, requireUser } from "@/lib/auth";
 import {
   getCampaign,
   markRecipientFailed,
+  resolveRecipientSent,
   retryRecipient,
 } from "@/lib/sms/repo";
 
@@ -15,6 +16,9 @@ import {
  *                 `completed` campaign to `sending`, so the response carries
  *                 the campaign's fresh status for the UI to reflect.
  * - `mark_failed` declare the row terminally `failed` (optional audit note).
+ * - `mark_sent`   declare the ambiguous POST actually landed (delivery seen
+ *                 elsewhere, or the person replied) — settle as `sent`, with
+ *                 the optional note kept in last_error as the why.
  *
  * A `null` repo result means the status guard lost (the row was not in a
  * reviewable state) → 409.
@@ -41,8 +45,8 @@ function isUuid(value: string): boolean {
 }
 
 const PatchBodySchema = z.object({
-  action: z.enum(["retry", "mark_failed"]),
-  /** Audit note stored as last_error by mark_failed. */
+  action: z.enum(["retry", "mark_failed", "mark_sent"]),
+  /** Audit note stored as last_error by mark_failed / mark_sent. */
   note: z.string().trim().min(1).optional(),
 });
 
@@ -91,6 +95,17 @@ export async function PATCH(
       recipient,
       campaignStatus: campaign?.status ?? null,
     });
+  }
+
+  if (parsed.data.action === "mark_sent") {
+    const recipient = await resolveRecipientSent(recipientId, parsed.data.note);
+    if (!recipient) {
+      return Response.json(
+        { error: "Recipient is not awaiting manual review" },
+        { status: 409 },
+      );
+    }
+    return Response.json({ recipient });
   }
 
   const recipient = await markRecipientFailed(recipientId, parsed.data.note);

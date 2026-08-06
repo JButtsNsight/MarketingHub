@@ -46,6 +46,9 @@ const DEFAULTS: DispatcherConfig = {
   claimTtlSeconds: 180,
   ratePerSecond: 2,
   maxAttempts: 3,
+  // 0 = frequency cap disabled (claim behavior identical to pre-cap).
+  frequencyCapCount: 0,
+  frequencyCapDays: 0,
 };
 
 /** Positive finite number from an env string, else the default. */
@@ -53,6 +56,13 @@ function positiveNumber(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** Non-negative finite number from an env string, else the default (0 = off). */
+function nonNegativeNumber(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
 
 /** Dispatcher config from env with documented defaults (see the plan doc). */
@@ -71,6 +81,14 @@ export function buildConfigFromEnv(
       DEFAULTS.ratePerSecond,
     ),
     maxAttempts: positiveNumber(env.SMS_MAX_ATTEMPTS, DEFAULTS.maxAttempts),
+    frequencyCapCount: nonNegativeNumber(
+      env.SMS_FREQ_CAP_COUNT,
+      DEFAULTS.frequencyCapCount,
+    ),
+    frequencyCapDays: nonNegativeNumber(
+      env.SMS_FREQ_CAP_DAYS,
+      DEFAULTS.frequencyCapDays,
+    ),
   };
 }
 

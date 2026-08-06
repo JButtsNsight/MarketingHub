@@ -74,5 +74,8 @@ export interface ContactListMember {
   phone_e164: string | null;
   raw_phone: string;
   reason: "ok" | "invalid" | "duplicate";
+  /** Consent provenance, verbatim from the uploaded sheet (audit evidence). */
+  consent_source: string | null;
+  consent_date: string | null;
   created_at: string;
 }

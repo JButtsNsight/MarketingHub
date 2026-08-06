@@ -485,3 +485,67 @@ describe("GET /api/campaigns", () => {
     expect(json.campaigns).toEqual(rows);
   });
 });
+
+describe("POST /api/campaigns — tracked links (SMS_LINK_BASE_URL)", () => {
+  const linkedPrepared = [
+    {
+      monday_item_id: "1",
+      name: "Ada Lovelace",
+      first_name: "Ada",
+      phone_e164: "+15550000001",
+      rendered_text: "Hi Ada, book at https://book.example.com/slots today",
+      status: "pending",
+      last_error: null,
+    },
+    {
+      monday_item_id: "4",
+      name: "Stop Listed",
+      first_name: "Stop",
+      phone_e164: "+15550000003",
+      rendered_text: "Hi Stop, book at https://book.example.com/slots today",
+      status: "suppressed",
+      last_error: "suppressed: phone is on the STOP list",
+    },
+  ];
+
+  afterEach(() => {
+    delete process.env.SMS_LINK_BASE_URL;
+  });
+
+  test("rewrites pending rows' URLs to /l/<slug> and attaches the link pairs", async () => {
+    process.env.SMS_LINK_BASE_URL = "https://mh.example.com";
+    primeHappyPath();
+    h.prepareRecipients.mockReturnValue(linkedPrepared);
+
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(201);
+
+    const passed = h.createCampaign.mock.calls[0][3];
+    // pending row: URL rewritten, slug pair attached
+    expect(passed[0].rendered_text).toMatch(
+      /^Hi Ada, book at https:\/\/mh\.example\.com\/l\/[0-9A-Za-z]{8} today$/,
+    );
+    expect(passed[0].links).toHaveLength(1);
+    expect(passed[0].links[0]).toEqual({
+      slug: expect.stringMatching(/^[0-9A-Za-z]{8}$/),
+      targetUrl: "https://book.example.com/slots",
+    });
+    // suppressed row: untouched audit snapshot, no links
+    expect(passed[1].rendered_text).toBe(
+      "Hi Stop, book at https://book.example.com/slots today",
+    );
+    expect(passed[1].links).toBeUndefined();
+  });
+
+  test("leaves everything untouched when SMS_LINK_BASE_URL is unset", async () => {
+    primeHappyPath();
+    h.prepareRecipients.mockReturnValue(linkedPrepared);
+
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(201);
+
+    const passed = h.createCampaign.mock.calls[0][3];
+    expect(passed).toBe(linkedPrepared);
+    expect(passed[0].links).toBeUndefined();
+  });
+});

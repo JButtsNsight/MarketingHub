@@ -114,6 +114,34 @@ accepts container port `:3000` from the ALB SG only.
   the `claim_due_sms_recipients` RPC return **404** through the data API, so the
   dispatcher worker cannot claim anything and campaign creation fails.
 
+### 1.6b Engagement-suite schema migration (2026-08-05)
+- The **engagement-suite migration** `cdk/sql/2026-08-05-engagement-suite.sql`
+  runs AFTER `2026-07-22-sms-campaigns.sql` and `2026-07-30-contact-lists.sql`
+  (same SSM + `psql` + **pgrst reload** procedure as §1.6). It adds:
+  - `sms_links` + `sms_link_clicks` (per-recipient tracked short links; the
+    `/l/[slug]` route resolves them),
+  - `sms_inbound_messages` (the reply inbox behind the webhook's inbound lane),
+  - `sms_suppression_audit` (who added/removed manual STOP entries and why),
+  - consent provenance columns on `contact_list_members`,
+  - the `sms_campaign_engagement` view (per-campaign clicks/replies/opt-outs),
+  - and it **replaces `claim_due_sms_recipients` with a 4-arg version**
+    (frequency cap, default OFF). ORDER MATTERS: because the old 2-arg
+    overload is dropped and re-created by the 07-22 file, this migration must
+    always be (re-)applied LAST or PostgREST RPC resolution turns ambiguous.
+- **Deploy order is migration-first**: app/worker images that pass the new
+  4-arg RPC call fail against an un-migrated database (PostgREST 404 on the
+  RPC signature), and the webhook's `inbound` kind violates the old
+  `sms_webhook_events` check constraint.
+- New OPTIONAL env vars (all off/unset by default — zero behavior change):
+  - app: `SMS_LINK_BASE_URL` — when set (e.g. the public app origin), campaign
+    creation rewrites message URLs to `<base>/l/<slug>` tracked links; unset
+    means messages keep their original URLs and no click data is captured.
+  - worker: `SMS_FREQ_CAP_COUNT` / `SMS_FREQ_CAP_DAYS` — both > 0 enables the
+    claim-time frequency cap (rows park as `frequency_capped`, terminal).
+- Production front door (when it lands): the ALB needs the unauthenticated
+  `GET /l/*` listener exception (already in app-infra next to the webhook
+  rule) — tracked links are clicked from recipients' phones, no Cognito.
+
 ### 1.7 SMS credentials secret in Secrets Manager
 - Create ONE JSON secret named **`marketinghub/sms-campaigns`** in
   `439024109088 / us-east-1` with exactly these three fields:

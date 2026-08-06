@@ -20,6 +20,14 @@ export interface ParsedContact {
   /** The raw phone cell, kept for audit. */
   rawPhone: string;
   reason: "ok" | "invalid" | "duplicate";
+  /**
+   * Consent provenance, verbatim from the sheet when it carries consent
+   * columns (see CONSENT_*_HEADERS) — audit evidence of what was claimed at
+   * import time, never parsed or validated. Absent when the sheet has no
+   * consent columns.
+   */
+  consentSource?: string | null;
+  consentDate?: string | null;
 }
 
 export interface ParsedSheet {
@@ -107,15 +115,43 @@ const NAME_HEADERS = [
 const FIRST_NAME_HEADERS = ["firstname", "first", "givenname"];
 const LAST_NAME_HEADERS = ["lastname", "last", "surname", "familyname"];
 
-function findHeader(headers: string[], candidates: string[]): number {
+/**
+ * Consent provenance columns. Date candidates are matched FIRST and excluded
+ * from the source search — the bare "consent"/"optin" prefixes would
+ * otherwise swallow a "consent date" column when no source column exists.
+ */
+const CONSENT_DATE_HEADERS = [
+  "consentdate",
+  "optindate",
+  "consenttimestamp",
+  "optintimestamp",
+  "consentedat",
+  "optedinat",
+];
+const CONSENT_SOURCE_HEADERS = [
+  "consentsource",
+  "optinsource",
+  "consentmethod",
+  "optinmethod",
+  "consent",
+  "optin",
+];
+
+function findHeader(
+  headers: string[],
+  candidates: string[],
+  exclude = -1,
+): number {
   const keys = headers.map(headerKey);
   for (const candidate of candidates) {
     const idx = keys.indexOf(candidate);
-    if (idx !== -1) return idx;
+    if (idx !== -1 && idx !== exclude) return idx;
   }
   // Second pass: prefix match ("phone (mobile)" → phonemobile).
   for (const candidate of candidates) {
-    const idx = keys.findIndex((k) => k.startsWith(candidate));
+    const idx = keys.findIndex(
+      (k, i) => i !== exclude && k.startsWith(candidate),
+    );
     if (idx !== -1) return idx;
   }
   return -1;
@@ -158,6 +194,29 @@ export function parseContactSheet(text: string): ParsedSheet {
   const nameIdx = findHeader(headers, NAME_HEADERS);
   const firstIdx = findHeader(headers, FIRST_NAME_HEADERS);
   const lastIdx = findHeader(headers, LAST_NAME_HEADERS);
+  const consentDateIdx = findHeader(headers, CONSENT_DATE_HEADERS);
+  const consentSourceIdx = findHeader(
+    headers,
+    CONSENT_SOURCE_HEADERS,
+    consentDateIdx,
+  );
+  const hasConsent = consentSourceIdx !== -1 || consentDateIdx !== -1;
+
+  const consentOf = (
+    row: string[],
+  ): Pick<ParsedContact, "consentSource" | "consentDate"> => {
+    if (!hasConsent) return {};
+    return {
+      consentSource:
+        consentSourceIdx !== -1
+          ? (row[consentSourceIdx] ?? "").trim() || null
+          : null,
+      consentDate:
+        consentDateIdx !== -1
+          ? (row[consentDateIdx] ?? "").trim() || null
+          : null,
+    };
+  };
 
   const nameOf = (row: string[]): string => {
     if (nameIdx !== -1 && row[nameIdx]?.trim()) return row[nameIdx].trim();
@@ -176,16 +235,18 @@ export function parseContactSheet(text: string): ParsedSheet {
         : firstNameOf(name);
     const phoneE164 = normalizeUsPhone(rawPhone);
 
+    const consent = consentOf(row);
+
     if (!phoneE164) {
-      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const, ...consent };
     }
     if (seen.has(phoneE164)) {
       // Duplicates must not carry the phone: the DB member table has
       // `unique (list_id, phone_e164)` and nulls are distinct.
-      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const, ...consent };
     }
     seen.add(phoneE164);
-    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const };
+    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const, ...consent };
   });
 
   const counts = { ok: 0, invalid: 0, duplicate: 0, total: contacts.length };

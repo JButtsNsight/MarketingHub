@@ -7,12 +7,16 @@ import {
   RECIPIENT_STATUSES,
   type CampaignCounts,
   type CampaignCreateInput,
+  type CampaignEngagement,
   type CampaignRescheduleInput,
   type CampaignStatus,
   type RecipientStatus,
   type SmsCampaign,
   type SmsCampaignRecipient,
+  type SmsInboundMessage,
+  type SmsSuppression,
 } from "./schema";
+import type { TrackedLink } from "./links";
 import { firstNameOf, renderSms } from "./render";
 import { sendAtForZonedSlot } from "./schedule";
 
@@ -33,8 +37,14 @@ const CAMPAIGNS = "sms_campaigns";
 const RECIPIENTS = "sms_campaign_recipients";
 const SUPPRESSIONS = "sms_suppressions";
 const WEBHOOK_EVENTS = "sms_webhook_events";
+const LINKS = "sms_links";
+const LINK_CLICKS = "sms_link_clicks";
+const INBOUND = "sms_inbound_messages";
+const SUPPRESSION_AUDIT = "sms_suppression_audit";
 /** campaign_id × status × count view (security_invoker). */
 const COUNTS_VIEW = "sms_campaign_recipient_counts";
+/** Per-campaign click/reply/opt-out aggregates view (security_invoker). */
+const ENGAGEMENT_VIEW = "sms_campaign_engagement";
 
 /** Max values per PostgREST `.in()` filter (URL-length safety). */
 const IN_CHUNK = 200;
@@ -74,6 +84,26 @@ function countsView() {
 
 function webhookEvents() {
   return getServiceClient().schema(SCHEMA).from(WEBHOOK_EVENTS);
+}
+
+function links() {
+  return getServiceClient().schema(SCHEMA).from(LINKS);
+}
+
+function linkClicks() {
+  return getServiceClient().schema(SCHEMA).from(LINK_CLICKS);
+}
+
+function inbound() {
+  return getServiceClient().schema(SCHEMA).from(INBOUND);
+}
+
+function suppressionAudit() {
+  return getServiceClient().schema(SCHEMA).from(SUPPRESSION_AUDIT);
+}
+
+function engagementView() {
+  return getServiceClient().schema(SCHEMA).from(ENGAGEMENT_VIEW);
 }
 
 function fail(op: string, message: string): never {
@@ -129,6 +159,13 @@ export interface PreparedRecipient {
   rendered_text: string;
   status: PreparedRecipientStatus;
   last_error: string | null;
+  /**
+   * Tracked short links embedded in rendered_text (slug → target), persisted
+   * to sms_links after the row insert returns its id. Absent/empty when link
+   * tracking is off (LINK_BASE_URL unset) or the body has no URLs. NOT a
+   * column — stripped before insert.
+   */
+  links?: TrackedLink[];
 }
 
 /**
@@ -267,28 +304,98 @@ export async function createCampaign(
   if (error) fail("create", error.message);
   const campaign = data as SmsCampaign;
 
-  const rows = prepared.map((r) => ({
+  // `links` is repo bookkeeping, not a column — strip it before insert and
+  // keep a parallel per-row array for the sms_links inserts below.
+  const rows = prepared.map(({ links: _links, ...r }) => ({
     ...r,
     campaign_id: campaign.id,
     send_after: sendAt,
   }));
+  const rowLinks = prepared.map((r) => r.links ?? []);
+  const hasLinks = rowLinks.some((l) => l.length > 0);
+
+  // Best-effort: a partially-populated campaign must never dispatch.
+  const cancelAndFail = async (
+    op: string,
+    at: number,
+    message: string,
+  ): Promise<never> => {
+    try {
+      await campaigns()
+        .update({ status: "canceled", updated_at: nowIso() })
+        .eq("id", campaign.id);
+    } catch {
+      // the original failure is the one worth surfacing
+    }
+    fail(op, `chunk at ${at} (campaign ${campaign.id} canceled): ${message}`);
+  };
 
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);
-    const { error: insertError } = await recipients().insert(chunk);
-    if (insertError) {
-      // Best-effort: a partially-populated campaign must never dispatch.
-      try {
-        await campaigns()
-          .update({ status: "canceled", updated_at: nowIso() })
-          .eq("id", campaign.id);
-      } catch {
-        // the original failure is the one worth surfacing
+
+    if (!hasLinks) {
+      const { error: insertError } = await recipients().insert(chunk);
+      if (insertError) {
+        return cancelAndFail("create-recipients", i, insertError.message);
       }
-      fail(
-        "create-recipients",
-        `chunk at ${i} (campaign ${campaign.id} canceled): ${insertError.message}`,
+      continue;
+    }
+
+    // Link tracking needs the fresh row ids to key sms_links on.
+    const { data: inserted, error: insertError } = await recipients()
+      .insert(chunk)
+      .select("id, rendered_text");
+    if (insertError) {
+      return cancelAndFail("create-recipients", i, insertError.message);
+    }
+    const returned = (inserted ?? []) as Array<{
+      id: string;
+      rendered_text: string;
+    }>;
+    if (returned.length !== chunk.length) {
+      return cancelAndFail(
+        "create-links",
+        i,
+        `insert returned ${returned.length} rows for a chunk of ${chunk.length}`,
       );
+    }
+
+    const linkRows: Array<{
+      slug: string;
+      campaign_id: string;
+      recipient_id: string;
+      target_url: string;
+    }> = [];
+    for (let j = 0; j < chunk.length; j += 1) {
+      const linksForRow = rowLinks[i + j];
+      if (linksForRow.length === 0) continue;
+      // PostgREST returns inserted rows in insert order; the rendered_text
+      // equality check turns any violation of that assumption into a loud
+      // failure instead of silently mis-attributing clicks.
+      if (returned[j].rendered_text !== chunk[j].rendered_text) {
+        return cancelAndFail(
+          "create-links",
+          i,
+          "returned rows out of order (rendered_text mismatch)",
+        );
+      }
+      for (const link of linksForRow) {
+        linkRows.push({
+          slug: link.slug,
+          campaign_id: campaign.id,
+          recipient_id: returned[j].id,
+          target_url: link.targetUrl,
+        });
+      }
+    }
+
+    for (let k = 0; k < linkRows.length; k += INSERT_CHUNK) {
+      const { error: linkError } = await links().insert(
+        linkRows.slice(k, k + INSERT_CHUNK),
+      );
+      if (linkError) {
+        return cancelAndFail("create-links", i, linkError.message);
+      }
     }
   }
 
@@ -640,12 +747,16 @@ export async function markRecipientFailed(
 export async function claimDueRecipients(
   batchSize: number,
   claimTtlSeconds: number,
+  freqCapCount = 0,
+  freqCapDays = 0,
 ): Promise<SmsCampaignRecipient[]> {
   const { data, error } = await getServiceClient()
     .schema(SCHEMA)
     .rpc("claim_due_sms_recipients", {
       batch_size: batchSize,
       claim_ttl_seconds: claimTtlSeconds,
+      freq_cap_count: freqCapCount,
+      freq_cap_days: freqCapDays,
     });
   if (error) fail("claim", error.message);
   return (data ?? []) as SmsCampaignRecipient[];
@@ -950,7 +1061,11 @@ export async function completeDrainedCampaigns(): Promise<string[]> {
 // ---------------------------------------------------------------------------
 
 export type SuppressionReason = "stop" | "manual";
-export type WebhookKind = "unsubscribe" | "delivery_report" | "unknown";
+export type WebhookKind =
+  | "unsubscribe"
+  | "delivery_report"
+  | "inbound"
+  | "unknown";
 
 /**
  * Permanently add a phone to the STOP list. Upsert on the phone_e164 primary
@@ -1093,4 +1208,371 @@ export async function applyDeliveryReport(
     .maybeSingle();
   if (error) fail("apply-delivery-report", error.message);
   return (data as SmsCampaignRecipient) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Tracked links — resolution + click recording for the /l/[slug] redirect.
+// ---------------------------------------------------------------------------
+
+/** Longest user agent worth keeping (bot-vs-human triage, not analytics). */
+const USER_AGENT_MAX = 512;
+
+/** Resolve a short-link slug to its row id + target, or null when unknown. */
+export async function getLinkTarget(
+  slug: string,
+): Promise<{ id: string; target_url: string } | null> {
+  const { data, error } = await links()
+    .select("id, target_url")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (error) fail("get-link", error.message);
+  return (data as { id: string; target_url: string }) ?? null;
+}
+
+/** One click event per redirect served. */
+export async function recordLinkClick(
+  linkId: string,
+  userAgent: string | null,
+): Promise<void> {
+  const { error } = await linkClicks().insert({
+    link_id: linkId,
+    user_agent: userAgent ? userAgent.slice(0, USER_AGENT_MAX) : null,
+  });
+  if (error) fail("record-link-click", error.message);
+}
+
+// ---------------------------------------------------------------------------
+// Inbound messages — the reply inbox behind the webhook's `inbound` lane.
+// ---------------------------------------------------------------------------
+
+/** The campaign a reply was attributed to, embedded for list rendering. */
+export interface InboundCampaignRef {
+  id: string;
+  name: string;
+}
+
+export interface InboundMessageWithCampaign extends SmsInboundMessage {
+  campaign: InboundCampaignRef | null;
+}
+
+/** Store one inbound reply (webhook lane). Returns the new row id. */
+export async function recordInboundMessage(input: {
+  phone: string | null;
+  body: string;
+  raw: unknown;
+  matchedRecipientId?: string | null;
+  matchedCampaignId?: string | null;
+}): Promise<string> {
+  const { data, error } = await inbound()
+    .insert({
+      phone_e164: input.phone,
+      body: input.body,
+      raw: input.raw,
+      matched_recipient_id: input.matchedRecipientId ?? null,
+      matched_campaign_id: input.matchedCampaignId ?? null,
+    })
+    .select("id")
+    .single();
+  if (error) fail("record-inbound", error.message);
+  return (data as { id: string }).id;
+}
+
+/**
+ * The outbox row a reply most plausibly responds to: the newest row for the
+ * phone that had a message actually leave our system (`sent`/`delivered`/
+ * `undelivered`) or is awaiting reconciliation (`failed_ambiguous` — a reply
+ * is decent evidence the ambiguous POST landed, though only the human lane
+ * may act on that).
+ */
+export async function findRecipientForInbound(
+  phone: string,
+): Promise<SmsCampaignRecipient | null> {
+  const { data, error } = await recipients()
+    .select("*")
+    .eq("phone_e164", phone)
+    .in("status", ["sent", "delivered", "undelivered", "failed_ambiguous"])
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (error) fail("find-inbound-recipient", error.message);
+  return ((data ?? []) as SmsCampaignRecipient[])[0] ?? null;
+}
+
+/** Inbox rows, newest first, with the attributed campaign embedded. */
+export async function listInboundMessages(
+  opts: { unhandledOnly?: boolean; campaignId?: string; limit?: number } = {},
+): Promise<InboundMessageWithCampaign[]> {
+  let query = inbound().select("*, campaign:sms_campaigns(id, name)");
+  if (opts.unhandledOnly) query = query.eq("handled", false);
+  if (opts.campaignId) query = query.eq("matched_campaign_id", opts.campaignId);
+  const { data, error } = await query
+    .order("received_at", { ascending: false })
+    .limit(opts.limit ?? 200);
+  if (error) fail("list-inbound", error.message);
+  return (data ?? []) as InboundMessageWithCampaign[];
+}
+
+/**
+ * Flip the inbox workflow bit. Handling stamps who/when; un-handling clears
+ * both. Unconditional (last write wins — it's a checkbox, not a state
+ * machine); null = row does not exist.
+ */
+export async function setInboundHandled(
+  id: string,
+  handled: boolean,
+  actor: string,
+): Promise<SmsInboundMessage | null> {
+  const { data, error } = await inbound()
+    .update(
+      handled
+        ? { handled: true, handled_by: actor, handled_at: nowIso() }
+        : { handled: false, handled_by: null, handled_at: null },
+    )
+    .eq("id", id)
+    .select()
+    .maybeSingle();
+  if (error) fail("set-inbound-handled", error.message);
+  return (data as SmsInboundMessage) ?? null;
+}
+
+/** Inbox badge count. */
+export async function countUnhandledInbound(): Promise<number> {
+  const { count, error } = await inbound()
+    .select("id", { count: "exact", head: true })
+    .eq("handled", false);
+  if (error) fail("count-unhandled-inbound", error.message);
+  return count ?? 0;
+}
+
+// ---------------------------------------------------------------------------
+// Suppression management — the /suppressions page. Manual entries carry their
+// provenance in `raw` ({added_by, note}) and every manual add/remove also
+// writes an sms_suppression_audit row (TCPA evidence). Webhook 'stop' entries
+// are permanent by doctrine and cannot be removed here.
+// ---------------------------------------------------------------------------
+
+/** One STOP-list row, or null. */
+export async function getSuppression(
+  phone: string,
+): Promise<SmsSuppression | null> {
+  const { data, error } = await suppressions()
+    .select("*")
+    .eq("phone_e164", phone)
+    .maybeSingle();
+  if (error) fail("get-suppression", error.message);
+  return (data as SmsSuppression) ?? null;
+}
+
+/**
+ * Newest-first STOP-list slice. `query` is matched against the stored E.164
+ * digits (input is stripped to digits/+ first — "(555) 555" finds +1555555…).
+ */
+export async function listSuppressions(
+  opts: { query?: string; limit?: number } = {},
+): Promise<SmsSuppression[]> {
+  const digits =
+    opts.query !== undefined ? opts.query.replace(/[^0-9+]/g, "") : null;
+  if (digits !== null && digits.length === 0) return [];
+
+  let q = suppressions().select("*");
+  if (digits !== null) q = q.ilike("phone_e164", `%${digits}%`);
+  const { data, error } = await q
+    .order("created_at", { ascending: false })
+    .limit(opts.limit ?? 200);
+  if (error) fail("list-suppressions", error.message);
+  return (data ?? []) as SmsSuppression[];
+}
+
+/** Total STOP-list size (stat card). */
+export async function countSuppressions(): Promise<number> {
+  const { count, error } = await suppressions().select("phone_e164", {
+    count: "exact",
+    head: true,
+  });
+  if (error) fail("count-suppressions", error.message);
+  return count ?? 0;
+}
+
+async function recordSuppressionAudit(
+  phone: string,
+  action: "added" | "removed",
+  reason: string,
+  actor: string,
+  note?: string,
+): Promise<void> {
+  const { error } = await suppressionAudit().insert({
+    phone_e164: phone,
+    action,
+    reason,
+    actor,
+    note: note ?? null,
+  });
+  if (error) fail("suppression-audit", error.message);
+}
+
+/**
+ * Manually suppress a phone. An existing entry (either reason) is left
+ * untouched — a webhook 'stop' must never be downgraded to 'manual' — and
+ * reported as `created: false`. A new entry also sweeps the phone's
+ * not-yet-attempted outbox rows (same fan-out as a STOP webhook) and writes
+ * the audit row.
+ */
+export async function addManualSuppression(
+  phone: string,
+  actor: string,
+  note?: string,
+): Promise<{ created: boolean; suppression: SmsSuppression }> {
+  const existing = await getSuppression(phone);
+  if (existing) return { created: false, suppression: existing };
+
+  const { data, error } = await suppressions()
+    .insert({
+      phone_e164: phone,
+      reason: "manual",
+      raw: { added_by: actor, note: note ?? null },
+    })
+    .select()
+    .maybeSingle();
+  if (error) {
+    // Insert race (someone else suppressed the phone between the check and
+    // the insert): read it back and report created:false; anything else is a
+    // real failure.
+    const raced = await getSuppression(phone);
+    if (raced) return { created: false, suppression: raced };
+    fail("add-suppression", error.message);
+  }
+
+  const suppression = data as SmsSuppression;
+  await suppressActiveRecipientsByPhone(phone);
+  await recordSuppressionAudit(phone, "added", "manual", actor, note);
+  return { created: true, suppression };
+}
+
+/**
+ * Remove a MANUAL suppression entry. Webhook 'stop' entries are permanent
+ * (the person texted STOP; only a carrier-side re-subscribe may bring them
+ * back) — the reason guard makes this a conditional delete: null = nothing
+ * removable (missing, or reason 'stop' → caller routes 409).
+ */
+export async function removeManualSuppression(
+  phone: string,
+  actor: string,
+  note?: string,
+): Promise<SmsSuppression | null> {
+  const { data, error } = await suppressions()
+    .delete()
+    .eq("phone_e164", phone)
+    .eq("reason", "manual")
+    .select()
+    .maybeSingle();
+  if (error) fail("remove-suppression", error.message);
+  if (!data) return null;
+
+  await recordSuppressionAudit(phone, "removed", "manual", actor, note);
+  return data as SmsSuppression;
+}
+
+// ---------------------------------------------------------------------------
+// Needs-attention queue — cross-campaign review of rows that stopped moving.
+// ---------------------------------------------------------------------------
+
+/** Statuses that put an outbox row in the needs-attention queue. */
+export const ATTENTION_STATUSES: RecipientStatus[] = [
+  "failed_ambiguous",
+  "failed",
+  "undelivered",
+];
+
+export interface AttentionCampaignRef {
+  id: string;
+  name: string;
+  status: CampaignStatus;
+}
+
+export interface AttentionRecipient extends SmsCampaignRecipient {
+  campaign: AttentionCampaignRef | null;
+}
+
+/** The review queue, newest problems first, capped for the UI. */
+export async function listAttentionRecipients(
+  limit = 500,
+): Promise<AttentionRecipient[]> {
+  const { data, error } = await recipients()
+    .select("*, campaign:sms_campaigns(id, name, status)")
+    .in("status", ATTENTION_STATUSES)
+    .order("updated_at", { ascending: false })
+    .limit(limit);
+  if (error) fail("list-attention", error.message);
+  return (data ?? []) as AttentionRecipient[];
+}
+
+/**
+ * Manual-review resolution: a human confirmed the ambiguous POST actually
+ * landed (delivery receipt seen elsewhere, or the person replied) — settle
+ * `failed_ambiguous` → `sent`. The optional note lands in last_error as the
+ * audit trail of WHY it was resolved by hand.
+ */
+export async function resolveRecipientSent(
+  id: string,
+  note?: string,
+): Promise<SmsCampaignRecipient | null> {
+  const patch: Record<string, unknown> = {
+    status: "sent",
+    claim_expires_at: null,
+    updated_at: nowIso(),
+  };
+  if (note) patch.last_error = note;
+
+  const { data, error } = await recipients()
+    .update(patch)
+    .eq("id", id)
+    .eq("status", "failed_ambiguous")
+    .select()
+    .maybeSingle();
+  if (error) fail("resolve-recipient-sent", error.message);
+  return (data as SmsCampaignRecipient) ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// Engagement aggregates — the sms_campaign_engagement view.
+// ---------------------------------------------------------------------------
+
+function zeroEngagement(campaignId: string): CampaignEngagement {
+  return {
+    campaign_id: campaignId,
+    tracked_links: 0,
+    recipients_clicked: 0,
+    total_clicks: 0,
+    replies: 0,
+    unhandled_replies: 0,
+    opt_outs: 0,
+  };
+}
+
+/** One campaign's engagement aggregates (zero-filled when the view has none). */
+export async function getCampaignEngagement(
+  campaignId: string,
+): Promise<CampaignEngagement> {
+  const { data, error } = await engagementView()
+    .select("*")
+    .eq("campaign_id", campaignId)
+    .maybeSingle();
+  if (error) fail("get-engagement", error.message);
+  return (data as CampaignEngagement) ?? zeroEngagement(campaignId);
+}
+
+/** Engagement rows for many campaigns, chunked like every `.in()` here. */
+export async function getEngagementForCampaigns(
+  ids: string[],
+): Promise<Map<string, CampaignEngagement>> {
+  const map = new Map<string, CampaignEngagement>();
+  for (const chunk of inChunks(Array.from(new Set(ids)))) {
+    const { data, error } = await engagementView()
+      .select("*")
+      .in("campaign_id", chunk);
+    if (error) fail("engagement-for-campaigns", error.message);
+    for (const row of (data ?? []) as CampaignEngagement[]) {
+      map.set(row.campaign_id, row);
+    }
+  }
+  return map;
 }

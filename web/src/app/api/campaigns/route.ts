@@ -12,6 +12,7 @@ import {
   type SourceRecipientRow,
 } from "@/lib/sms/repo";
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
+import { applyLinkTracking } from "@/lib/sms/links";
 import { unsupportedMergeFields } from "@/lib/sms/render";
 import { sendAtForZonedSlot } from "@/lib/sms/schedule";
 import { getTemplate } from "@/lib/templates/repo";
@@ -155,7 +156,15 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const suppressed = await getSuppressedSet(sourceRows.map((r) => r.phoneE164));
-  const prepared = prepareRecipients(sourceRows, template.body, suppressed);
+  let prepared = prepareRecipients(sourceRows, template.body, suppressed);
+
+  // Tracked short links: rewrite URLs in every pending row's rendered_text to
+  // `<base>/l/<slug>` so clicks are attributable per recipient. Env-gated —
+  // SMS_LINK_BASE_URL unset means messages go out with their original URLs.
+  const linkBase = process.env.SMS_LINK_BASE_URL?.trim();
+  if (linkBase) {
+    prepared = applyLinkTracking(prepared, linkBase);
+  }
 
   // A campaign nothing would send from is a mistake, not a campaign.
   const counts = summarize(prepared);

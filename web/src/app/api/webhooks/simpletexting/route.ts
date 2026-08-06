@@ -4,6 +4,8 @@ import { normalizeUsPhone } from "@/lib/sms/phone";
 import {
   applyDeliveryReport,
   findRecipientForDeliveryReport,
+  findRecipientForInbound,
+  recordInboundMessage,
   recordSuppression,
   recordWebhookEvent,
   suppressActiveRecipientsByPhone,
@@ -11,7 +13,8 @@ import {
 } from "@/lib/sms/repo";
 
 /**
- * SimpleTexting webhook receiver (delivery reports + unsubscribes).
+ * SimpleTexting webhook receiver (delivery reports + unsubscribes + inbound
+ * replies).
  *
  * NOT gated on ALB identity — SimpleTexting's sender is not a Cognito user.
  * Auth is the `?token=` shared secret against SIMPLETEXTING_WEBHOOK_TOKEN,
@@ -25,6 +28,13 @@ import {
  * requests always get 200 {ok:true}: SimpleTexting must never retry-loop us,
  * and the delivery-report lane doubles as the `failed_ambiguous`
  * auto-reconciliation path.
+ *
+ * The inbound lane (phone + message text, not unsubscribe-ish, not a delivery
+ * report) feeds the reply inbox: the message is stored and best-effort
+ * matched to the newest outbox row for the phone. A STOP-word inbound body
+ * ALSO lands on the STOP list — belt-and-suspenders for accounts whose
+ * SimpleTexting webhook config sends incoming-message events instead of
+ * unsubscribe events.
  */
 
 export const dynamic = "force-dynamic";
@@ -91,6 +101,15 @@ const STATUS_KEYS = ["status", "deliveryStatus", "delivery_status", "state"];
 /** Event-type-ish fields checked for /unsub/i. */
 const TYPE_KEYS = ["type", "eventType", "event_type", "event"];
 
+/** Message-body-ish fields for the inbound (reply) lane. */
+const MESSAGE_KEYS = ["text", "body", "message", "messageBody", "message_body"];
+
+/**
+ * The carrier STOP vocabulary (TCPA). An inbound body that IS one of these
+ * words is an opt-out regardless of which webhook event type delivered it.
+ */
+const STOP_WORDS = /^\s*(stop|stopall|unsubscribe|cancel|end|quit)\s*$/i;
+
 /** Raw phone from the payload, normalized to E.164 (null when unusable). */
 function extractPhone(
   candidates: Array<Record<string, unknown>>,
@@ -124,13 +143,16 @@ type Classification =
       status: string;
       phone: string | null;
     }
+  | { kind: "inbound"; phone: string; text: string; stopWord: boolean }
   | { kind: "unknown" };
 
 /**
  * Tolerant classifier. Unsubscribe-ish wins first (an /unsub/i event type or
  * `action: 'STOP'`); then delivery-ish (a message id AND a status matching
  * /deliver/i, with /undeliver|fail/i checked first — "UNDELIVERED" contains
- * "deliver"); everything else is `unknown`.
+ * "deliver"); then inbound-ish (a normalizable phone AND a message body —
+ * both required, so notification-shaped payloads without a sender don't
+ * pollute the inbox); everything else is `unknown`.
  */
 function classify(payload: unknown): Classification {
   const candidates = candidateObjects(payload);
@@ -172,6 +194,12 @@ function classify(payload: unknown): Classification {
     }
   }
 
+  const text = firstString(candidates, MESSAGE_KEYS);
+  const phone = extractPhone(candidates);
+  if (text && phone) {
+    return { kind: "inbound", phone, text, stopWord: STOP_WORDS.test(text) };
+  }
+
   return { kind: "unknown" };
 }
 
@@ -206,6 +234,24 @@ export async function POST(req: Request): Promise<Response> {
       // outbox row for the phone across all campaigns.
       await recordSuppression(classified.phone, "stop", raw);
       await suppressActiveRecipientsByPhone(classified.phone);
+    }
+
+    if (classified.kind === "inbound") {
+      // STOP-word opt-out FIRST — the suppression is the part that must not
+      // be lost if the inbox insert below fails.
+      if (classified.stopWord) {
+        await recordSuppression(classified.phone, "stop", raw);
+        await suppressActiveRecipientsByPhone(classified.phone);
+      }
+      const recipient = await findRecipientForInbound(classified.phone);
+      await recordInboundMessage({
+        phone: classified.phone,
+        body: classified.text,
+        raw,
+        matchedRecipientId: recipient?.id ?? null,
+        matchedCampaignId: recipient?.campaign_id ?? null,
+      });
+      matchedRecipientId = recipient?.id ?? null;
     }
 
     if (classified.kind === "delivery_report") {

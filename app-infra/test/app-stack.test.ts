@@ -356,7 +356,33 @@ test('an UNAUTHENTICATED POST /api/webhooks/simpletexting listener rule forwards
   expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
 });
 
-test('preview: NO listener rules at all (health + webhook exceptions are production-only)', () => {
+test('an UNAUTHENTICATED GET /l/* listener rule forwards without Cognito (tracked links)', () => {
+  const { template } = makeApp();
+  const rules = template.findResources('AWS::ElasticLoadBalancingV2::ListenerRule');
+  const linkRule = Object.values(rules).find((r: any) =>
+    (r.Properties.Conditions ?? []).some((c: any) =>
+      c.Field === 'path-pattern' &&
+      (c.PathPatternConfig?.Values ?? c.Values ?? []).includes('/l/*'),
+    ),
+  ) as any;
+  expect(linkRule).toBeDefined();
+  expect(linkRule.Properties.Priority).toBe(30);
+  // Method-scoped: recipients only ever GET; anything else on the path still
+  // falls through to the Cognito default action.
+  const conditions = linkRule.Properties.Conditions ?? [];
+  expect(
+    conditions.some(
+      (c: any) =>
+        c.Field === 'http-request-method' &&
+        (c.HttpRequestMethodConfig?.Values ?? []).includes('GET'),
+    ),
+  ).toBe(true);
+  const actions = linkRule.Properties.Actions ?? [];
+  expect(actions.some((a: any) => a.Type === 'authenticate-cognito')).toBe(false);
+  expect(actions.some((a: any) => a.Type === 'forward')).toBe(true);
+});
+
+test('preview: NO listener rules at all (health + webhook + link exceptions are production-only)', () => {
   const { template } = makePreviewApp();
   template.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0);
 });

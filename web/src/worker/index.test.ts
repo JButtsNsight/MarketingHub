@@ -18,10 +18,12 @@ describe("buildConfigFromEnv", () => {
       claimTtlSeconds: 180,
       ratePerSecond: 2,
       maxAttempts: 3,
+      frequencyCapCount: 0,
+      frequencyCapDays: 0,
     });
   });
 
-  test("honors the five env overrides", () => {
+  test("honors the env overrides", () => {
     expect(
       buildConfigFromEnv({
         SMS_POLL_INTERVAL_MS: "5000",
@@ -29,6 +31,8 @@ describe("buildConfigFromEnv", () => {
         SMS_SEND_RATE_PER_SEC: "5",
         SMS_CLAIM_TTL_S: "60",
         SMS_MAX_ATTEMPTS: "5",
+        SMS_FREQ_CAP_COUNT: "3",
+        SMS_FREQ_CAP_DAYS: "7",
       }),
     ).toEqual({
       pollMs: 5_000,
@@ -36,6 +40,8 @@ describe("buildConfigFromEnv", () => {
       claimTtlSeconds: 60,
       ratePerSecond: 5,
       maxAttempts: 5,
+      frequencyCapCount: 3,
+      frequencyCapDays: 7,
     });
   });
 
@@ -47,6 +53,8 @@ describe("buildConfigFromEnv", () => {
         SMS_SEND_RATE_PER_SEC: "-2",
         SMS_CLAIM_TTL_S: "",
         SMS_MAX_ATTEMPTS: "lots",
+        SMS_FREQ_CAP_COUNT: "-1",
+        SMS_FREQ_CAP_DAYS: "sometimes",
       }),
     ).toEqual({
       pollMs: 30_000,
@@ -54,6 +62,14 @@ describe("buildConfigFromEnv", () => {
       claimTtlSeconds: 180,
       ratePerSecond: 2,
       maxAttempts: 3,
+      frequencyCapCount: 0,
+      frequencyCapDays: 0,
     });
+  });
+
+  test("frequency cap: 0 stays 0 (explicit off) and only one value set still passes through", () => {
+    expect(
+      buildConfigFromEnv({ SMS_FREQ_CAP_COUNT: "0", SMS_FREQ_CAP_DAYS: "7" }),
+    ).toMatchObject({ frequencyCapCount: 0, frequencyCapDays: 7 });
   });
 });

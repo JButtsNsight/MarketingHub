@@ -12,6 +12,8 @@ const h = vi.hoisted(() => ({
   recordWebhookEvent: vi.fn(),
   findRecipientForDeliveryReport: vi.fn(),
   applyDeliveryReport: vi.fn(),
+  findRecipientForInbound: vi.fn(),
+  recordInboundMessage: vi.fn(),
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
@@ -20,6 +22,8 @@ vi.mock("@/lib/sms/repo", () => ({
   recordWebhookEvent: h.recordWebhookEvent,
   findRecipientForDeliveryReport: h.findRecipientForDeliveryReport,
   applyDeliveryReport: h.applyDeliveryReport,
+  findRecipientForInbound: h.findRecipientForInbound,
+  recordInboundMessage: h.recordInboundMessage,
 }));
 
 import { POST } from "./route";
@@ -34,6 +38,8 @@ beforeEach(() => {
   h.recordWebhookEvent.mockResolvedValue("evt-1");
   h.findRecipientForDeliveryReport.mockResolvedValue(null);
   h.applyDeliveryReport.mockResolvedValue(null);
+  h.findRecipientForInbound.mockResolvedValue(null);
+  h.recordInboundMessage.mockResolvedValue("in-1");
 });
 
 afterEach(() => {
@@ -236,6 +242,106 @@ describe("POST /api/webhooks/simpletexting — delivery reports", () => {
       "delivery_report",
       payload,
       null,
+    );
+  });
+});
+
+describe("POST /api/webhooks/simpletexting — inbound replies", () => {
+  test("stores a reply matched to the newest outbox row for the phone", async () => {
+    h.findRecipientForInbound.mockResolvedValue({
+      id: "r7",
+      campaign_id: "c-3",
+    });
+    const payload = {
+      event: "incoming-message",
+      values: { from: "(555) 000-0004", text: "Yes, what time works?" },
+    };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+
+    expect(h.findRecipientForInbound).toHaveBeenCalledWith("+15550000004");
+    expect(h.recordInboundMessage).toHaveBeenCalledWith({
+      phone: "+15550000004",
+      body: "Yes, what time works?",
+      raw: payload,
+      matchedRecipientId: "r7",
+      matchedCampaignId: "c-3",
+    });
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith("inbound", payload, "r7");
+    // a plain reply is NOT an opt-out
+    expect(h.recordSuppression).not.toHaveBeenCalled();
+    expect(h.suppressActiveRecipientsByPhone).not.toHaveBeenCalled();
+  });
+
+  test("stores an unmatched reply with null attribution", async () => {
+    const payload = { phone: "+15550000005", message: "Who is this?" };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+    expect(h.recordInboundMessage).toHaveBeenCalledWith({
+      phone: "+15550000005",
+      body: "Who is this?",
+      raw: payload,
+      matchedRecipientId: null,
+      matchedCampaignId: null,
+    });
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "inbound",
+      payload,
+      null,
+    );
+  });
+
+  test("a STOP-word reply also lands on the STOP list (belt-and-suspenders)", async () => {
+    const payload = { phone: "+15550000006", text: " Stop " };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+    expect(h.recordSuppression).toHaveBeenCalledWith(
+      "+15550000006",
+      "stop",
+      payload,
+    );
+    expect(h.suppressActiveRecipientsByPhone).toHaveBeenCalledWith(
+      "+15550000006",
+    );
+    // still stored so the inbox shows the opt-out conversation (body arrives
+    // trimmed — firstString trims every extracted field)
+    expect(h.recordInboundMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ phone: "+15550000006", body: "Stop" }),
+    );
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "inbound",
+      payload,
+      null,
+    );
+  });
+
+  test("text without a normalizable phone stays unknown (no inbox pollution)", async () => {
+    const payload = { text: "system notification", phone: "123" };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+    expect(h.recordInboundMessage).not.toHaveBeenCalled();
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "unknown",
+      payload,
+      null,
+    );
+  });
+
+  test("a delivery report that carries the original text is still a delivery report", async () => {
+    h.findRecipientForDeliveryReport.mockResolvedValue({ id: "r8" });
+    const payload = {
+      messageId: "st-msg-8",
+      status: "DELIVERED",
+      contactPhone: "+15550000008",
+      text: "Hi Pat, your visit is booked.",
+    };
+    const res = await POST(postReq(payload));
+    expect(res.status).toBe(200);
+    expect(h.recordInboundMessage).not.toHaveBeenCalled();
+    expect(h.recordWebhookEvent).toHaveBeenCalledWith(
+      "delivery_report",
+      payload,
+      "r8",
     );
   });
 });

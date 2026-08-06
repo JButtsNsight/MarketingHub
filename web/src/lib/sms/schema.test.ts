@@ -41,6 +41,7 @@ describe("status constants", () => {
       "suppressed",
       "skipped",
       "canceled",
+      "frequency_capped",
     ]);
   });
 });

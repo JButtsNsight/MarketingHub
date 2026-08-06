@@ -107,3 +107,48 @@ describe("parseContactSheet", () => {
     );
   });
 });
+
+describe("consent provenance columns", () => {
+  it("captures consent source + date verbatim when the sheet has them", () => {
+    const sheet = [
+      "name,phone,consent source,consent date",
+      'Ada Lovelace,(555) 000-0001,web form,2026-01-15',
+      'Grace Hopper,(555) 000-0002,,',
+    ].join("\n");
+
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[0].consentSource).toBe("web form");
+    expect(contacts[0].consentDate).toBe("2026-01-15");
+    // blank cells → null, never empty strings
+    expect(contacts[1].consentSource).toBeNull();
+    expect(contacts[1].consentDate).toBeNull();
+  });
+
+  it("omits the consent keys entirely when the sheet has no consent columns", () => {
+    const sheet = ["name,phone", "Ada Lovelace,(555) 000-0001"].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[0]).not.toHaveProperty("consentSource");
+    expect(contacts[0]).not.toHaveProperty("consentDate");
+  });
+
+  it("a lone consent-date column is not mistaken for the source (prefix hazard)", () => {
+    const sheet = [
+      "name,phone,consent date",
+      "Ada Lovelace,(555) 000-0001,2026-01-15",
+    ].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[0].consentDate).toBe("2026-01-15");
+    expect(contacts[0].consentSource).toBeNull();
+  });
+
+  it("recognizes opt-in variants and carries consent on invalid rows too (audit)", () => {
+    const sheet = [
+      "name,phone,opt-in source,opt-in date",
+      "Bad Phone,123,card at front desk,Jan 2026",
+    ].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[0].reason).toBe("invalid");
+    expect(contacts[0].consentSource).toBe("card at front desk");
+    expect(contacts[0].consentDate).toBe("Jan 2026");
+  });
+});

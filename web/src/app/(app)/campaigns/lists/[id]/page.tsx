@@ -33,6 +33,21 @@ const MEMBER_COLUMNS: Column<ContactListMember>[] = [
       </Badge>
     ),
   },
+  {
+    key: "consent",
+    header: "consent",
+    width: "220px",
+    // Provenance verbatim from the uploaded sheet — audit evidence of what
+    // was claimed at import time, never validated or parsed.
+    render: (m) =>
+      m.consent_source || m.consent_date ? (
+        <span title="as provided in the uploaded sheet">
+          {[m.consent_source, m.consent_date].filter(Boolean).join(" · ")}
+        </span>
+      ) : (
+        "—"
+      ),
+  },
 ];
 
 /**

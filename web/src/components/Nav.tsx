@@ -11,6 +11,9 @@ export type IconKey =
   | "storage"
   | "templates"
   | "campaigns"
+  | "inbox"
+  | "review"
+  | "suppressions"
   | "auth"
   | "api"
   | "infra"
@@ -38,6 +41,14 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/storage", label: "Storage", icon: "storage" },
       { href: "/templates", label: "Templates", icon: "templates" },
       { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
+    ],
+  },
+  {
+    label: "Engage",
+    items: [
+      { href: "/inbox", label: "Inbox", icon: "inbox" },
+      { href: "/review", label: "Review queue", icon: "review" },
+      { href: "/suppressions", label: "Suppressions", icon: "suppressions" },
     ],
   },
   {
@@ -96,6 +107,25 @@ const ICONS: Record<IconKey, ReactNode> = {
     <>
       <path d="M21 11.5a8 8 0 0 1-8.5 8L7 21l1.2-3.6A8 8 0 1 1 21 11.5z" />
       <path d="M8.5 10h7M8.5 13.5h4.5" />
+    </>
+  ),
+  inbox: (
+    <>
+      <path d="M22 12h-6l-2 3h-4l-2-3H2" />
+      <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+    </>
+  ),
+  review: (
+    <>
+      <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  suppressions: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M5.6 5.6l12.8 12.8" />
     </>
   ),
   auth: (

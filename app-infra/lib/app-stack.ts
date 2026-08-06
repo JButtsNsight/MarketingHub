@@ -534,6 +534,19 @@ export class AppStack extends Stack {
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
 
+    // Unauthenticated exception #3: tracked short links (`/l/<slug>` embedded
+    // in campaign SMS) are clicked from recipients' phones — no Cognito
+    // session possible. The route resolves app-generated slugs only: unknown
+    // → 404, known → 302 to the campaign's target URL. Method-scoped to GET.
+    listener.addAction('TrackedLinkUnauthenticated', {
+      priority: 30,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/l/*']),
+        elbv2.ListenerCondition.httpRequestMethods(['GET']),
+      ],
+      action: elbv2.ListenerAction.forward([targetGroup]),
+    });
+
     // --- WAFv2 (REGIONAL) in front of the ALB ---
     const webAcl = new wafv2.CfnWebACL(this, 'AppWebAcl', {
       scope: 'REGIONAL',

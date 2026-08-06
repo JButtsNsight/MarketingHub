@@ -23,6 +23,8 @@ const CONFIG: DispatcherConfig = {
   claimTtlSeconds: 180,
   ratePerSecond: 2, // → 500 ms throttle gap between POSTs
   maxAttempts: 3,
+  frequencyCapCount: 0,
+  frequencyCapDays: 0,
 };
 
 /** Frozen "now" for every test — backoff instants are asserted as deltas. */
@@ -222,6 +224,18 @@ describe("createDispatcher tick — core drain loop", () => {
     expect(h.deps.claimDueRecipients).toHaveBeenCalledTimes(3);
     expect(h.deps.sendSms).toHaveBeenCalledTimes(2);
     expect(stats.sent).toBe(2);
+  });
+
+  test("passes the frequency-cap config through to the claim call", async () => {
+    const h = makeHarness();
+
+    await createDispatcher(h.deps, {
+      ...CONFIG,
+      frequencyCapCount: 2,
+      frequencyCapDays: 7,
+    }).tick();
+
+    expect(h.deps.claimDueRecipients).toHaveBeenCalledWith(25, 180, 2, 7);
   });
 
   test("empty first claim: no statuses fetch, no sends, still completes drained campaigns", async () => {
