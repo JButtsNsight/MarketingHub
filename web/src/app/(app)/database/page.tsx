@@ -1,112 +1,60 @@
-import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
-import { DataTable, type Column } from "@/components/ui/DataTable";
-import { Badge } from "@/components/ui/Badge";
-import { categoryColorVar } from "@/components/templates/categoryColor";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { listTemplateRows } from "@/lib/console/db";
+import { listEditorTables } from "@/lib/console/tables";
 import { DB_TABS } from "@/lib/console/tabs";
-import type { Template } from "@/lib/templates/schema";
+import { TableEditor } from "@/components/console/TableEditor";
+import { Surface } from "@/components/Surface";
 
+// Reads request-time identity + live introspection; never prerender.
 export const dynamic = "force-dynamic";
 
-const COLUMNS: Column<Template>[] = [
-  {
-    key: "id",
-    header: "id",
-    mono: true,
-    width: "110px",
-    render: (r) => <span title={r.id}>{r.id.slice(0, 8)}…</span>,
-  },
-  {
-    key: "name",
-    header: "name",
-    render: (r) => <Link href={`/templates/${r.id}`}>{r.name}</Link>,
-  },
-  {
-    key: "type",
-    header: "type",
-    width: "84px",
-    render: (r) => <Badge>{r.type}</Badge>,
-  },
-  {
-    key: "category",
-    header: "category",
-    width: "150px",
-    render: (r) => (
-      <Badge tone={categoryColorVar(r.category)}>{r.category}</Badge>
-    ),
-  },
-  { key: "created_by", header: "created_by", mono: true },
-  {
-    key: "created_at",
-    header: "created_at",
-    mono: true,
-    width: "116px",
-    render: (r) => r.created_at.slice(0, 10),
-  },
-  {
-    key: "storage_path",
-    header: "file",
-    mono: true,
-    width: "70px",
-    render: (r) => (r.storage_path ? "yes" : "—"),
-  },
-];
+export const metadata = {
+  title: "Table Editor · MarketingHub",
+};
 
-export default async function DatabaseRowsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ page?: string }>;
-}) {
+/**
+ * The Table Editor (Studio parity): live pg-meta introspection builds the
+ * table rail + column metadata server-side; the client island owns browsing,
+ * filtering, editing, inserting, and deleting through the group-gated
+ * /api/console/rows routes.
+ *
+ * Introspection failure (pg-meta unreachable) degrades to an explicit error
+ * card — never a blank console.
+ */
+export default async function DatabasePage() {
+  // Server-side group gate: mirrors the API handlers so this page can't be
+  // browsed by an authenticated employee outside the `marketing` group.
   await requireMarketingUser();
-  const sp = await searchParams;
-  const requested = Number.parseInt(sp.page ?? "1", 10);
-  const { rows, total, page, pageCount } = await listTemplateRows(
-    Number.isFinite(requested) ? requested : 1,
-  );
+
+  let tables;
+  try {
+    tables = await listEditorTables();
+  } catch {
+    tables = null;
+  }
 
   return (
     <>
       <PageHeader
-        eyebrow="Database"
-        title="marketinghub.templates"
-        subtitle="Rows read via the service-role data API (PostgREST)."
-        count={`${total} rows`}
+        eyebrow="Build"
+        title="Database"
+        subtitle="Browse and edit rows across the exposed schemas — structure comes from live introspection (postgres-meta), data moves through the group-gated data API."
       />
       <Tabs items={DB_TABS} />
 
-      <DataTable
-        columns={COLUMNS}
-        rows={rows}
-        getRowKey={(r) => r.id}
-        empty="No templates yet — add one from the Templates section."
-      />
-
-      <div className="pager">
-        <span className="pager-info">
-          page {page} of {pageCount}
-        </span>
-        {page > 1 ? (
-          <Link className="pager-link" href={`/database?page=${page - 1}`}>
-            Previous
-          </Link>
-        ) : (
-          <span className="pager-link" aria-disabled="true">
-            Previous
-          </span>
-        )}
-        {page < pageCount ? (
-          <Link className="pager-link" href={`/database?page=${page + 1}`}>
-            Next
-          </Link>
-        ) : (
-          <span className="pager-link" aria-disabled="true">
-            Next
-          </span>
-        )}
-      </div>
+      {tables ? (
+        <TableEditor initialTables={tables} />
+      ) : (
+        <Surface className="empty-state" glint>
+          <h2>Introspection unavailable</h2>
+          <p>
+            postgres-meta did not answer through the data API. The backend may
+            be restarting — refresh in a moment. Row browsing is disabled until
+            live table metadata is available.
+          </p>
+        </Surface>
+      )}
     </>
   );
 }

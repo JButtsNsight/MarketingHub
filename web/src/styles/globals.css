@@ -922,6 +922,194 @@ input[type="file"].control {
   padding: 32px 16px !important;
 }
 
+/* ── DataGrid (editable console grid; extends .dtable) ── */
+.dgrid td {
+  cursor: default;
+}
+.dgrid-check {
+  width: 36px;
+  text-align: center !important;
+  padding: 11px 8px !important;
+}
+.dgrid-check input {
+  accent-color: var(--accent);
+}
+.dgrid-sort {
+  all: unset;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+}
+.dgrid-sort:hover {
+  color: var(--ink);
+}
+.dgrid-pk {
+  color: var(--accent);
+  font-size: 9px;
+}
+.dgrid-null {
+  color: var(--muted);
+  font-style: italic;
+  font-size: 11px;
+  letter-spacing: 0.5px;
+}
+.dgrid-busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.dgrid-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+}
+.dgrid-editor .control {
+  width: 100%;
+  font-size: 12.5px;
+}
+.dgrid-editor-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.dgrid-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.dgrid-toolbar .spacer {
+  flex: 1;
+}
+.dgrid-pager {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--fm);
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 14px;
+  justify-content: flex-end;
+}
+
+/* ── Table Editor layout ── */
+.teditor {
+  display: grid;
+  grid-template-columns: 230px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.teditor-rail {
+  padding: 14px 10px;
+  border-radius: 14px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+.teditor-rail .nav-link {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.teditor-tname {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.teditor-test {
+  font-family: var(--fm);
+  font-size: 10.5px;
+  color: var(--muted);
+}
+.teditor-main {
+  min-width: 0;
+}
+.teditor-warn {
+  margin-bottom: 12px;
+}
+.teditor-fctl {
+  font-size: 12.5px;
+  padding: 6px 10px;
+  max-width: 180px;
+}
+.teditor-insert {
+  padding: 16px;
+  border-radius: 14px;
+  margin-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.teditor-insert-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+}
+.teditor-null {
+  font-family: var(--fm);
+  font-size: 11px;
+  color: var(--muted);
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  margin-top: 4px;
+}
+@media (max-width: 900px) {
+  .teditor {
+    grid-template-columns: 1fr;
+  }
+  .teditor-rail {
+    position: static;
+    max-height: 240px;
+  }
+}
+
+/* ── SQL editor (CodeMirror 6, themed via tokens) ── */
+.sqled .cm-editor {
+  font-family: var(--fm);
+  font-size: 13px;
+  background: transparent;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  min-height: 160px;
+}
+.sqled .cm-editor.cm-focused {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hair));
+}
+.sqled .cm-content {
+  padding: 12px 4px;
+  caret-color: var(--accent);
+}
+.sqled .cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--hair);
+  color: var(--muted);
+  font-size: 11px;
+}
+.sqled .cm-activeLine,
+.sqled .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+.sqled .cm-selectionBackground,
+.sqled .cm-editor ::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent) !important;
+}
+.sqled .cm-cursor {
+  border-left-color: var(--accent);
+}
+
 /* ── Tabs ── */
 .tabs {
   display: inline-flex;
