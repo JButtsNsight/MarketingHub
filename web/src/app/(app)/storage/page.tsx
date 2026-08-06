@@ -1,132 +1,68 @@
-import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
-import { DataTable, type Column } from "@/components/ui/DataTable";
-import { Badge } from "@/components/ui/Badge";
+import { Surface } from "@/components/Surface";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { listBucket, CAMPAIGN_BUCKET, type StorageEntry } from "@/lib/console/storage";
+import {
+  listBucket,
+  listBuckets,
+  CAMPAIGN_BUCKET,
+} from "@/lib/console/storage";
+import { StorageBrowser } from "@/components/console/StorageBrowser";
 
+// Reads request-time identity + live bucket listings; never prerender.
 export const dynamic = "force-dynamic";
 
-function formatBytes(bytes: number | null): string {
-  if (bytes == null) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  return `${value.toFixed(1)} ${units[unit]}`;
-}
+export const metadata = {
+  title: "Storage · MarketingHub",
+};
 
-interface Crumb {
-  label: string;
-  prefix: string;
-}
-
-function crumbs(prefix: string): Crumb[] {
-  const segments = prefix ? prefix.split("/").filter(Boolean) : [];
-  const out: Crumb[] = [{ label: CAMPAIGN_BUCKET, prefix: "" }];
-  let acc = "";
-  for (const seg of segments) {
-    acc = acc ? `${acc}/${seg}` : seg;
-    out.push({ label: seg, prefix: acc });
-  }
-  return out;
-}
-
-export default async function StoragePage({
-  searchParams,
-}: {
-  searchParams: Promise<{ prefix?: string }>;
-}) {
+/**
+ * The Storage browser (Studio parity): every bucket, upload/rename/delete/
+ * preview/download. Objects are proxied through the console via short-lived
+ * signed URLs — the internal data API stays private.
+ */
+export default async function StoragePage() {
+  // Server-side group gate: mirrors the API handlers.
   await requireMarketingUser();
-  const sp = await searchParams;
-  const prefix = (sp.prefix ?? "").replace(/^\/+|\/+$/g, "");
-  const entries = await listBucket(prefix);
 
-  const columns: Column<StorageEntry>[] = [
-    {
-      key: "name",
-      header: "name",
-      render: (e) =>
-        e.isFolder ? (
-          <Link href={`/storage?prefix=${encodeURIComponent(e.path)}`}>
-            {e.name}/
-          </Link>
-        ) : (
-          <span className="mono">{e.name}</span>
-        ),
-    },
-    {
-      key: "type",
-      header: "type",
-      width: "140px",
-      render: (e) => (
-        <Badge>{e.isFolder ? "folder" : (e.mimetype ?? "file")}</Badge>
-      ),
-    },
-    {
-      key: "size",
-      header: "size",
-      mono: true,
-      align: "right",
-      width: "90px",
-      render: (e) => (e.isFolder ? "—" : formatBytes(e.size)),
-    },
-    {
-      key: "updatedAt",
-      header: "updated",
-      mono: true,
-      width: "116px",
-      render: (e) => (e.updatedAt ? e.updatedAt.slice(0, 10) : "—"),
-    },
-    {
-      key: "action",
-      header: "",
-      align: "right",
-      width: "110px",
-      render: (e) =>
-        e.isFolder ? null : (
-          <a
-            href={`/api/console/storage/download?path=${encodeURIComponent(e.path)}`}
-          >
-            Download
-          </a>
-        ),
-    },
-  ];
-
-  const trail = crumbs(prefix);
+  let buckets: Awaited<ReturnType<typeof listBuckets>> = [];
+  let entries: Awaited<ReturnType<typeof listBucket>> = [];
+  let initialBucket = CAMPAIGN_BUCKET;
+  try {
+    buckets = await listBuckets();
+    if (buckets.length > 0 && !buckets.some((b) => b.name === initialBucket)) {
+      initialBucket = buckets[0].name;
+    }
+    if (buckets.length > 0) {
+      entries = await listBucket("", initialBucket);
+    }
+  } catch {
+    buckets = [];
+  }
 
   return (
     <>
       <PageHeader
-        eyebrow="Storage"
-        title="campaign-templates"
-        subtitle="Private bucket — objects are proxied through the console via short-lived signed URLs."
-        count={`${entries.length} items`}
+        eyebrow="Build"
+        title="Storage"
+        subtitle="Private buckets — objects are proxied through the console via short-lived signed URLs. Uploads never overwrite; replacing a file is an explicit delete-then-upload."
+        count={`${buckets.length} bucket${buckets.length === 1 ? "" : "s"}`}
       />
 
-      <nav className="tabs" aria-label="Breadcrumb">
-        {trail.map((c, i) => (
-          <Link
-            key={i}
-            href={`/storage?prefix=${encodeURIComponent(c.prefix)}`}
-            className={i === trail.length - 1 ? "tab on" : "tab"}
-          >
-            {c.label}
-          </Link>
-        ))}
-      </nav>
-
-      <DataTable
-        columns={columns}
-        rows={entries}
-        getRowKey={(e) => e.path}
-        empty="This location is empty."
-      />
+      {buckets.length > 0 ? (
+        <StorageBrowser
+          initialBuckets={buckets}
+          initialBucket={initialBucket}
+          initialEntries={entries}
+        />
+      ) : (
+        <Surface className="empty-state" glint>
+          <h2>Storage unavailable</h2>
+          <p>
+            The Storage API did not answer (or no buckets exist yet) — refresh
+            in a moment.
+          </p>
+        </Surface>
+      )}
     </>
   );
 }

@@ -1110,6 +1110,37 @@ input[type="file"].control {
   border-left-color: var(--accent);
 }
 
+/* ── Storage browser ── */
+.storage-folder {
+  all: unset;
+  cursor: pointer;
+  color: var(--accent);
+  font-family: var(--fm);
+}
+.storage-folder:hover {
+  text-decoration: underline;
+}
+.storage-crumbs {
+  margin-bottom: 0;
+}
+.storage-file-input {
+  display: none;
+}
+.storage-preview {
+  padding: 16px;
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.storage-preview img {
+  max-width: 100%;
+  max-height: 420px;
+  object-fit: contain;
+  border-radius: 8px;
+  align-self: flex-start;
+}
+
 /* ── SQL console layout ── */
 .sqlconsole {
   display: grid;
