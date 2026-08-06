@@ -111,18 +111,21 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
     [selected],
   );
 
-  const rowKey = useCallback(
-    (row: Record<string, unknown>) =>
-      selected && selected.primaryKeys.length > 0
-        ? selected.primaryKeys.map((k) => String(row[k])).join("∴")
-        : JSON.stringify(row),
-    [selected],
-  );
-
   const pkOf = useCallback(
     (row: Record<string, unknown>) =>
       Object.fromEntries((selected?.primaryKeys ?? []).map((k) => [k, row[k]])),
     [selected],
+  );
+
+  // JSON-encode the PK so composite-key segments can't concatenate into a
+  // colliding key (a value containing a chosen separator would otherwise let
+  // one row's selection/delete hit another).
+  const rowKey = useCallback(
+    (row: Record<string, unknown>) =>
+      selected && selected.primaryKeys.length > 0
+        ? JSON.stringify(pkOf(row))
+        : JSON.stringify(row),
+    [selected, pkOf],
   );
 
   // Latest-wins row fetch — a stale response must never clobber a newer one.

@@ -19,6 +19,7 @@ import {
   deleteSnippet,
   listHistory,
   listSnippets,
+  ReadOnlyViolationError,
   runConsoleQuery,
   updateSnippet,
   MAX_RESULT_ROWS,
@@ -87,6 +88,53 @@ describe("classifySql", () => {
 });
 
 describe("runConsoleQuery", () => {
+  test("reads run inside a read-only transaction wrapper", async () => {
+    h.runQuery.mockResolvedValue([{ ok: 1 }]);
+    h.client = buildClient([ok(null)]).client;
+
+    await runConsoleQuery("select 1", "amy@nsight.example");
+
+    expect(h.runQuery).toHaveBeenCalledWith(
+      "begin transaction read only; select 1; commit;",
+    );
+  });
+
+  test("a confirmed write runs raw (no read-only wrapper)", async () => {
+    h.runQuery.mockResolvedValue([]);
+    h.client = buildClient([ok(null)]).client;
+
+    await runConsoleQuery(
+      "update marketinghub.templates set name='x'",
+      "amy@nsight.example",
+      true,
+    );
+
+    expect(h.runQuery).toHaveBeenCalledWith(
+      "update marketinghub.templates set name='x'",
+    );
+  });
+
+  test("a read that actually writes (25006) throws ReadOnlyViolationError, records nothing", async () => {
+    h.runQuery.mockRejectedValue(
+      new Error(
+        "[console:pgmeta] query failed: 400: cannot execute UPDATE in a read-only transaction",
+      ),
+    );
+    const { client, logs } = buildClient([ok(null)]);
+    h.client = client;
+
+    await expect(
+      // EXPLAIN ANALYZE UPDATE classifies read but executes a write
+      runConsoleQuery(
+        "explain analyze update marketinghub.templates set name='x'",
+        "amy@nsight.example",
+      ),
+    ).rejects.toBeInstanceOf(ReadOnlyViolationError);
+
+    // aborted txn: no history row written
+    expect(logs.find((l) => l.table === "console_query_history")).toBeUndefined();
+  });
+
   test("runs, caps rows at MAX_RESULT_ROWS, and records history", async () => {
     const big = Array.from({ length: MAX_RESULT_ROWS + 5 }, (_, i) => ({ i }));
     h.runQuery.mockResolvedValue(big);

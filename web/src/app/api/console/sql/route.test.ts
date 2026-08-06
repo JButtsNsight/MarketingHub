@@ -26,11 +26,13 @@ const h = vi.hoisted(() => ({
 vi.mock("@/lib/console/sql", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/console/sql")>();
   return {
-    ...actual, // classifySql stays REAL — the confirm handshake is under test
+    ...actual, // classifySql + ReadOnlyViolationError stay REAL
     runConsoleQuery: h.runConsoleQuery,
     listHistory: h.listHistory,
   };
 });
+
+import { ReadOnlyViolationError } from "@/lib/console/sql";
 
 import { GET, POST } from "./route";
 
@@ -108,6 +110,7 @@ describe("POST /api/console/sql", () => {
     expect(h.runConsoleQuery).toHaveBeenCalledWith(
       "select 1",
       "amy@nsight.example",
+      false,
     );
   });
 
@@ -134,6 +137,43 @@ describe("POST /api/console/sql", () => {
     );
     expect(confirmed.status).toBe(200);
     expect(h.runConsoleQuery).toHaveBeenCalledTimes(1);
+  });
+
+  test("a read-classified statement that writes (read-only violation) 409s for confirmation", async () => {
+    // EXPLAIN ANALYZE UPDATE classifies `read`, so the route runs it; the
+    // read-only txn aborts and runConsoleQuery throws ReadOnlyViolationError.
+    h.runConsoleQuery.mockRejectedValue(new ReadOnlyViolationError());
+    const res = await POST(
+      postReq({
+        sql: "explain analyze update marketinghub.templates set name='x'",
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      requiresConfirmation: true,
+      classification: "write",
+    });
+
+    // Confirming re-runs with confirmWrite=true (raw, no wrapper).
+    h.runConsoleQuery.mockResolvedValue({
+      rows: [],
+      rowCount: 0,
+      truncated: false,
+      durationMs: 4,
+      classification: "read",
+    });
+    const confirmed = await POST(
+      postReq({
+        sql: "explain analyze update marketinghub.templates set name='x'",
+        confirmWrite: true,
+      }),
+    );
+    expect(confirmed.status).toBe(200);
+    expect(h.runConsoleQuery).toHaveBeenLastCalledWith(
+      expect.any(String),
+      "amy@nsight.example",
+      true,
+    );
   });
 
   test("Postgres errors surface as 400 with the real message", async () => {

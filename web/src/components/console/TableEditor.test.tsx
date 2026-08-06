@@ -134,7 +134,9 @@ describe("TableEditor", () => {
     render(<TableEditor initialTables={[TEMPLATES]} />);
     await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
 
-    await user.click(screen.getByRole("checkbox", { name: "Select row r1" }));
+    // Row keys are JSON-encoded PKs ({"id":"r1"}); click the first data-row
+    // checkbox (index 0 is the select-all header checkbox).
+    await user.click(screen.getAllByRole("checkbox")[1]);
     await user.click(screen.getByRole("button", { name: "Delete 1 selected" }));
     expect(calls.some((c) => c.init?.method === "DELETE")).toBe(false);
 

@@ -189,6 +189,23 @@ describe("POST /api/console/rows", () => {
     expect(await res.json()).toEqual({ row: { id: "new", name: "Hello" } });
   });
 
+  test("403 on a read-only table (audit trail) — insert refused before any write", async () => {
+    h.getEditorTable.mockResolvedValue({
+      ...META,
+      schema: "marketinghub",
+      name: "console_query_history",
+    });
+    const res = await POST(
+      bodyReq("POST", {
+        schema: "marketinghub",
+        table: "console_query_history",
+        values: { sql: "x" },
+      }),
+    );
+    expect(res.status).toBe(403);
+    expect(h.insertRow).not.toHaveBeenCalled();
+  });
+
   test("400 for unknown columns; 400 with the real Postgres message on constraint errors", async () => {
     const res = await POST(
       bodyReq("POST", {

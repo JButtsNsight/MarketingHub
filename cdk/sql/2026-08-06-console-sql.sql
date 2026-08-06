@@ -47,7 +47,12 @@ create index if not exists console_query_history_ran_at_idx
 -- ---------------------------------------------------------------------------
 -- PRIVILEGES — service_role is the ONLY role that touches this schema
 -- (idempotent re-assert, order-independent from the earlier migrations).
+-- The explicit REVOKE mirrors enable-rls-template.sql so a forgotten policy
+-- would fail CLOSED (defense-in-depth on top of the deny-all RLS below).
 -- ---------------------------------------------------------------------------
+revoke all on marketinghub.console_snippets from anon, authenticated, public;
+revoke all on marketinghub.console_query_history from anon, authenticated, public;
+
 grant usage on schema marketinghub to service_role;
 grant all privileges on all tables in schema marketinghub to service_role;
 alter default privileges in schema marketinghub

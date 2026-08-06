@@ -7,6 +7,7 @@ import {
   getRows,
   insertRow,
   isFilterOp,
+  isReadOnlyTable,
   updateRow,
   DEFAULT_PAGE_SIZE,
   MAX_PAGE_SIZE,
@@ -170,6 +171,12 @@ export async function POST(req: Request): Promise<Response> {
   if (!meta) {
     return Response.json({ error: "Table not found" }, { status: 404 });
   }
+  if (isReadOnlyTable(meta.schema, meta.name)) {
+    return Response.json(
+      { error: "This table is read-only in the console." },
+      { status: 403 },
+    );
+  }
   if (!knownColumns(meta, Object.keys(parsed.data.values))) {
     return Response.json({ error: "Unknown column in values" }, { status: 400 });
   }
@@ -203,6 +210,12 @@ export async function PATCH(req: Request): Promise<Response> {
   const meta = await getEditorTable(parsed.data.schema, parsed.data.table);
   if (!meta) {
     return Response.json({ error: "Table not found" }, { status: 404 });
+  }
+  if (isReadOnlyTable(meta.schema, meta.name)) {
+    return Response.json(
+      { error: "This table is read-only in the console." },
+      { status: 403 },
+    );
   }
   if (meta.primaryKeys.length === 0) {
     return Response.json(
@@ -255,6 +268,12 @@ export async function DELETE(req: Request): Promise<Response> {
   const meta = await getEditorTable(parsed.data.schema, parsed.data.table);
   if (!meta) {
     return Response.json({ error: "Table not found" }, { status: 404 });
+  }
+  if (isReadOnlyTable(meta.schema, meta.name)) {
+    return Response.json(
+      { error: "This table is read-only in the console." },
+      { status: 403 },
+    );
   }
   if (meta.primaryKeys.length === 0) {
     return Response.json(

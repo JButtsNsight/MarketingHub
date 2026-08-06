@@ -44,7 +44,9 @@ function formatBytes(bytes: number | null): string {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-const PREVIEWABLE = /^image\/(png|jpe?g|gif|webp|svg\+xml)$/;
+// Raster images only — must match the download route's INLINE_SAFE allowlist.
+// SVG is deliberately excluded: served inline it would script the app origin.
+const PREVIEWABLE = /^image\/(png|jpe?g|gif|webp)$/;
 
 export function StorageBrowser({
   initialBuckets,

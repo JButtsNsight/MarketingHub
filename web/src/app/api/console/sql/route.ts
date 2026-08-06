@@ -4,6 +4,7 @@ import { AuthError, requireUser } from "@/lib/auth";
 import {
   classifySql,
   listHistory,
+  ReadOnlyViolationError,
   runConsoleQuery,
 } from "@/lib/console/sql";
 
@@ -57,7 +58,10 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   const classification = classifySql(parsed.data.sql);
-  if (classification === "write" && parsed.data.confirmWrite !== true) {
+  const confirmWrite = parsed.data.confirmWrite === true;
+
+  // Up-front confirm for anything the classifier already knows writes.
+  if (classification === "write" && !confirmWrite) {
     return Response.json(
       {
         requiresConfirmation: true,
@@ -70,9 +74,27 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    const result = await runConsoleQuery(parsed.data.sql, user.email);
+    const result = await runConsoleQuery(
+      parsed.data.sql,
+      user.email,
+      confirmWrite,
+    );
     return Response.json(result);
   } catch (err) {
+    // A `read`-classified statement that actually wrote (EXPLAIN ANALYZE DML,
+    // SELECT INTO, side-effect function) aborted in the read-only txn — same
+    // confirm handshake as an up-front write classification.
+    if (err instanceof ReadOnlyViolationError) {
+      return Response.json(
+        {
+          requiresConfirmation: true,
+          classification: "write",
+          error:
+            "This statement modifies the database (or could not be proven read-only). Re-run with confirmation.",
+        },
+        { status: 409 },
+      );
+    }
     // Postgres errors are the editor's normal feedback loop — 400 with the
     // real message (already recorded in history by runConsoleQuery).
     if (err instanceof Error && err.message.startsWith("[console:pgmeta]")) {

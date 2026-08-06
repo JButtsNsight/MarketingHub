@@ -11,14 +11,30 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
+ * Content types safe to serve INLINE from the app origin. Deliberately raster
+ * images only: an inline SVG or HTML upload would execute its own script in
+ * THIS origin — the same origin that drives the superuser SQL editor — so
+ * those (and everything else) are forced to `attachment` regardless of the
+ * caller's `?inline=1`. Object content-type is attacker-controlled (it comes
+ * from the uploader's multipart part), so this allowlist, `nosniff`, and the
+ * locked-down CSP below are the real defense, not the upload path.
+ */
+const INLINE_SAFE = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+]);
+
+/**
  * Stream a Storage object to the browser. The Supabase signed URL points at
  * the PRIVATE internal data API (unreachable from a browser), so this server
  * — which lives inside the VPC — fetches the bytes and proxies them, keeping
  * the internal host private. Gated on the `marketing` Cognito group.
  *
  * `?bucket=` selects any live bucket (validated against listBuckets; default
- * stays campaign-templates for legacy links). `?inline=1` serves the bytes
- * inline — the preview path for images/PDFs in the Storage browser.
+ * stays campaign-templates for legacy links). `?inline=1` requests inline
+ * rendering — honored ONLY for allowlisted raster image types (see above).
  */
 export async function GET(req: Request): Promise<Response> {
   try {
@@ -52,13 +68,21 @@ export async function GET(req: Request): Promise<Response> {
   }
 
   const filename = path.split("/").pop() ?? "download";
-  const headers = new Headers();
   const contentType = upstream.headers.get("content-type");
+  // Inline only for allowlisted raster images; everything else downloads.
+  const serveInline = inline && contentType != null && INLINE_SAFE.has(contentType);
+
+  const headers = new Headers();
   if (contentType) headers.set("content-type", contentType);
   headers.set(
     "content-disposition",
-    `${inline ? "inline" : "attachment"}; filename="${filename}"`,
+    `${serveInline ? "inline" : "attachment"}; filename="${filename}"`,
   );
+  // Never let the browser sniff a different (executable) type than we sent,
+  // and sandbox anything that does render so stored SVG/HTML can't script the
+  // app origin.
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("content-security-policy", "default-src 'none'; sandbox");
   headers.set("cache-control", "private, no-store");
 
   return new NextResponse(upstream.body, { status: 200, headers });

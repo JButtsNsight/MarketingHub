@@ -42,6 +42,26 @@ function nowIso(): string {
 
 export type SqlClassification = "read" | "write";
 
+/**
+ * Thrown when a statement classified `read` actually attempts a write once
+ * executed inside a read-only transaction (Postgres 25006). This is the
+ * backstop that closes classifier blind spots — `EXPLAIN ANALYZE <DML>`
+ * (which executes!), `SELECT … INTO`, and side-effectful function calls like
+ * `select marketinghub.claim_due_sms_recipients(...)` all trip it. The route
+ * turns it into the same confirm handshake a `write` classification gets.
+ */
+export class ReadOnlyViolationError extends Error {
+  constructor() {
+    super("statement attempted a write in a read-only transaction");
+    this.name = "ReadOnlyViolationError";
+  }
+}
+
+/** Postgres raises 25006 / this wording when a read-only txn is written to. */
+function isReadOnlyViolation(message: string): boolean {
+  return /read-only transaction/i.test(message) || /\b25006\b/.test(message);
+}
+
 /** Strip line and block comments so keywords are judged, not prose. */
 function stripComments(sql: string): string {
   return sql
@@ -102,23 +122,43 @@ export interface SqlRunResult {
 }
 
 /**
- * Execute SQL (already confirmed by the route when classified `write`),
- * cap the result payload, and record the run in console_query_history —
- * the audit trail for this superuser surface. History writes are
- * best-effort: losing one must not fail a query that already ran.
+ * Execute SQL and record the run in console_query_history (the audit trail
+ * for this superuser surface). Two execution modes:
+ *
+ * - classified `read` and not confirmed → run inside a READ-ONLY transaction.
+ *   Any actual write aborts with Postgres 25006, which is rethrown as
+ *   ReadOnlyViolationError for the route to convert into a confirm prompt.
+ *   This is the real guard: it does not trust the keyword, it lets Postgres
+ *   decide whether the statement writes.
+ * - classified `write`, OR `read` with `confirmedWrite` (the user knowingly
+ *   ran e.g. `EXPLAIN ANALYZE UPDATE`) → run as-is.
+ *
+ * History writes are best-effort: losing one must not fail a query that ran.
  */
 export async function runConsoleQuery(
   sql: string,
   ranBy: string,
+  confirmedWrite = false,
 ): Promise<SqlRunResult> {
   const classification = classifySql(sql);
+  const readOnly = classification === "read" && !confirmedWrite;
+  // The wrapper preserves the inner SELECT's result rows (pg-meta returns the
+  // last statement's rows) — verified against the live backend.
+  const toRun = readOnly
+    ? `begin transaction read only; ${sql}; commit;`
+    : sql;
   const startedAt = Date.now();
 
   let rows: Array<Record<string, unknown>>;
   try {
-    rows = await runQuery(sql);
+    rows = await runQuery(toRun);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (readOnly && isReadOnlyViolation(message)) {
+      // Nothing executed (the txn aborted) — do not record; the route will
+      // ask for confirmation, exactly like an up-front `write` classification.
+      throw new ReadOnlyViolationError();
+    }
     await recordHistory(sql, ranBy, Date.now() - startedAt, null, message);
     throw err;
   }

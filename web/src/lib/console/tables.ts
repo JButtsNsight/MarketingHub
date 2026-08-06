@@ -34,9 +34,28 @@ export const SENSITIVE_TABLES = new Set([
   "marketinghub.sms_suppressions",
   "marketinghub.sms_suppression_audit",
   "marketinghub.sms_webhook_events",
+  "marketinghub.console_query_history",
   "storage.buckets",
   "storage.objects",
 ]);
+
+/**
+ * Browse-only in the Table Editor — writes are refused (403) regardless of
+ * PostgREST grants. console_query_history is the audit trail for the console
+ * itself; letting a marketing user DELETE/UPDATE their own run records from
+ * the grid would gut it. Enforced in code (not a DB revoke) because every
+ * migration re-runs `grant all on all tables to service_role`, which would
+ * silently undo a revoke; this set cannot be re-granted away. The superuser
+ * SQL-editor path still can (documented limitation — mirror to CloudWatch
+ * for tamper-evidence).
+ */
+export const READ_ONLY_TABLES = new Set([
+  "marketinghub.console_query_history",
+]);
+
+export function isReadOnlyTable(schema: string, table: string): boolean {
+  return READ_ONLY_TABLES.has(`${schema}.${table}`);
+}
 
 /** Rows per page (Studio default) and the cap a request may ask for. */
 export const DEFAULT_PAGE_SIZE = 50;
