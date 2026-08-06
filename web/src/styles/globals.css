@@ -1110,6 +1110,60 @@ input[type="file"].control {
   border-left-color: var(--accent);
 }
 
+/* ── SQL console layout ── */
+.sqlconsole {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 20px;
+  align-items: start;
+}
+.sqlconsole-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.sqlconsole-rail {
+  padding: 14px 10px;
+  border-radius: 14px;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+  position: sticky;
+  top: 20px;
+}
+.sqlconsole-rail .nav-link {
+  width: 100%;
+  cursor: pointer;
+  border: none;
+  background: none;
+  font: inherit;
+  text-align: left;
+}
+.sqlconsole-snippet {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sqlconsole-snippet .nav-link {
+  flex: 1;
+  min-width: 0;
+}
+.sqlconsole-hentry {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+@media (max-width: 900px) {
+  .sqlconsole {
+    grid-template-columns: 1fr;
+  }
+  .sqlconsole-rail {
+    position: static;
+    max-height: 300px;
+  }
+}
+
 /* ── Tabs ── */
 .tabs {
   display: inline-flex;

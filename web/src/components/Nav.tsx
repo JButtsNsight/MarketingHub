@@ -8,6 +8,7 @@ import { Surface } from "./Surface";
 export type IconKey =
   | "overview"
   | "database"
+  | "sql"
   | "storage"
   | "templates"
   | "campaigns"
@@ -38,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Build",
     items: [
       { href: "/database", label: "Database", icon: "database" },
+      { href: "/sql", label: "SQL Editor", icon: "sql" },
       { href: "/storage", label: "Storage", icon: "storage" },
       { href: "/templates", label: "Templates", icon: "templates" },
       { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
@@ -87,6 +89,12 @@ const ICONS: Record<IconKey, ReactNode> = {
       <ellipse cx="12" cy="5" rx="8" ry="3" />
       <path d="M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
       <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+    </>
+  ),
+  sql: (
+    <>
+      <path d="M4 17l6-5-6-5" />
+      <path d="M12 19h8" />
     </>
   ),
   storage: (
