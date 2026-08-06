@@ -69,6 +69,48 @@ describe('2026-08-05-engagement-suite.sql migration', () => {
     expect(sql).toMatch(/'frequency_capped'/);
   });
 
+  test('frequency-cap sweep only judges rows in actively-sending campaigns', () => {
+    // A paused campaign's rows must be evaluated against the window in force
+    // when they actually become claimable — terminally capping them against
+    // today's window silently loses sends.
+    const sweep = sql.slice(
+      sql.indexOf("set status     = 'frequency_capped'"),
+      sql.indexOf('-- Step 4 (cap on)')
+    );
+    expect(sweep).toMatch(
+      /exists\s*\(\s*select 1 from marketinghub\.sms_campaigns c\s+where c\.id = r\.campaign_id\s+and c\.status = 'sending'/i
+    );
+    // Terminal decisions rest ONLY on settled sends, never in-flight rows.
+    expect(sweep).toMatch(
+      /h\.status\s+in\s*\(\s*'sent'\s*,\s*'delivered'\s*,\s*'undelivered'\s*\)/i
+    );
+  });
+
+  test('cap-on claim serializes per phone: rank-1 only, no in-flight phones', () => {
+    const capClaim = sql.slice(
+      sql.indexOf('-- Step 4 (cap on)'),
+      sql.indexOf('-- Step 4 (cap off)')
+    );
+    expect(capClaim).toMatch(
+      /row_number\(\)\s+over\s*\(\s*partition by r2\.phone_e164/i
+    );
+    expect(capClaim).toMatch(/phone_rank\s*=\s*1/i);
+    expect(capClaim).toMatch(
+      /not exists\s*\(\s*select 1 from marketinghub\.sms_campaign_recipients f\s+where f\.phone_e164 = rk\.phone_e164\s+and f\.status in \('claimed', 'sending'\)/i
+    );
+    // still lock-safe under concurrent dispatchers
+    expect(capClaim).toMatch(/for update of r3 skip locked/i);
+  });
+
+  test('cap sweep runs AFTER crash recovery (steps 2/3) so released rows are judged', () => {
+    const step2 = sql.indexOf("-- Step 2: expired claims");
+    const step3 = sql.indexOf("-- Step 3: expired sending");
+    const sweep = sql.indexOf("-- Step 3.5: frequency-cap sweep");
+    expect(step2).toBeGreaterThan(-1);
+    expect(step3).toBeGreaterThan(step2);
+    expect(sweep).toBeGreaterThan(step3);
+  });
+
   test('RPC privileges: revoke from public/anon/authenticated, grant to service_role', () => {
     expect(sql).toMatch(
       /revoke\s+execute\s+on\s+function\s+marketinghub\.claim_due_sms_recipients\s*\(\s*int\s*,\s*int\s*,\s*int\s*,\s*int\s*\)\s+from\s+public\s*,\s*anon\s*,\s*authenticated/i

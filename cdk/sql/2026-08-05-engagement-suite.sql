@@ -136,12 +136,26 @@ alter table marketinghub.sms_campaign_recipients
                     'skipped', 'canceled', 'frequency_capped'));
 
 -- ---------------------------------------------------------------------------
--- Claim RPC v2 — same four steps as 2026-07-22, plus an OPTIONAL step 1.5:
--- the frequency cap. When both cap parameters are > 0, a due pending row is
--- parked as `frequency_capped` (terminal, like `skipped`) if its phone
--- already received >= freq_cap_count messages (sent/delivered/undelivered —
--- attempts that left our system) in the last freq_cap_days days. Defaults 0/0
--- disable it entirely: behavior is then IDENTICAL to the old function.
+-- Claim RPC v2 — same four steps as 2026-07-22, plus an OPTIONAL frequency
+-- cap. Defaults 0/0 disable it entirely: behavior is then IDENTICAL to the
+-- old function. With the cap on (both params > 0):
+--
+--   step 3.5  terminally parks due pending rows as `frequency_capped` when
+--             the phone already has >= freq_cap_count SETTLED sends
+--             (sent/delivered/undelivered) inside the window. It runs AFTER
+--             crash recovery (steps 2/3) so rows just released back to
+--             pending are evaluated too, and ONLY over campaigns actively
+--             `sending` — a paused campaign's rows must be judged against
+--             the window in force when they actually become claimable, not
+--             today's. In-flight rows are deliberately NOT counted here: a
+--             terminal decision cannot rest on a send that may still fail.
+--   step 4    additionally claims at most ONE row per phone per batch and
+--             skips phones that still have in-flight (`claimed`/`sending`)
+--             rows — two campaigns hitting the same phone in the same slot
+--             therefore serialize, and the second row is re-judged by the
+--             sweep once the first settles. Worst case a row waits one extra
+--             poll tick; a same-slot double-send cannot happen.
+--
 -- `coalesce(claimed_at, updated_at)` anchors "when it was sent" — claimed_at
 -- survives the sent/delivered transitions, while updated_at is bumped by
 -- late delivery reports.
@@ -174,28 +188,6 @@ begin
        where s.phone_e164 = r.phone_e164
      );
 
-  -- Step 1.5 (optional): frequency-cap sweep. Terminal by design — a capped
-  -- blast message days late is worse than not sending it.
-  if freq_cap_count > 0 and freq_cap_days > 0 then
-    update marketinghub.sms_campaign_recipients r
-       set status     = 'frequency_capped',
-           last_error = format(
-             'frequency cap: phone already received %s message(s) in the last %s day(s)',
-             freq_cap_count, freq_cap_days),
-           updated_at = now()
-     where r.status = 'pending'
-       and r.send_after <= now()
-       and (
-         select count(*)
-           from marketinghub.sms_campaign_recipients h
-          where h.phone_e164 = r.phone_e164
-            and h.id <> r.id
-            and h.status in ('sent', 'delivered', 'undelivered')
-            and coalesce(h.claimed_at, h.updated_at)
-                  >= now() - make_interval(days => freq_cap_days)
-       ) >= freq_cap_count;
-  end if;
-
   -- Step 2: expired claims (no POST started) safely return to pending.
   update marketinghub.sms_campaign_recipients r
      set status           = 'pending',
@@ -213,27 +205,98 @@ begin
    where r.status = 'sending'
      and r.claim_expires_at <= now();
 
-  -- Step 4: claim a batch of due pending rows from sending campaigns.
-  return query
-  with due as (
-    select r.id
-    from marketinghub.sms_campaign_recipients r
-    join marketinghub.sms_campaigns c on c.id = r.campaign_id
-    where r.status = 'pending'
-      and r.send_after <= now()
-      and c.status = 'sending'
-    order by r.send_after
-    limit batch_size
-    for update of r skip locked
-  )
-  update marketinghub.sms_campaign_recipients r
-     set status           = 'claimed',
-         claimed_at       = now(),
-         claim_expires_at = now() + make_interval(secs => claim_ttl_seconds),
-         updated_at       = now()
-    from due
-   where r.id = due.id
-  returning r.*;
+  if freq_cap_count > 0 and freq_cap_days > 0 then
+    -- Step 3.5: frequency-cap sweep (see header). Terminal by design — a
+    -- capped blast message days late is worse than not sending it.
+    update marketinghub.sms_campaign_recipients r
+       set status     = 'frequency_capped',
+           last_error = format(
+             'frequency cap: phone already received %s message(s) in the last %s day(s)',
+             freq_cap_count, freq_cap_days),
+           updated_at = now()
+     where r.status = 'pending'
+       and r.send_after <= now()
+       and exists (
+         select 1 from marketinghub.sms_campaigns c
+         where c.id = r.campaign_id
+           and c.status = 'sending'
+       )
+       and (
+         select count(*)
+           from marketinghub.sms_campaign_recipients h
+          where h.phone_e164 = r.phone_e164
+            and h.id <> r.id
+            and h.status in ('sent', 'delivered', 'undelivered')
+            and coalesce(h.claimed_at, h.updated_at)
+                  >= now() - make_interval(days => freq_cap_days)
+       ) >= freq_cap_count;
+
+    -- Step 4 (cap on): one row per phone per batch, no phones with rows
+    -- still in flight. The window function cannot share a query level with
+    -- FOR UPDATE, so ranking happens in a plain CTE and the locking SELECT
+    -- re-reads the base table (re-checking status/due under the lock).
+    return query
+    with ranked as (
+      select r2.id,
+             r2.phone_e164,
+             r2.send_after,
+             row_number() over (
+               partition by r2.phone_e164
+               order by r2.send_after, r2.id
+             ) as phone_rank
+      from marketinghub.sms_campaign_recipients r2
+      join marketinghub.sms_campaigns c on c.id = r2.campaign_id
+      where r2.status = 'pending'
+        and r2.send_after <= now()
+        and c.status = 'sending'
+    ),
+    due as (
+      select r3.id
+      from marketinghub.sms_campaign_recipients r3
+      join ranked rk on rk.id = r3.id
+      where rk.phone_rank = 1
+        and r3.status = 'pending'
+        and r3.send_after <= now()
+        and not exists (
+          select 1 from marketinghub.sms_campaign_recipients f
+          where f.phone_e164 = rk.phone_e164
+            and f.status in ('claimed', 'sending')
+        )
+      order by rk.send_after
+      limit batch_size
+      for update of r3 skip locked
+    )
+    update marketinghub.sms_campaign_recipients r
+       set status           = 'claimed',
+           claimed_at       = now(),
+           claim_expires_at = now() + make_interval(secs => claim_ttl_seconds),
+           updated_at       = now()
+      from due
+     where r.id = due.id
+    returning r.*;
+  else
+    -- Step 4 (cap off): identical to the pre-cap function.
+    return query
+    with due as (
+      select r.id
+      from marketinghub.sms_campaign_recipients r
+      join marketinghub.sms_campaigns c on c.id = r.campaign_id
+      where r.status = 'pending'
+        and r.send_after <= now()
+        and c.status = 'sending'
+      order by r.send_after
+      limit batch_size
+      for update of r skip locked
+    )
+    update marketinghub.sms_campaign_recipients r
+       set status           = 'claimed',
+           claimed_at       = now(),
+           claim_expires_at = now() + make_interval(secs => claim_ttl_seconds),
+           updated_at       = now()
+      from due
+     where r.id = due.id
+    returning r.*;
+  end if;
 end;
 $$;
 

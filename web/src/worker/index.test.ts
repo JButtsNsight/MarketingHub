@@ -72,4 +72,18 @@ describe("buildConfigFromEnv", () => {
       buildConfigFromEnv({ SMS_FREQ_CAP_COUNT: "0", SMS_FREQ_CAP_DAYS: "7" }),
     ).toMatchObject({ frequencyCapCount: 0, frequencyCapDays: 7 });
   });
+
+  test("fractional RPC-bound values fall back ('0.5'::int is a 22P02 crash-loop); fractional JS-only values pass", () => {
+    expect(
+      buildConfigFromEnv({
+        SMS_FREQ_CAP_DAYS: "0.5",
+        SMS_CLAIM_BATCH: "12.5",
+        SMS_SEND_RATE_PER_SEC: "0.5", // one POST per 2s — legitimate
+      }),
+    ).toMatchObject({
+      frequencyCapDays: 0,
+      batchSize: 25,
+      ratePerSecond: 0.5,
+    });
+  });
 });

@@ -141,6 +141,10 @@ accepts container port `:3000` from the ALB SG only.
 - Production front door (when it lands): the ALB needs the unauthenticated
   `GET /l/*` listener exception (already in app-infra next to the webhook
   rule) — tracked links are clicked from recipients' phones, no Cognito.
+- **Mid-create crash artifact:** an unexplained `paused` campaign nobody
+  paused is a campaign whose creation crashed mid-insert (partial audience;
+  with link tracking on, possibly rendered `/l/<slug>` URLs whose `sms_links`
+  rows never landed). **Cancel it and re-create — never Resume it.**
 
 ### 1.7 SMS credentials secret in Secrets Manager
 - Create ONE JSON secret named **`marketinghub/sms-campaigns`** in

@@ -266,9 +266,13 @@ export async function getSuppressedSet(
  * no multi-statement transactions), so the campaign is born `paused` — a
  * non-dispatchable state — and only flips paused → `scheduled` as the FINAL
  * step, after the last chunk lands. A crash mid-insert therefore leaves a
- * visible paused campaign that can never dispatch, not a live partial one.
- * On a chunk failure the campaign is additionally best-effort marked
- * `canceled` and the error is re-thrown; a lost final flip fails loud.
+ * visible paused campaign, not a live partial one. CAVEAT: `paused` is
+ * resumable by hand — an unexplained paused campaign you did not pause is a
+ * mid-create crash artifact (partial audience, possibly rendered short
+ * links whose sms_links rows never landed) and must be CANCELED and
+ * re-created, never resumed. On a chunk failure the campaign is additionally
+ * best-effort marked `canceled` and the error is re-thrown; a lost final
+ * flip fails loud.
  */
 export async function createCampaign(
   input: CampaignCreateInput,
@@ -1392,6 +1396,14 @@ export async function countSuppressions(): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Best-effort by design: the suppression mutation itself is the
+ * safety-critical part and has already committed by the time this runs — an
+ * audit failure must NOT fail the request, because a retry could never
+ * re-create the evidence (the add would 409, the remove would 404). Failures
+ * are logged loudly instead; manual adds also carry their provenance in
+ * sms_suppressions.raw as a fallback trail.
+ */
 async function recordSuppressionAudit(
   phone: string,
   action: "added" | "removed",
@@ -1406,7 +1418,11 @@ async function recordSuppressionAudit(
     actor,
     note: note ?? null,
   });
-  if (error) fail("suppression-audit", error.message);
+  if (error) {
+    console.error(
+      `[sms] suppression-audit insert failed (${action} ${phone} by ${actor}): ${error.message}`,
+    );
+  }
 }
 
 /**

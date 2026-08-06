@@ -32,7 +32,15 @@ export async function DELETE(
   }
 
   const { phone: rawPhone } = await context.params;
-  const phone = normalizeUsPhone(decodeURIComponent(rawPhone));
+  // decodeURIComponent throws a URIError on malformed percent-encoding
+  // ("100%") — that's a 404-shaped input, not a 500.
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(rawPhone);
+  } catch {
+    return Response.json({ error: "Suppression not found" }, { status: 404 });
+  }
+  const phone = normalizeUsPhone(decoded);
   if (!phone) {
     return Response.json({ error: "Suppression not found" }, { status: 404 });
   }

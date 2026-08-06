@@ -78,6 +78,20 @@ export class AppStack extends Stack {
     const simpletextingAccountPhone = this.node.tryGetContext('simpletextingAccountPhone') as
       | string
       | undefined;
+    // OPTIONAL: tracked-link base URL (the app's public origin). Set = campaign
+    // creation rewrites message URLs to `<base>/l/<slug>`; absent = link
+    // tracking off, messages keep their original URLs.
+    const smsLinkBaseUrl = this.node.tryGetContext('smsLinkBaseUrl') as
+      | string
+      | undefined;
+    // OPTIONAL: dispatcher frequency cap (both must be set and > 0 to enable;
+    // absent/0 = off — see the engagement-suite migration + worker env docs).
+    const smsFreqCapCount = this.node.tryGetContext('smsFreqCapCount') as
+      | string
+      | undefined;
+    const smsFreqCapDays = this.node.tryGetContext('smsFreqCapDays') as
+      | string
+      | undefined;
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
     // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
@@ -179,6 +193,7 @@ export class AppStack extends Stack {
         // ALB_REGION to pick the host. Both set to this stack's region.
         AWS_REGION: this.region,
         ALB_REGION: this.region,
+        ...(smsLinkBaseUrl ? { SMS_LINK_BASE_URL: smsLinkBaseUrl } : {}),
       },
       secrets: {
         // Delivered to the container from Secrets Manager at task start; adding
@@ -284,6 +299,10 @@ export class AppStack extends Stack {
         ...(simpletextingAccountPhone
           ? { SIMPLETEXTING_ACCOUNT_PHONE: simpletextingAccountPhone }
           : {}),
+        // Optional frequency cap (both > 0 to enable; the worker treats
+        // absent/0 as off and the claim RPC then behaves pre-cap).
+        ...(smsFreqCapCount ? { SMS_FREQ_CAP_COUNT: smsFreqCapCount } : {}),
+        ...(smsFreqCapDays ? { SMS_FREQ_CAP_DAYS: smsFreqCapDays } : {}),
       },
       secrets: {
         SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(

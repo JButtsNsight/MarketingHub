@@ -387,6 +387,19 @@ test('preview: NO listener rules at all (health + webhook + link exceptions are 
   template.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0);
 });
 
+test('optional engagement env (smsLinkBaseUrl / smsFreqCap*) is OMITTED entirely when unset', () => {
+  const { template } = makeApp();
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const td of Object.values(taskDefs) as any[]) {
+    for (const c of td.Properties.ContainerDefinitions ?? []) {
+      const names = (c.Environment ?? []).map((e: any) => e.Name);
+      expect(names).not.toContain('SMS_LINK_BASE_URL');
+      expect(names).not.toContain('SMS_FREQ_CAP_COUNT');
+      expect(names).not.toContain('SMS_FREQ_CAP_DAYS');
+    }
+  }
+});
+
 test('a Fargate service runs desiredCount 2 with public IPs disabled (private subnets)', () => {
   const { template } = makeApp();
   template.hasResourceProperties('AWS::ECS::Service', {

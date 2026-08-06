@@ -51,18 +51,32 @@ const DEFAULTS: DispatcherConfig = {
   frequencyCapDays: 0,
 };
 
-/** Positive finite number from an env string, else the default. */
+/**
+ * Positive finite number from an env string, else the default. Fractional is
+ * fine here — these values only feed JS math (sleep ms, 1000/rate throttle).
+ */
 function positiveNumber(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-/** Non-negative finite number from an env string, else the default (0 = off). */
-function nonNegativeNumber(raw: string | undefined, fallback: number): number {
+// The integer helpers guard values that travel to the claim RPC's int
+// parameters, where a fractional value ('0.5'::int) is a 22P02 that would
+// crash every tick and restart-loop the worker.
+
+/** Positive integer from an env string, else the default. */
+function positiveInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === "") return fallback;
   const value = Number(raw);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/** Non-negative integer from an env string, else the default (0 = off). */
+function nonNegativeInteger(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
 /** Dispatcher config from env with documented defaults (see the plan doc). */
@@ -71,8 +85,8 @@ export function buildConfigFromEnv(
 ): DispatcherConfig {
   return {
     pollMs: positiveNumber(env.SMS_POLL_INTERVAL_MS, DEFAULTS.pollMs),
-    batchSize: positiveNumber(env.SMS_CLAIM_BATCH, DEFAULTS.batchSize),
-    claimTtlSeconds: positiveNumber(
+    batchSize: positiveInteger(env.SMS_CLAIM_BATCH, DEFAULTS.batchSize),
+    claimTtlSeconds: positiveInteger(
       env.SMS_CLAIM_TTL_S,
       DEFAULTS.claimTtlSeconds,
     ),
@@ -80,12 +94,12 @@ export function buildConfigFromEnv(
       env.SMS_SEND_RATE_PER_SEC,
       DEFAULTS.ratePerSecond,
     ),
-    maxAttempts: positiveNumber(env.SMS_MAX_ATTEMPTS, DEFAULTS.maxAttempts),
-    frequencyCapCount: nonNegativeNumber(
+    maxAttempts: positiveInteger(env.SMS_MAX_ATTEMPTS, DEFAULTS.maxAttempts),
+    frequencyCapCount: nonNegativeInteger(
       env.SMS_FREQ_CAP_COUNT,
       DEFAULTS.frequencyCapCount,
     ),
-    frequencyCapDays: nonNegativeNumber(
+    frequencyCapDays: nonNegativeInteger(
       env.SMS_FREQ_CAP_DAYS,
       DEFAULTS.frequencyCapDays,
     ),
