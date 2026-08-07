@@ -1,6 +1,15 @@
 # Supabase Feature Catalog — self-hosted gap map for MarketingHub
 
-_Compiled 2026-08-07 from the official supabase.com/features catalog (79 features), researched against Supabase documentation and graded against our repo-verified deployment (bundle pin `supabase/supabase@v1.26.05`, storage-api `v1.48.26`, Postgres 17). See [Methodology](#methodology) for how claims were verified._
+_Compiled 2026-08-07 from the official supabase.com/features catalog (79 features), researched against Supabase documentation and graded against our repo-verified deployment (bundle pin `supabase/supabase@v1.26.05`, storage-api `v1.48.26`, Postgres 15.8.1.085). See [Methodology](#methodology) for how claims were verified._
+
+> **Corrections & status (2026-08-07, from live-host recon during the parity program).** This catalog was graded from repo artifacts + the design spec; direct SSM recon of the running host then corrected several facts. Treat these as authoritative over the entries below:
+> - **Postgres is `15.8.1.085`, not PG17** — the spec/memory said PG17; the running image is 15.x. All catalogued extensions are available on it.
+> - **The Logflare analytics stack is already running** (`supabase-analytics` + `supabase-vector` containers healthy). The "never enabled / analytics absent" framing is wrong; Studio's Logs/Reports tabs are inert only because Kong's `analytics-v1-api` route is commented out, not because the stack is down.
+> - **`pgaudit` was never actually installed** (it was in `shared_preload_libraries` but no `CREATE EXTENSION` had run, so `enable-pgaudit.sql` was dark). Fixed in the parity program.
+> - **`supabase-edge-functions` is actively restart-looping** on the host (confirmed live).
+> - **Already installed** (catalogued as available-unused): `pg_graphql 1.5.11`, `supabase_vault 0.3.1`, `pg_net 0.14.0`. **Newly enabled by the parity program (Wave 1):** `vector 0.8.0`, `pg_cron 1.6`, `pgmq 1.4.4`, `wrappers 0.4.6`, `pgaudit 1.7` — so their `available-unused` rows are now `live`/console-managed.
+>
+> Live status now tracked by the parity program (`docs/superpowers/plans/2026-08-07-supabase-parity-wave1-database.md` and the waves that follow), not this static snapshot.
 
 ## Executive summary
 
