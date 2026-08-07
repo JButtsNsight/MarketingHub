@@ -973,6 +973,53 @@ input[type="file"].control {
   justify-content: flex-end;
 }
 
+/* ── Alert dialog (modal confirm for risky actions) ── */
+.alert-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.alert-dialog {
+  --r: 14px;
+  width: 100%;
+  max-width: 440px;
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--hair);
+}
+.alert-title {
+  font-family: var(--fd);
+  font-size: 18px;
+  margin: 0;
+  color: var(--ink);
+}
+.alert-warn .alert-title {
+  color: var(--warn);
+}
+.alert-msg {
+  font-family: var(--fu);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+.alert-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
+}
+.alert-warn .alert-confirm {
+  background: var(--warn);
+  color: var(--canvas);
+}
+
 /* ── Table Editor layout ── */
 .teditor {
   display: grid;
@@ -1012,9 +1059,6 @@ input[type="file"].control {
 }
 .teditor-main {
   min-width: 0;
-}
-.teditor-warn {
-  margin-bottom: 12px;
 }
 .teditor-fctl {
   font-size: 12.5px;

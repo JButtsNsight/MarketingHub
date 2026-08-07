@@ -91,11 +91,12 @@ describe("TableEditor", () => {
     expect(calls[0].url).toContain("table=templates");
     expect(screen.getByText("marketinghub.templates")).toBeInTheDocument();
     expect(screen.getByText("2 rows")).toBeInTheDocument();
-    // no warning banner on a non-sensitive table
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    // No standing warning anywhere — the guard is a modal at the write, not a
+    // banner on browse.
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
-  test("switching to a sensitive table shows the outbox warning", async () => {
+  test("browsing a sensitive table shows NO banner (guard moved to the write)", async () => {
     mockFetchRoutes();
     const user = userEvent.setup();
     render(<TableEditor initialTables={[TEMPLATES, OUTBOX]} />);
@@ -104,10 +105,48 @@ describe("TableEditor", () => {
     await user.click(
       screen.getByRole("button", { name: /sms_campaign_recipients/ }),
     );
-
     await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(/at-most-once/i),
+      expect(
+        screen.getByText("marketinghub.sms_campaign_recipients"),
+      ).toBeInTheDocument(),
     );
+    // Just browsing: no interruption.
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  test("deleting from a sensitive table pops the modal alert and only deletes on confirm", async () => {
+    const { calls } = mockFetchRoutes();
+    const user = userEvent.setup();
+    render(<TableEditor initialTables={[OUTBOX]} />);
+    await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
+
+    await user.click(screen.getAllByRole("checkbox")[1]);
+    await user.click(screen.getByRole("button", { name: "Delete 1 selected" }));
+
+    // A real interrupting alert — not the inline two-step — and nothing sent.
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog).toHaveTextContent(/double-send|TCPA/i);
+    expect(calls.some((c) => c.init?.method === "DELETE")).toBe(false);
+
+    await user.click(screen.getByRole("button", { name: /^Delete 1 row/ }));
+    await waitFor(() =>
+      expect(calls.some((c) => c.init?.method === "DELETE")).toBe(true),
+    );
+  });
+
+  test("cancelling the sensitive-delete modal deletes nothing", async () => {
+    const { calls } = mockFetchRoutes();
+    const user = userEvent.setup();
+    render(<TableEditor initialTables={[OUTBOX]} />);
+    await waitFor(() => expect(screen.getByText("Alpha")).toBeInTheDocument());
+
+    await user.click(screen.getAllByRole("checkbox")[1]);
+    await user.click(screen.getByRole("button", { name: "Delete 1 selected" }));
+    await screen.findByRole("alertdialog");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(calls.some((c) => c.init?.method === "DELETE")).toBe(false);
   });
 
   test("adding a filter refetches with the filters param and resets to page 1", async () => {

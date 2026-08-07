@@ -7,7 +7,19 @@ import {
   type GridColumn,
   type GridSort,
 } from "../ui/DataGrid";
+import { useConfirm } from "../ui/AlertDialog";
 import { Surface } from "../Surface";
+
+/**
+ * The interrupting warning shown before any hand edit/delete on a
+ * write-risky table (SMS outbox/audit, storage metadata). The guard sits on
+ * the WRITE, not on browsing — a modal, not a standing banner.
+ */
+function sensitiveWarning(table: EditorTableDto): string {
+  return table.schema === "storage"
+    ? "This is a Storage metadata table. Editing it by hand can desync the records from the underlying S3 objects — use the Storage browser instead. Continue anyway?"
+    : "This is an SMS outbox/audit table. Hand-editing it can cause a double-send or a missed send, or destroy TCPA opt-out evidence — use the product UI (Campaigns / Suppressions / Review queue) instead. Continue anyway?";
+}
 
 /**
  * The Table Editor — Studio's flagship screen, MarketingHub-style. A schema-
@@ -95,6 +107,9 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
 
   // Draft filter row in the toolbar.
   const [draft, setDraft] = useState<Filter>({ column: "", op: "eq", value: "" });
+
+  // Modal confirmation for edits/deletes on write-risky tables.
+  const { confirm, dialog } = useConfirm();
 
   const gridColumns: GridColumn[] = useMemo(
     () =>
@@ -205,6 +220,15 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
     value: GridCellValue,
   ): Promise<boolean> => {
     if (!selected) return false;
+    // Interrupt with a modal before touching a write-risky table.
+    if (selected.sensitive) {
+      const ok = await confirm({
+        title: "Edit a protected table?",
+        message: sensitiveWarning(selected),
+        confirmLabel: "Edit anyway",
+      });
+      if (!ok) return false;
+    }
     setError(null);
     try {
       const res = await fetch("/api/console/rows", {
@@ -228,6 +252,24 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
       setError("Network error — please try again.");
       return false;
     }
+  };
+
+  /**
+   * Delete entry point. Write-risky tables get the interrupting modal; every
+   * other table keeps the lightweight inline two-step (arm → confirm).
+   */
+  const requestDelete = async () => {
+    if (!selected || selectedKeys.size === 0) return;
+    if (selected.sensitive) {
+      const ok = await confirm({
+        title: `Delete ${selectedKeys.size} row${selectedKeys.size === 1 ? "" : "s"} from a protected table?`,
+        message: sensitiveWarning(selected),
+        confirmLabel: `Delete ${selectedKeys.size} row${selectedKeys.size === 1 ? "" : "s"}`,
+      });
+      if (ok) await deleteSelected();
+      return;
+    }
+    setConfirmDelete(true);
   };
 
   const deleteSelected = async () => {
@@ -307,14 +349,6 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
       <div className="teditor-main">
         {selected ? (
           <>
-            {selected.sensitive ? (
-              <p className="form-error teditor-warn" role="alert">
-                {selected.schema === "storage"
-                  ? "Storage metadata table — rows here must stay consistent with the underlying S3 objects. Prefer the Storage browser."
-                  : "SMS outbox/audit table — hand edits can break at-most-once send accounting or TCPA evidence. Prefer the product UI (Campaigns / Suppressions / Review queue)."}
-              </p>
-            ) : null}
-
             <div className="dgrid-toolbar">
               <span className="eyebrow">
                 {selected.schema}.{selected.name}
@@ -348,7 +382,7 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
                   <button
                     type="button"
                     className="type-chip"
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={requestDelete}
                   >
                     Delete {selectedKeys.size} selected
                   </button>
@@ -521,6 +555,7 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
           </Surface>
         )}
       </div>
+      {dialog}
     </div>
   );
 }
