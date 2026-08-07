@@ -37,14 +37,10 @@ describe("theme", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
-  it("accepts the supabase novelty theme as a valid value", () => {
-    setTheme("supabase");
-    expect(document.documentElement.dataset.theme).toBe("supabase");
-    expect(getTheme()).toBe("supabase");
+  it("rejects the retired 'supabase' value (it was folded into Dark)", () => {
     localStorage.setItem(THEME_KEY, "supabase");
-    delete document.documentElement.dataset.theme;
     initTheme();
-    expect(document.documentElement.dataset.theme).toBe("supabase");
+    expect(document.documentElement.dataset.theme).toBe("light");
   });
 
   it("initTheme clears the retired glass/flat skin key from returning browsers", () => {

@@ -43,7 +43,6 @@ export default async function InboxPage({
             ? `${unhandled} need${unhandled === 1 ? "s" : ""} a reply`
             : "all handled"
         }
-        subtitle="Replies to campaign texts, captured by the SimpleTexting webhook and matched to the campaign that prompted them."
         actions={
           <>
             <Link

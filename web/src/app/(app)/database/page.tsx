@@ -37,7 +37,6 @@ export default async function DatabasePage() {
       <PageHeader
         eyebrow="Database"
         title="Table Editor"
-        subtitle="Browse and edit rows across the exposed schemas — structure comes from live introspection (postgres-meta), data moves through the group-gated data API."
       />
 
       {tables ? (

@@ -35,7 +35,6 @@ export default async function SqlPage() {
       <PageHeader
         eyebrow="Build"
         title="SQL Editor"
-        subtitle="Runs as the database superuser through postgres-meta — writes take an explicit confirm, and every run is recorded in the query history."
       />
       <SqlConsole initialSnippets={snippets} initialHistory={history} />
     </>

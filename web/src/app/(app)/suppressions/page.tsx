@@ -38,7 +38,6 @@ export default async function SuppressionsPage({
         eyebrow="Engage"
         title="Suppressions"
         count={`${total} suppressed`}
-        subtitle="Numbers that never get texted again. STOP entries are permanent — only manual entries can be removed, and every change is audited."
         actions={<AddSuppressionForm />}
       />
 

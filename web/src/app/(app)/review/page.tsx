@@ -37,7 +37,6 @@ export default async function ReviewPage() {
             ? `${ambiguous} awaiting a decision`
             : "no decisions pending"
         }
-        subtitle="Sends that stopped moving, across every campaign. Ambiguous rows are never retried automatically — a duplicate patient text is worse than a missed one, so a human decides here."
       />
 
       <div className="stack">

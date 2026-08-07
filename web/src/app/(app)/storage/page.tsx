@@ -44,7 +44,6 @@ export default async function StoragePage() {
       <PageHeader
         eyebrow="Build"
         title="Storage"
-        subtitle="Private buckets — objects are proxied through the console via short-lived signed URLs. Uploads never overwrite; replacing a file is an explicit delete-then-upload."
         count={`${buckets.length} bucket${buckets.length === 1 ? "" : "s"}`}
       />
 

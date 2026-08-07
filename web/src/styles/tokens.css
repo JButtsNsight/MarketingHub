@@ -3,6 +3,8 @@
  * Source of truth: ~/NSight-Design-Language/docs/STYLE-GUIDE.md (locked 2026-05-30).
  * One axis on <html>: data-theme=light|dark. Surfaces are always flat.
  * Every color / surface value is a token. No freehand hex.
+ * LIGHT carries the NSight design language; DARK is Supabase-styled (per
+ * product direction) and is the one theme that departs from the language.
  */
 
 /* ── LIGHT (warm sand) — base palette + type ── */
@@ -65,52 +67,16 @@
   --surface-glint: none;
 }
 
-/* ── DARK (inky black-blue) — palette overrides ── */
+/* ── DARK — Supabase-styled. This IS the app's dark theme: a faithful
+ * reproduction of Supabase Studio's dark chrome (#1c1c1c), #3ECF8E green
+ * accent, and Inter type. It replaced the earlier inky-blue NSight dark per
+ * product direction; LIGHT still carries the NSight design language. The
+ * accent binds directly to the Supabase green rather than the governed
+ * --teal token, so this is the one theme that departs from the language. ── */
 html[data-theme="dark"] {
-  --canvas: #060B15;
-  --paper: #0A1220;
-  --wash: #030509;
-  --hair: rgba(255, 255, 255, 0.12);
-
-  --ink: #EAF2EE;
-  --ink-2: #C2D2CD;
-  --muted: #8FA49B;
-  --faint: #5E726B;
-  --tx: #F0EAD6; /* eggshell */
-
-  --accent: var(--teal); /* the one living accent = teal #64A6A7 (governed brand token) */
-
-  --ok: #84C08A;
-  --run: #7FB0DA;
-  --warn: #F0954A;
-  --fail: #FF6363;
-  --status-failed: #FF6363;
-
-  --ring: rgba(100, 166, 167, 0.3); /* teal #64A6A7 */
-  --ae: rgba(255, 99, 99, 0.5);
-  --as: rgba(255, 99, 99, 0.2);
-  --ag: rgba(255, 99, 99, 0.42);
-
-  /* Surface system — flat, dark values. */
-  --surface-bg: rgba(255, 255, 255, 0.045);
-  --surface-border: 1px solid transparent;
-  --surface-rim: 0 0 0 0 transparent;
-  --surface-shade: 0 0 0 0 transparent;
-  --surface-shadow: 0 0 0 0 transparent;
-  --surface-glint: none;
-}
-
-/* ── SUPABASE (novelty theme) — a faithful reproduction of Supabase Studio's
- * dark chrome + #3ECF8E green + Inter type. Opt-in ONLY: this deliberately
- * departs from the NSight design language (which the default light/dark
- * themes and every other Nsight app follow) so the console can cosplay as
- * Studio. Colors are Supabase's real dashboard neutral scale + brand green;
- * the accent is bound directly to the green (not the governed teal token),
- * which is why this lives in its own theme rather than touching :root. ── */
-html[data-theme="supabase"] {
   /* Type — Inter stands in for Supabase's proprietary Circular (near-identical
-   * on screen). Display face is the SAME sans as UI (no serif — the biggest
-   * visual tell vs. the NSight Marcellus headers). */
+   * on screen); the display face is the same sans as UI (no serif — the
+   * biggest visual tell vs. the NSight Marcellus headers). */
   --fd: "Inter", system-ui, sans-serif;
   --fu: "Inter", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
@@ -128,7 +94,7 @@ html[data-theme="supabase"] {
   --tx: #ededed;
 
   --navy: #171717;
-  --teal: #3ecf8e; /* keep the token name; value is Supabase green */
+  --teal: #3ecf8e; /* token name kept; value is Supabase green */
   --coral: #ff8766;
   --blue-gray: #3e3e3e;
   --accent: #3ecf8e; /* Supabase brand green — links, focus, tabs, active nav */

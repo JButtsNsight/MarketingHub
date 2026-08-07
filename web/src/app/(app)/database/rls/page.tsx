@@ -125,7 +125,6 @@ export default async function RlsPage() {
       <PageHeader
         eyebrow="Database"
         title="Policies"
-        subtitle="Live from postgres-meta. Exposed schemas are deny-by-default for anon/authenticated; the app path is service_role behind the Cognito group gate."
       />
       <Tabs items={DB_TABS} />
 

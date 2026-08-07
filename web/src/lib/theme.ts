@@ -1,12 +1,12 @@
 /**
- * Theme control for the NSight design language.
- * One axis lives on <html>: data-theme (light|dark|supabase). Surfaces are
- * always flat (the glass skin is gone). The choice persists to localStorage so
- * it sticks. `supabase` is a novelty theme that reproduces Supabase Studio's
- * dark chrome + green — opt-in only; light/dark carry the NSight language.
+ * Theme control for the console.
+ * One axis lives on <html>: data-theme (light|dark). Surfaces are always flat
+ * (the glass skin is gone). The choice persists to localStorage so it sticks.
+ * LIGHT is the NSight design language; DARK is Supabase-styled (dark chrome +
+ * green + Inter) per product direction.
  */
 
-export type Theme = "light" | "dark" | "supabase";
+export type Theme = "light" | "dark";
 
 export const THEME_KEY = "mh-theme";
 /** Key of the retired glass/flat skin axis — initTheme clears it from returning browsers. */
@@ -14,7 +14,7 @@ export const LEGACY_SKIN_KEY = "mh-skin";
 
 export const DEFAULT_THEME: Theme = "light";
 
-const THEMES: readonly Theme[] = ["light", "dark", "supabase"];
+const THEMES: readonly Theme[] = ["light", "dark"];
 
 function isTheme(v: unknown): v is Theme {
   return typeof v === "string" && (THEMES as readonly string[]).includes(v);

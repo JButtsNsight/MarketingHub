@@ -55,18 +55,23 @@ describe("tokens.css", () => {
     }
   });
 
-  it("binds the one living accent to the governed brand teal #64A6A7", () => {
-    // Spec §2.1: teal #64A6A7 is "the one living accent"; raw off-palette hex is a lint error.
+  it("binds LIGHT's living accent to the governed brand teal #64A6A7", () => {
+    // Spec §2.1: teal #64A6A7 is "the one living accent" in the NSight light
+    // theme; raw off-palette hex there is a lint error.
     expect(ruleBody(":root")).toContain("--teal:#64A6A7");
-    // --accent must reference the governed teal token, not a freehand hex, in both themes.
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
-    expect(ruleBody('html[data-theme="dark"]')).toContain("--accent:var(--teal)");
   });
 
-  it("resolves --status-failed to #D24747 (light) and #FF6363 (dark)", () => {
+  it("DARK is Supabase-styled — green accent + Inter, departing from the language", () => {
+    const dark = ruleBody('html[data-theme="dark"]');
+    expect(dark).toContain("--accent:#3ecf8e"); // Supabase brand green
+    expect(dark).toContain('--fd:"Inter"'); // no serif — Studio's sans
+  });
+
+  it("resolves --status-failed to #D24747 (light) and Supabase red #ef4444 (dark)", () => {
     expect(ruleBody(":root")).toContain("--status-failed:#D24747");
     expect(ruleBody('html[data-theme="dark"]')).toContain(
-      "--status-failed:#FF6363",
+      "--status-failed:#ef4444",
     );
   });
 
@@ -84,18 +89,7 @@ describe("tokens.css", () => {
     expect(css).not.toContain("data-skin");
   });
 
-  it("defines the opt-in Supabase theme with its real green + Inter, without touching :root's governed accent", () => {
-    const supa = ruleBody('html[data-theme="supabase"]');
-    expect(supa, "supabase theme block missing").not.toBe("");
-    // Supabase brand green is the accent in THIS theme only.
-    expect(supa).toContain("--accent:#3ecf8e");
-    // Inter stands in for Circular; display face is the sans (no serif).
-    expect(supa).toContain('--fd:"Inter"');
-    // full palette + surface tokens present so nothing falls back oddly.
-    for (const t of [...PALETTE_TOKENS, ...SURFACE_TOKENS]) {
-      expect(supa, `supabase theme missing ${t}`).toContain(t + ":");
-    }
-    // The governed light base is untouched — teal stays the one living accent.
-    expect(ruleBody(":root")).toContain("--accent:var(--teal)");
+  it("ships exactly two themes — the retired 'supabase' block is gone", () => {
+    expect(css).not.toContain('data-theme="supabase"');
   });
 });

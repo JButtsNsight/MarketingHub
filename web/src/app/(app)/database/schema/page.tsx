@@ -121,7 +121,6 @@ export default async function SchemaPage() {
       <PageHeader
         eyebrow="Database"
         title="Schema"
-        subtitle="Live structure from postgres-meta — tables, columns, primary keys, and extensions, introspected at request time."
       />
       <Tabs items={DB_TABS} />
 
