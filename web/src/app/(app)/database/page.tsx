@@ -1,8 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { Tabs } from "@/components/ui/Tabs";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { listEditorTables } from "@/lib/console/tables";
-import { DB_TABS } from "@/lib/console/tabs";
 import { TableEditor } from "@/components/console/TableEditor";
 import { Surface } from "@/components/Surface";
 
@@ -37,11 +35,10 @@ export default async function DatabasePage() {
   return (
     <>
       <PageHeader
-        eyebrow="Build"
-        title="Database"
+        eyebrow="Database"
+        title="Table Editor"
         subtitle="Browse and edit rows across the exposed schemas — structure comes from live introspection (postgres-meta), data moves through the group-gated data API."
       />
-      <Tabs items={DB_TABS} />
 
       {tables ? (
         <TableEditor initialTables={tables} />

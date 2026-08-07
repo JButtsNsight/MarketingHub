@@ -100,7 +100,7 @@ export default async function SchemaPage() {
   if (!tables) {
     return (
       <>
-        <PageHeader eyebrow="Build" title="Schema" />
+        <PageHeader eyebrow="Database" title="Schema" />
         <Tabs items={DB_TABS} />
         <Surface className="empty-state" glint>
           <h2>Introspection unavailable</h2>
@@ -119,7 +119,7 @@ export default async function SchemaPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Build"
+        eyebrow="Database"
         title="Schema"
         subtitle="Live structure from postgres-meta — tables, columns, primary keys, and extensions, introspected at request time."
       />

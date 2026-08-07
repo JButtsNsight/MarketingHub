@@ -1658,3 +1658,35 @@ html[data-theme="dark"] .chart-line {
 .reschedule-pop .form-actions {
   margin: 0;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+ * SUPABASE THEME — chrome overrides (novelty)
+ * Most color comes free from the data-theme=supabase token block; these are
+ * the few structural touches that make the shell read as Studio: a darker
+ * sidebar rail, a green left-indicator on the active item, and green primary
+ * buttons with dark text. Everything else already resolves through tokens.
+ * ───────────────────────────────────────────────────────────────────────── */
+html[data-theme="supabase"] .nav {
+  background: var(--wash); /* #171717 — Studio's darker sidebar */
+  border: 1px solid var(--hair);
+}
+html[data-theme="supabase"] .nav-link {
+  border-left: 2px solid transparent;
+  border-radius: 6px;
+}
+html[data-theme="supabase"] .nav-link.on {
+  color: #fff;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-left-color: var(--accent); /* green indicator bar */
+}
+html[data-theme="supabase"] .btn-primary {
+  background: var(--accent); /* Supabase green */
+  color: #1c1c1c; /* dark text on green — Studio's primary button */
+}
+html[data-theme="supabase"] .btn-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+/* Studio's masthead sits on the deepest surface with a hairline under it. */
+html[data-theme="supabase"] .masthead {
+  background: var(--wash);
+}

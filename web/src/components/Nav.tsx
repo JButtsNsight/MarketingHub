@@ -7,6 +7,7 @@ import { Surface } from "./Surface";
 
 export type IconKey =
   | "overview"
+  | "tableEditor"
   | "database"
   | "sql"
   | "storage"
@@ -25,6 +26,13 @@ export interface NavItem {
   href: string;
   label: string;
   icon: IconKey;
+  /** Active on the exact path only — for an item whose route is a prefix of a
+   *  sibling's (Table Editor `/database` vs. the Database section under it). */
+  exact?: boolean;
+  /** Overrides the active-scope prefix when it differs from `href` — the
+   *  Database section lands on `/database/schema` but owns the whole
+   *  `/database/` subtree (Schema + Policies). */
+  match?: string;
 }
 
 export interface NavGroup {
@@ -32,46 +40,68 @@ export interface NavGroup {
   items: NavItem[];
 }
 
-/** Console information architecture, grouped like a Supabase/Appwrite console. */
+/**
+ * Console information architecture. The platform group mirrors Supabase
+ * Studio's nav — same item names, same order (Table Editor, SQL Editor,
+ * Database, Authentication, Storage, API Docs) — so it reads 1:1 to anyone
+ * who knows Studio. The marketing product and project/ops items follow in
+ * their own groups (Studio has no equivalent).
+ */
 export const NAV_GROUPS: NavGroup[] = [
   { items: [{ href: "/overview", label: "Overview", icon: "overview" }] },
   {
-    label: "Build",
+    label: "Platform",
     items: [
-      { href: "/database", label: "Database", icon: "database" },
+      // /database is the grid (Table Editor); /database/schema is the
+      // Database section — distinct nav items over nested routes, resolved by
+      // the most-specific-match rule in isActive below.
+      { href: "/database", label: "Table Editor", icon: "tableEditor", exact: true },
       { href: "/sql", label: "SQL Editor", icon: "sql" },
+      {
+        href: "/database/schema",
+        label: "Database",
+        icon: "database",
+        match: "/database/",
+      },
+      { href: "/auth", label: "Authentication", icon: "auth" },
       { href: "/storage", label: "Storage", icon: "storage" },
-      { href: "/templates", label: "Templates", icon: "templates" },
-      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
+      { href: "/api-reference", label: "API Docs", icon: "api" },
     ],
   },
   {
-    label: "Engage",
+    label: "Marketing",
     items: [
+      { href: "/templates", label: "Templates", icon: "templates" },
+      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
       { href: "/inbox", label: "Inbox", icon: "inbox" },
       { href: "/review", label: "Review queue", icon: "review" },
       { href: "/suppressions", label: "Suppressions", icon: "suppressions" },
     ],
   },
   {
-    label: "Manage",
-    items: [
-      { href: "/auth", label: "Authentication", icon: "auth" },
-      { href: "/api-reference", label: "API", icon: "api" },
-      { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
-    ],
-  },
-  {
     label: "Project",
     items: [
+      { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
       { href: "/admin", label: "Admin", icon: "admin" },
       { href: "/settings", label: "Settings", icon: "settings" },
     ],
   },
 ];
 
-function isActive(pathname: string, href: string): boolean {
-  return pathname === href || pathname.startsWith(`${href}/`);
+/**
+ * Whether a nav item is active for the current path. `exact` items match only
+ * their exact route (so Table Editor `/database` never lights on the Database
+ * section pages nested beneath it); `match` gives the Database section its
+ * own `/database/` subtree scope even though it lands on `/database/schema`.
+ * Everything else matches its href or any descendant of it (so SMS Campaigns
+ * stays lit across `/campaigns/*`).
+ */
+function isActive(pathname: string, item: NavItem): boolean {
+  if (item.exact) return pathname === item.href;
+  if (item.match) {
+    return pathname === item.href || pathname.startsWith(item.match);
+  }
+  return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }
 
 /** Minimal monoline icons (16×16, stroke = currentColor). */
@@ -82,6 +112,12 @@ const ICONS: Record<IconKey, ReactNode> = {
       <rect x="14" y="3" width="7" height="7" rx="1.5" />
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
       <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    </>
+  ),
+  tableEditor: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M3 9h18M3 14.5h18M9 4v16" />
     </>
   ),
   database: (
@@ -205,7 +241,7 @@ export function Nav({ groups = NAV_GROUPS }: { groups?: NavGroup[] }) {
           ) : null}
           <ul className="nav-list">
             {group.items.map((item) => {
-              const active = isActive(pathname, item.href);
+              const active = isActive(pathname, item);
               return (
                 <li key={item.href}>
                   <Link

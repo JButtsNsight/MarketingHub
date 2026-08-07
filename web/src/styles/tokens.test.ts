@@ -83,4 +83,19 @@ describe("tokens.css", () => {
   it("ships no glass skin — the data-skin axis is gone", () => {
     expect(css).not.toContain("data-skin");
   });
+
+  it("defines the opt-in Supabase theme with its real green + Inter, without touching :root's governed accent", () => {
+    const supa = ruleBody('html[data-theme="supabase"]');
+    expect(supa, "supabase theme block missing").not.toBe("");
+    // Supabase brand green is the accent in THIS theme only.
+    expect(supa).toContain("--accent:#3ecf8e");
+    // Inter stands in for Circular; display face is the sans (no serif).
+    expect(supa).toContain('--fd:"Inter"');
+    // full palette + surface tokens present so nothing falls back oddly.
+    for (const t of [...PALETTE_TOKENS, ...SURFACE_TOKENS]) {
+      expect(supa, `supabase theme missing ${t}`).toContain(t + ":");
+    }
+    // The governed light base is untouched — teal stays the one living accent.
+    expect(ruleBody(":root")).toContain("--accent:var(--teal)");
+  });
 });

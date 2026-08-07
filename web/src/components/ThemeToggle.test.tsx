@@ -9,13 +9,24 @@ beforeEach(() => {
 });
 
 describe("ThemeToggle", () => {
-  it("renders the Light/Dark segmented control and nothing else", () => {
+  it("renders the Light/Dark/Supabase segmented control and nothing else", () => {
     render(<ThemeToggle />);
     expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^dark$/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /supabase/i }),
+    ).toBeInTheDocument();
     // The glass/flat skin toggle is gone — the app is flat-only.
     expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /flat/i })).toBeNull();
+  });
+
+  it("clicking Supabase sets data-theme=supabase on <html>", async () => {
+    const user = userEvent.setup();
+    render(<ThemeToggle />);
+    await user.click(screen.getByRole("button", { name: /supabase/i }));
+    expect(document.documentElement.dataset.theme).toBe("supabase");
+    expect(localStorage.getItem("mh-theme")).toBe("supabase");
   });
 
   it("built from the .surface primitive so it honors the surface tokens", () => {

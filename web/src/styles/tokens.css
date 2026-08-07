@@ -99,3 +99,67 @@ html[data-theme="dark"] {
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
 }
+
+/* ── SUPABASE (novelty theme) — a faithful reproduction of Supabase Studio's
+ * dark chrome + #3ECF8E green + Inter type. Opt-in ONLY: this deliberately
+ * departs from the NSight design language (which the default light/dark
+ * themes and every other Nsight app follow) so the console can cosplay as
+ * Studio. Colors are Supabase's real dashboard neutral scale + brand green;
+ * the accent is bound directly to the green (not the governed teal token),
+ * which is why this lives in its own theme rather than touching :root. ── */
+html[data-theme="supabase"] {
+  /* Type — Inter stands in for Supabase's proprietary Circular (near-identical
+   * on screen). Display face is the SAME sans as UI (no serif — the biggest
+   * visual tell vs. the NSight Marcellus headers). */
+  --fd: "Inter", system-ui, sans-serif;
+  --fu: "Inter", system-ui, sans-serif;
+  --fm: "IBM Plex Mono", ui-monospace, monospace;
+  --r: 6px; /* Studio's tighter corner radius */
+
+  --canvas: #1c1c1c; /* app background */
+  --paper: #1f1f1f; /* panels / surfaces */
+  --wash: #171717; /* deepest (sidebar / rails) */
+  --hair: rgba(255, 255, 255, 0.09);
+
+  --ink: #ededed;
+  --ink-2: #c9c9c9;
+  --muted: #a0a0a0;
+  --faint: #707070;
+  --tx: #ededed;
+
+  --navy: #171717;
+  --teal: #3ecf8e; /* keep the token name; value is Supabase green */
+  --coral: #ff8766;
+  --blue-gray: #3e3e3e;
+  --accent: #3ecf8e; /* Supabase brand green — links, focus, tabs, active nav */
+
+  --ok: #3ecf8e;
+  --run: #3e8fd6;
+  --warn: #f59e0b;
+  --fail: #ef4444;
+  --status-failed: #ef4444;
+  --idle: var(--faint);
+
+  --ring: rgba(62, 207, 142, 0.35); /* green focus ring */
+  --ae: rgba(239, 68, 68, 0.5);
+  --as: rgba(239, 68, 68, 0.2);
+  --ag: rgba(239, 68, 68, 0.42);
+
+  /* Studio's chart palette skews green/teal/blue on dark. */
+  --data-1: #3ecf8e;
+  --data-2: #3e8fd6;
+  --data-3: #4dd4ac;
+  --data-4: #a78bfa;
+  --data-5: #f59e0b;
+  --data-6: #9ca3af;
+  --data-7: #6ee7b7;
+  --data-8: #60a5fa;
+
+  /* Surface system — flat with a real hairline border (Studio's card look). */
+  --surface-bg: #1f1f1f;
+  --surface-border: 1px solid rgba(255, 255, 255, 0.09);
+  --surface-rim: 0 0 0 0 transparent;
+  --surface-shade: 0 0 0 0 transparent;
+  --surface-shadow: 0 0 0 0 transparent;
+  --surface-glint: none;
+}

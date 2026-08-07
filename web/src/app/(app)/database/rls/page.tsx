@@ -105,7 +105,7 @@ export default async function RlsPage() {
   if (!tables) {
     return (
       <>
-        <PageHeader eyebrow="Build" title="Row Level Security" />
+        <PageHeader eyebrow="Database" title="Policies" />
         <Tabs items={DB_TABS} />
         <Surface className="empty-state" glint>
           <h2>Introspection unavailable</h2>
@@ -123,8 +123,8 @@ export default async function RlsPage() {
   return (
     <>
       <PageHeader
-        eyebrow="Build"
-        title="Row Level Security"
+        eyebrow="Database"
+        title="Policies"
         subtitle="Live from postgres-meta. Exposed schemas are deny-by-default for anon/authenticated; the app path is service_role behind the Cognito group gate."
       />
       <Tabs items={DB_TABS} />

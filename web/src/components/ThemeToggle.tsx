@@ -9,6 +9,7 @@ type Segment<T extends string> = { value: T; label: string };
 const THEME_SEGMENTS: Segment<Theme>[] = [
   { value: "light", label: "Light" },
   { value: "dark", label: "Dark" },
+  { value: "supabase", label: "Supabase" },
 ];
 
 function Segmented<T extends string>({
