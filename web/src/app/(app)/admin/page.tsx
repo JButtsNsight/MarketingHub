@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/Badge";
 import { RefList } from "@/components/ui/RefList";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { listBucket, type StorageEntry } from "@/lib/console/storage";
-import { PROJECT, SERVICES, SECURITY_POSTURE } from "@/lib/console/backend-map";
+import { SERVICES, SECURITY_POSTURE } from "@/lib/console/backend-map";
 
 // Reads request-time identity + live Supabase objects; never prerender.
 export const dynamic = "force-dynamic";
@@ -75,7 +75,6 @@ export default async function AdminPage() {
       <PageHeader
         eyebrow="Project"
         title="Admin"
-        subtitle={`Backend internals — storage, compute, and security · ${PROJECT.bundle}`}
       />
 
       <div className="stack">

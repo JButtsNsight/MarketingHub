@@ -32,7 +32,6 @@ export default async function ApiReferencePage() {
       <PageHeader
         eyebrow="API"
         title="Data API"
-        subtitle="PostgREST, GraphQL, and Storage exposed through the Kong gateway."
       />
 
       <div className="stack">

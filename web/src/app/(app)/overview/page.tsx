@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/Badge";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getTemplateStats } from "@/lib/console/stats";
-import { PROJECT } from "@/lib/console/backend-map";
 import {
   countSuppressions,
   countUnhandledInbound,
@@ -143,7 +142,6 @@ export default async function OverviewPage() {
       <PageHeader
         eyebrow="Project"
         title="Overview"
-        subtitle={`${PROJECT.name} · ${PROJECT.bundle} · ${PROJECT.postgres}`}
       />
 
       <div className="stack">

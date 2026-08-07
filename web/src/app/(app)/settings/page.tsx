@@ -22,7 +22,6 @@ export default async function SettingsPage() {
       <PageHeader
         eyebrow="Project"
         title="Settings"
-        subtitle="Runtime connection, project facts, and your account. Secret values are never displayed."
       />
 
       <div className="stack">

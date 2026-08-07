@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/Badge";
 import { RefList } from "@/components/ui/RefList";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import {
-  PROJECT,
   SERVICES,
   BUCKETS,
   SECURITY_POSTURE,
@@ -47,7 +46,6 @@ export default async function InfrastructurePage() {
       <PageHeader
         eyebrow="Infrastructure"
         title="Architecture"
-        subtitle={`${PROJECT.host} · ${PROJECT.bundle} · account ${PROJECT.account} · ${PROJECT.region}`}
       />
 
       <p className="ref-note" style={{ marginBottom: "18px" }}>

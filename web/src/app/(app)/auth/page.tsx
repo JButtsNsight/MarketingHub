@@ -30,7 +30,6 @@ export default async function AuthPage() {
       <PageHeader
         eyebrow="Authentication"
         title="Identity & access"
-        subtitle="End-user identity is AWS Cognito federated to Google Workspace (SAML) — the app does not use Supabase GoTrue login."
       />
 
       <div className="stack">
