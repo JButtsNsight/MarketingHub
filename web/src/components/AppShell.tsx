@@ -1,14 +1,13 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Nav } from "./Nav";
-import { Surface } from "./Surface";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
- * The console shell: a masthead with the Nsight wordmark (links home), a project
- * chip, and the global theme toggle; a left nav rail; and the main content
- * region. No banned "Claude look" patterns — no centered floating three-card
- * hero, no violet gradients, no frosted glass.
+ * The console shell: a masthead with the Nsight wordmark (links home) and the
+ * global theme toggle; a left nav rail; and the main content region. No banned
+ * "Claude look" patterns — no centered floating three-card hero, no violet
+ * gradients, no frosted glass.
  */
 export function AppShell({
   children,
@@ -23,11 +22,6 @@ export function AppShell({
         <Link href="/overview" className="word word-link">
           Nsight <em>MarketingHub</em>
         </Link>
-        <Surface className="project-chip" elevated={false}>
-          <span className="dot" aria-hidden="true" />
-          Console
-          <span className="env">us-east-1</span>
-        </Surface>
         <div className="masthead-right">
           <ThemeToggle />
           {user}
