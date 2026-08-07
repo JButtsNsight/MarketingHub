@@ -1,0 +1,1816 @@
+# Supabase Feature Catalog — self-hosted gap map for MarketingHub
+
+_Compiled 2026-08-07 from the official supabase.com/features catalog (79 features), researched against Supabase documentation and graded against our repo-verified deployment (bundle pin `supabase/supabase@v1.26.05`, storage-api `v1.48.26`, Postgres 17). See [Methodology](#methodology) for how claims were verified._
+
+## Executive summary
+
+"Supabase" is architecturally three layers, and the catalog splits cleanly across them. At the core is plain Postgres — many cataloged "features" are simply Postgres capabilities (roles, RLS, the 50+ pre-bundled extensions like pgvector, pg_cron, pgmq). Around it sits the open-source service bundle that self-hosters run from the docker compose repo: PostgREST (REST API), GoTrue (auth), storage-api, Realtime, the Deno edge-runtime, Kong, Supavisor, Studio, and the optional Logflare analytics stack. On top is the hosted cloud control plane — project management, automated backups/PITR, branching, read replicas, CDN, PrivateLink, the Management API. Of the 79 entries here, most belong to the first two layers and are self-hostable; 12 are cloud-control-plane-only, and a handful are "partial" (the capability exists self-hosted but the tooling or docs assume the cloud).
+
+Our deployment is the open-source bundle pinned at tag v1.26.05 on a single EC2 instance (Postgres 17, private subnets, no Supabase cloud account anywhere). The counts: **7 live, 23 running-unused, 23 available-unused, 14 absent, 12 cloud-only-N/A**. The 7 live features are the load-bearing core — the Postgres database, PostgREST, the supabase-js client, File storage (KMS-encrypted S3 backend), Postgres extensions, Postgres roles, and the SQL-editor path that powers our in-app console. The two large "unused" bands are structural, not neglect: auth authority is Cognito + Google Workspace SAML at the ALB, so the running GoTrue container and essentially the entire Auth group go unused; the app talks to the stack exclusively with a server-side service_role key (no anon key, no browser Supabase client), so RLS-dependent and Realtime features have no consumer; the analytics stack (Logflare + the vector log shipper) was never enabled because CloudWatch is the log source of truth; and we are single-node with our own pgBackRest/WAL/AWS Backup stack, which makes the cloud's scaling and backup features moot.
+
+How to read each entry: **maturity** is Supabase's own label (GA / Beta / Public Alpha, etc.); **selfHosted** is yes / partial / cloud-only; **mhValue** (0–3) rates relevance to MarketingHub and its roadmap specifically, not general feature quality; **effort** (S/M/L) rates meaningful adoption — where flipping a config flag is trivial but a prerequisite migration (e.g. moving auth to GoTrue) is the real cost, the prerequisite is what's rated; **caveats** mostly flag version uncertainty against our v1.26.05 bundle pin. The **ourStatus** enum: `live` = running and actively used by the app; `running-unused` = the container/service is up but nothing calls it; `available-unused` = present in our image/bundle but not enabled; `absent` = self-hosting supports it but we have not deployed/enabled it; `cloud-only-na` = requires the Supabase cloud control plane and cannot exist in our deployment.
+
+## Gap matrix
+
+Totals: **7 live · 23 running-unused · 23 available-unused · 14 absent · 12 cloud-only (N/A)**
+
+### Auth
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [JWT Signing Keys](#jwt-signing-keys) | GA | partial | absent | 1 | M |
+| [Third-Party Authentication](#third-party-authentication) | GA | partial | absent | 1 | L |
+| [Auth Hooks](#auth-hooks) | Beta | yes | available-unused | 0 | L |
+| [Captcha protection](#captcha-protection) | GA | yes | available-unused | 0 | S |
+| [Custom Identity Providers](#custom-identity-providers) | GA | yes | running-unused | 0 | M |
+| [Email login](#email-login) | GA | yes | running-unused | 0 | M |
+| [Email Templates](#email-templates) | GA | yes | running-unused | 0 | S |
+| [Multi-Factor Authentication (MFA)](#multi-factor-authentication-mfa) | GA | yes | running-unused | 0 | L |
+| [OAuth2.1 Server](#oauth2-1-server) | Public Beta | yes | available-unused | 0 | L |
+| [Passwordless login via Magic Links](#passwordless-login-via-magic-links) | GA | yes | running-unused | 0 | M |
+| [Phone logins](#phone-logins) | GA | yes | available-unused | 0 | L |
+| [Server-side Auth](#server-side-auth) | Beta | yes | absent | 0 | L |
+| [Social login](#social-login) | GA | yes | available-unused | 0 | L |
+| [SSO with SAML](#sso-with-saml) | GA | yes | available-unused | 0 | M |
+| [User Impersonation](#user-impersonation) | Public Beta | yes | running-unused | 0 | S |
+| [Web3 Authentication](#web3-authentication) | GA | yes | available-unused | 0 | M |
+
+### Database
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [Auto-generated REST API via PostgREST](#auto-generated-rest-api-via-postgrest) | GA | yes | live | 3 | S |
+| [Postgres database](#postgres-database) | GA | yes | live | 3 | S |
+| [Postgres Extensions](#postgres-extensions) | GA | yes | live | 3 | S |
+| [Vector database](#vector-database) | GA | yes | available-unused | 3 | S |
+| [Cron](#cron) | Beta | yes | available-unused | 2 | S |
+| [Declarative Schemas](#declarative-schemas) | GA | yes | absent | 2 | M |
+| [Postgres Roles](#postgres-roles) | GA | yes | live | 2 | S |
+| [Queues](#queues) | Public Alpha | yes | available-unused | 2 | S |
+| [Authorization via Row Level Security](#authorization-via-row-level-security) | GA | yes | running-unused | 1 | M |
+| [Branching](#branching) | Beta | cloud-only | cloud-only-na | 1 | N/A |
+| [Database Webhooks](#database-webhooks) | Beta | yes | available-unused | 1 | S |
+| [Foreign Data Wrappers](#foreign-data-wrappers) | GA | yes | available-unused | 1 | S |
+| [MCP Server](#mcp-server) | Public Alpha | partial | available-unused | 1 | S |
+| [Network restrictions](#network-restrictions) | GA | partial | available-unused | 1 | S |
+| [SSL enforcement](#ssl-enforcement) | GA | partial | absent | 1 | M |
+| [Auto-generated GraphQL API via pg_graphql](#auto-generated-graphql-api-via-pg-graphql) | GA | yes | available-unused | 0 | S |
+| [Custom domains](#custom-domains) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [Database backups](#database-backups) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [Dedicated Poolers](#dedicated-poolers) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [OrioleDB](#orioledb) | Public Alpha | yes | absent | 0 | L |
+| [Read replicas](#read-replicas) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [Supabase Pipelines](#supabase-pipelines) | Public Alpha | partial | absent | 0 | M |
+| [Terraform provider](#terraform-provider) | Public Alpha | cloud-only | cloud-only-na | 0 | N/A |
+
+### Functions
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [Deno Edge Functions](#deno-edge-functions) | GA | yes | running-unused | 1 | S |
+| [Persistent Storage](#persistent-storage) | GA | yes | available-unused | 0 | S |
+| [Regional invocations](#regional-invocations) | GA | cloud-only | cloud-only-na | 0 | N/A |
+
+### Platform
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [Client Library - JavaScript](#client-library-javascript) | GA | yes | live | 3 | S |
+| [CLI](#cli) | GA | partial | absent | 2 | S |
+| [Client Library - Python](#client-library-python) | Beta | yes | absent | 1 | S |
+| [Logs & Analytics](#logs-analytics) | GA | yes | available-unused | 1 | M |
+| [Reports & Metrics](#reports-metrics) | GA | partial | available-unused | 1 | M |
+| [Role-Based Access Control (RBAC)](#role-based-access-control-rbac) | GA | yes | absent | 1 | L |
+| [Supabase AI Assistant](#supabase-ai-assistant) | Public Alpha | partial | available-unused | 1 | S |
+| [Supavisor](#supavisor) | Public Beta | yes | running-unused | 1 | S |
+| [Vault](#vault) | Public Alpha | yes | available-unused | 1 | S |
+| [Client Library - Flutter](#client-library-flutter) | GA | yes | absent | 0 | M |
+| [Client Library - Swift](#client-library-swift) | GA | yes | absent | 0 | S |
+| [Management API](#management-api) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [PrivateLink](#privatelink) | Beta | cloud-only | cloud-only-na | 0 | N/A |
+| [SOC 2 Compliance](#soc-2-compliance) | GA | cloud-only | cloud-only-na | 0 | N/A |
+
+### Realtime
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [Realtime - Broadcast](#realtime-broadcast) | GA | yes | running-unused | 1 | M |
+| [Realtime - Broadcast from the Database](#realtime-broadcast-from-the-database) | Public Beta | yes | running-unused | 1 | M |
+| [Realtime - Postgres changes](#realtime-postgres-changes) | GA | yes | running-unused | 1 | M |
+| [Realtime - Presence](#realtime-presence) | GA | yes | running-unused | 1 | M |
+| [Realtime - Presence Authorization](#realtime-presence-authorization) | Public Beta | yes | running-unused | 1 | M |
+| [Realtime - Broadcast Authorization](#realtime-broadcast-authorization) | Public Beta | yes | running-unused | 0 | M |
+| [Realtime - Broadcast Replay](#realtime-broadcast-replay) | Public Alpha | yes | running-unused | 0 | M |
+
+### Storage
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [File storage](#file-storage) | GA | yes | live | 3 | S |
+| [Analytics Buckets (with Iceberg)](#analytics-buckets-with-iceberg) | Public Alpha | partial | available-unused | 1 | M |
+| [Image transformations](#image-transformations) | GA | yes | running-unused | 1 | S |
+| [Resumable uploads](#resumable-uploads) | GA | yes | running-unused | 1 | S |
+| [S3 compatibility](#s3-compatibility) | GA | yes | running-unused | 1 | S |
+| [Vector Buckets](#vector-buckets) | Public Alpha | partial | available-unused | 1 | M |
+| [Content Delivery Network](#content-delivery-network) | GA | cloud-only | cloud-only-na | 0 | N/A |
+| [Smart Content Delivery Network](#smart-content-delivery-network) | GA | cloud-only | cloud-only-na | 0 | N/A |
+
+### Studio
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [Security & Performance Advisor](#security-performance-advisor) | GA | yes | running-unused | 2 | S |
+| [SQL Editor](#sql-editor) | GA | yes | live | 2 | S |
+| [Foreign Key Selector](#foreign-key-selector) | GA | yes | running-unused | 1 | S |
+| [Policy Templates](#policy-templates) | GA | yes | running-unused | 1 | S |
+| [Visual Schema Designer](#visual-schema-designer) | GA | yes | running-unused | 1 | S |
+| [Log Drains](#log-drains) | GA | partial | absent | 0 | M |
+
+### Vector
+
+| Feature | Maturity | Self-hosted | Ours | Value | Effort |
+|---|---|---|---|---|---|
+| [AI Integrations](#ai-integrations) | GA | yes | absent | 2 | S |
+| [Automatic Embeddings](#automatic-embeddings) | GA | yes | available-unused | 2 | M |
+
+## Adoption recommendations
+
+## Ranked adoption candidates
+
+1. **Vector database (pgvector)** — First action: add a repo migration with `CREATE EXTENSION vector;` and, via the pg-meta console (`POST /query`), run `SELECT * FROM pg_available_extensions WHERE name='vector'` to confirm the version baked into our v1.26.05 PG17 image (HNSW needs >= 0.5.0; iterative index scans need >= 0.8.0). Rationale: this is the exact enabler of the next roadmap item, the competitor-intel RAG module, and it is already sitting in the image. Effort: S. Prerequisites: version check only; put the new embedding tables in the `marketinghub` schema so the existing RLS deploy gate applies.
+
+2. **Queues (pgmq)** — First action: confirm pgmq ships in our db image (not enabled by any repo SQL today), `CREATE EXTENSION pgmq`, and use it first as the embedding-job queue for competitor-intel — do not start with an SMS-outbox migration. Rationale: pgmq's visibility-timeout read is the same FOR UPDATE SKIP LOCKED pattern we hand-rolled in `claim_due_sms_recipients`, and its archive tables give tamper-evident job history (hardening interest). Call `pgmq.*` from the service-role client; no PostgREST exposure needed. Effort: S for greenfield use; migrating the existing outbox is a later, separate project. Prerequisite: accept Public Alpha packaging (the underlying extension is mature).
+
+3. **Cron (pg_cron)** — First action: confirm pg_cron is in the image and preloaded (`shared_preload_libraries`), enable it, and schedule one low-stakes job (pgmq archive sweep or a nightly lint run) before touching the blast scheduler. Rationale: the app-level scheduler polling zoned 30-min blast slots is flagged roadmap overlap; pg_cron + pgmq is the in-database replacement path. Effort: S. Prerequisites: item 2 if jobs drive queues; keep the app scheduler until a full send-cycle runs in parallel cleanly.
+
+4. **Security & Performance Advisor (splinter lints)** — First action: open Database > Advisors in the stock Studio behind the Cognito ALB today (zero work); then run `splinter.sql` on a schedule and surface results as a read-only tab in our in-app console via the existing pg-meta `/query` path. Rationale: `rls_disabled` mechanically backs the RLS deploy gate, and the perf lints (unindexed FKs, duplicate indexes) matter before the pgvector tables land. Direct hit on the platform-hardening interest. Effort: S.
+
+5. **CLI** — First action: `supabase gen types typescript --db-url ...` over the existing SSM tunnel; commit the generated types and type the server-only supabase-js client. Rationale: typed rows for current CRUD and for the new competitor-intel tables; `supabase start` + `db diff` also gives a disposable local stack for developing the pgvector migrations. Effort: S. Prerequisite/caveat: local stack images will be newer than the v1.26.05 pin — treat local as approximate and keep repo migrations against prod authoritative.
+
+6. **Postgres Roles (least-privilege app role)** — First action: create a scoped role (e.g. `marketinghub_app`) granted only what the app actually uses (CRUD on `marketinghub` tables, EXECUTE on `claim_due_sms_recipients`, storage schema access) and mint a JWT with that role claim using the existing JWT secret, moving the Next.js data path off blanket service_role in stages. Rationale: the single biggest cheap hardening win for the HIPAA-adjacent posture; turns the currently gate-only RLS into real defense-in-depth. Effort: S. Prerequisites: inventory of PostgREST/Storage calls; keep service_role for the audited console path.
+
+7. **Automatic Embeddings pattern** — First action: use the official guide SQL as the design template for keeping competitor-intel embeddings fresh, but resolve the pg_net conflict first: the stock pattern makes HTTP calls via pg_net, which we deliberately revoked EXECUTE on and flagged for DROP. Recommended shape: triggers enqueue to pgmq, and a Next.js worker (not pg_net) makes the embedding API call — preserves the no-DB-egress posture. Rationale: solves embedding-freshness for the RAG module without hand-rolled sync code. Effort: M. Prerequisites: items 1–3; verify pgmq/pg_cron versions against the guide.
+
+8. **AI Integrations (embedding provider)** — First action: a BAA/egress review before any provider call; default to Bedrock (consistent with the existing PHI-gate/PrivateLink posture) rather than OpenAI/Hugging Face hosted APIs, and treat Supabase's integration guides purely as pipeline patterns. Rationale: competitor-intel needs an embedding generator; the pipeline shape is documented, the provider choice is our compliance decision. Effort: S once the provider is settled. Prerequisite: the egress review is the gate, even if competitor-intel data is non-PHI.
+
+9. **Declarative Schemas** — First action: adopt for the new competitor-intel schema only — declared `.sql` end-state in the repo, CLI-diffed into migrations — leaving the existing migration history untouched. Rationale: reviewable, reproducible schema-as-code strengthens the RLS deploy gate and adds change tamper-evidence (hardening). Effort: M. Prerequisites: item 5 (current CLI); this is CLI-side, so the v1.26.05 server pin is irrelevant.
+
+## Console parity backlog
+
+1. **Security & Performance Advisor tab** — highest-value gap on the not-built list: pipe `splinter.sql` through the existing pg-meta `POST /query` route into a read-only Advisors view; directly backs the RLS deploy gate and pre-pgvector index hygiene (see ranked item 4).
+2. **FK Selector** — row-picker on FK columns in our Table Editor; becomes genuinely useful once competitor-intel adds FK-linked tables (sources → documents → chunks) instead of today's mostly flat schema.
+3. **Visual Schema Designer (render-only)** — an ER canvas on top of the pg-meta data our read-only Schema viewer already fetches; skip on-canvas editing entirely, since schema changes stay in repo migrations behind the deploy gate.
+4. **Policy Templates** — a small snippet library of our gate-satisfying RLS boilerplate inside the console SQL Editor; low priority while service_role bypasses RLS, slightly more useful if ranked item 6 makes policies real.
+5. **User Impersonation** — do not build: there are no GoTrue users to impersonate and service_role bypasses RLS; only revisit if Third-Party Authentication (Cognito JWTs) ever makes per-user RLS real.
+
+## Deliberately not adopting
+
+- **Entire GoTrue auth surface** (Email login, Magic Links, Social/Phone login, MFA, Captcha, Email Templates, Auth Hooks, SSO with SAML, Custom IdPs, OAuth2.1 Server, Server-side Auth, Web3) — Cognito + Google Workspace SAML at the ALB is the deliberate identity boundary; every one of these presupposes GoTrue flows we intentionally never run.
+- **Realtime family** (Broadcast, Presence, Postgres Changes, plus authorization/replay variants) — no browser Supabase client or anon key exists; polling covers the schedule view, and adoption would open a new client surface that weakens the service_role-only architecture.
+- **Deno Edge Functions** (+ Persistent Storage, Regional invocations) — the Next.js 15 server already hosts all logic; the functions container idles with zero deployments and adds nothing the roadmap needs.
+- **Database Webhooks** — built on pg_net, which we revoked EXECUTE on and slated for DROP; DB-initiated egress of row payloads is wrong for the posture.
+- **GraphQL via pg_graphql** — PostgREST CRUD + the one claim RPC + pg-meta `/query` already cover every access path for a server-only service_role app.
+- **Logs & Analytics / Log Drains / Reports & Metrics** — CloudWatch is the declared log/metric source of truth; standing up Logflare+Vector duplicates it with heavy containers on one EC2 instance.
+- **Cloud-only tier** (Branching, Database backups/PITR, Read replicas, CDN/Smart CDN, Custom domains, PrivateLink, Management API, Terraform provider, Dedicated Poolers, SOC 2 report) — all require the Supabase cloud control plane we don't have; pgBackRest + Object-Lock S3 + AWS Backup already beats cloud backups, and private subnets already do PrivateLink's job.
+- **Network restrictions / SSL enforcement** — AWS security groups and private subnets are the real firewall, and all containers share one EC2 host, so intra-host TLS buys little; revisit only if the stack ever splits across hosts.
+- **Foreign Data Wrappers** — RAG ingestion belongs app-side; SQL-initiated egress to third-party APIs cuts against the pg_net lockdown.
+- **RBAC pattern / per-user authz** — the Cognito `marketing` group is the entire permission model for this single-team tool; RBAC requires per-user JWTs we don't mint.
+- **OrioleDB** — alpha storage engine on a HIPAA-adjacent production box with zero heap-scalability pain.
+- **Supabase Pipelines** — CDC to BigQuery/warehouses solves a problem no roadmap item has.
+- **Flutter / Swift client libraries** — no mobile app exists or is planned, and the no-anon-key service_role architecture is hostile to direct mobile clients anyway.
+
+## Watch list
+
+- **MCP Server** (Public Alpha; our v1.26.05 pin verifiably ships the Kong `/mcp` route) — could give Claude-driven dev tooling schema/SQL access over the SSM tunnel during the pgvector build; revisit as it stabilizes, since pg-meta already covers most of it.
+- **Vault** (Public Alpha, pgsodium deprecation in flight) — hold until internals settle; only becomes relevant if in-DB jobs (pg_cron/pgmq) ever need secrets we currently keep in SSM/KMS.
+- **Third-Party Authentication** (GA, but L effort) — the one credible path to making RLS a real per-user boundary by trusting Cognito JWTs in PostgREST/Storage; revisit if MarketingHub ever outgrows the single `marketing` group.
+- **Client Library – Python** (Beta) — revisit if competitor-intel embedding/ingestion pipelines end up in Python rather than the Next.js server.
+- **Vector Buckets** (Public Alpha) — only if competitor-intel embeddings outgrow pgvector into tens of millions of vectors; our pinned storage-api (v1.48.26) already carries the plumbing.
+- **JWT Signing Keys** (partial self-hosted support, compose plumbing recency unconfirmed at our pin) — irrelevant until/unless GoTrue is ever adopted; note it for any future auth re-architecture.
+- **Supabase AI Assistant** (Public Alpha) — as console-parity work continues, periodically check whether stock Studio's assistant is worth mirroring; any adoption needs the same LLM-egress review as ranked item 8.
+- **Analytics Buckets / Iceberg** (Public Alpha) — long-horizon candidate for offloading audit-log history if the tamper-evidence work grows, but alpha limits rule it out today.
+
+## Catalog
+
+## Auth features
+
+The largest group: GoTrue's full surface — login methods (email/password, magic links, phone OTP, social OAuth, SAML SSO, Web3), MFA, auth hooks, email templates, JWT key management, and patterns for trusting external IdPs. Our GoTrue container runs but is deliberately unused: Cognito + Google Workspace SAML at the ALB is the auth authority and the app uses only the service_role key, so nearly everything here is running-unused or available-unused with zero MarketingHub value. The one conceptually interesting entry is Third-Party Authentication (trusting Cognito-issued JWTs to turn our currently-bypassed RLS into a real per-user boundary), but that is an L-effort re-architecture with limited payoff for a single-group internal tool.
+
+### JWT Signing Keys
+
+`GA` · self-hosted: **partial** · ours: **absent** · value **1/3** · effort **M** · verified
+
+**What it is.** Replaces Supabase's legacy single shared JWT secret (HS256) with asymmetric key pairs (ES256 recommended, RS256, EdDSA coming soon): the Auth server signs user JWTs with a private key, and any service can verify them locally against the public key via a JWKS endpoint, without calling the Auth server. It comes with a managed key lifecycle (standby -> active -> previously-used -> revoked) and pairs with the new opaque publishable/secret API keys that replace anon/service_role JWTs.
+
+**How it works.** Signing is implemented in GoTrue (the Auth server): given a JSON array of signing JWKs (env JWT_KEYS / GOTRUE_JWT_KEYS containing the EC private key plus the legacy symmetric key), it signs new session JWTs with ES256 and serves the public keys at /auth/v1/.well-known/jwks.json. Verifiers are configured with the JWKS: PostgREST (PGRST_JWT_SECRET accepts a JWKS), Realtime (API_JWT_JWKS), and storage-api (JWT_JWKS), so both new ES256 and legacy HS256 tokens verify during migration. Kong handles the new opaque sb_publishable_/sb_secret_ API keys that replace anon/service_role. On the cloud platform the dashboard/Management API manage the key state machine (create standby, rotate, revoke, roll back; JWKS edge-cached 10 min); self-hosted, the same mechanics are driven by env vars plus helper scripts (utils/add-new-auth-keys.sh, rotate-new-api-keys.sh) and container restarts. Rotating opaque API keys does not invalidate sessions; regenerating the asymmetric pair invalidates existing ES256 sessions.
+
+**Components:** GoTrue (auth) container — signs JWTs, serves /.well-known/jwks.json; PostgREST (PGRST_JWT_SECRET as JWKS); Realtime (API_JWT_JWKS); storage-api (JWT_JWKS); Kong gateway (publishable/secret key substitution); cloud dashboard + Management API (managed key lifecycle, cloud only); docker-compose env vars + utils/add-new-auth-keys.sh scripts (self-hosted)
+
+**Self-hosted availability.** Core capability works self-hosted with no cloud account: official guide (docs/guides/self-hosting/self-hosted-auth-keys) shows GoTrue signing ES256 via JWT_KEYS, JWKS-based verification in PostgREST/Realtime/Storage, and new publishable/secret keys via Kong (added to supabase/supabase docker bundle via PR #43554 after issue #41843). What you do NOT get is the cloud control plane's managed lifecycle: no dashboard key-management UI, standby/rotate/revoke state machine, Management API, or edge-cached JWKS — rotation is manual (scripts, env edits, container restarts).
+
+**Our stack.** Not configured anywhere: ground truth says "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key (no anon key, no browser Supabase client)" — i.e. we still use a legacy symmetric-secret-signed service_role JWT; no JWT_KEYS/JWKS or publishable/secret key config exists in the deployment. (Rated absent rather than available-unused because it requires explicit env configuration, not just the image.)
+
+**Value for MarketingHub (1/3).** Marginal hardening only: MarketingHub's real authz boundary is Cognito at the ALB, GoTrue is unused, and there are no browser clients or third parties verifying JWTs, so local/asymmetric verification buys nothing functional. The one relevant win is platform hardening — replacing the long-lived HS256 service_role JWT with a rotatable opaque sb_secret_ key (rotation without session impact, no shared signing secret in app env) — which aligns weakly with the roadmap's hardening interest.
+
+**Caveats.** Self-hosted support (docker-compose env plumbing, add-new-auth-keys.sh/rotate-new-api-keys.sh scripts, self-hosting guide) landed via supabase/supabase PR #43554 resolving issue #41843; I could not confirm whether it predates our pinned tag v1.26.05 (cloned 2026-07) — our bundle may lack the scripts/compose wiring, requiring a bundle update or manual GOTRUE_JWT_KEYS + per-verifier JWKS env config. Minimum GoTrue/PostgREST/Realtime/storage-api versions for JWKS support are unverified against our image. Feature was opt-in at launch (blog 2025-07-14; default for new cloud projects from 2025-10-01) though the catalog lists GA. EdDSA listed as "coming soon" in docs. Kong performs no checksum validation on the opaque keys self-hosted. Regenerating the asymmetric pair invalidates existing ES256 sessions (moot for us — GoTrue unused).
+
+Docs: <https://supabase.com/docs/guides/auth/signing-keys> · <https://supabase.com/docs/guides/self-hosting/self-hosted-auth-keys> · <https://supabase.com/blog/jwt-signing-keys> · <https://github.com/supabase/supabase/issues/41843>
+
+### Third-Party Authentication
+
+`GA` · self-hosted: **partial** · ours: **absent** · value **1/3** · effort **L** · verified
+
+**What it is.** Third-Party Authentication lets Supabase's product APIs (Data API/PostgREST, GraphQL, Storage, Realtime, Edge Functions) trust JWTs issued by an external identity provider — first-class support for Clerk, Firebase Auth, Auth0, AWS Cognito, and WorkOS — used alongside or instead of Supabase's own GoTrue Auth. Your existing auth system remains the source of truth; Supabase only verifies its tokens and applies RLS from their claims, so you never migrate users or translate JWTs into Supabase's format.
+
+**How it works.** On the Supabase platform you register an integration under Authentication settings > Third-Party Auth (or via the Management API); the control plane stores the provider's JWT signing keys from its OIDC Issuer Discovery URL and re-checks them periodically (allow ~30 min for key rotation). The data-plane services (PostgREST, storage-api, Realtime, edge-runtime) then verify incoming JWTs against those keys exactly as they verify GoTrue-issued tokens — GoTrue itself is bypassed at request time. Tokens must be asymmetrically signed with a kid header; symmetric JWTs are not supported. RLS requires a role claim resolving to authenticated — providers like Cognito lack it and need a Pre-Token-Generation Lambda to inject it, or requests fall back to anon. Client-side, supabase-js is constructed with an accessToken callback that returns the external provider's current token instead of a Supabase session. For CLI local dev, config.toml supports [auth.third_party.<provider>] blocks (e.g. aws_cognito with user_pool_id/region). Cloud billing: $0.00325 per third-party MAU beyond plan quota.
+
+**Components:** cloud dashboard project auth config (Third-Party Auth section + Management API) — provider registration and automatic JWKS refresh; JWT verification inside data-plane services: PostgREST, storage-api, Realtime, edge-runtime (GoTrue bypassed); supabase-js accessToken client option; CLI config.toml [auth.third_party.*] (local dev only)
+
+**Self-hosted availability.** The managed feature (provider registration UI, OIDC discovery, automatic 30-min JWKS refresh, MAU billing) is cloud-control-plane; the docker bundle and self-hosting docs expose no third-party-auth knob (the self-hosted-auth-keys guide covers only Supabase's own asymmetric keys, and GH discussion #32775 shows custom issuers gated to cloud Team/Enterprise). However, because verification happens in the data services, an equivalent can be hand-wired self-hosted: put the external provider's public keys into each verifier's JWKS config — PGRST_JWT_SECRET (accepts JWKS JSON) for PostgREST, API_JWT_JWKS for Realtime, JWT_JWKS for storage-api — plus a role claim on the tokens. This is undocumented for that purpose and key rotation becomes your problem.
+
+**Our stack.** "Auth authority is AWS Cognito (Google Workspace SAML) enforced at an ALB. The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key (no anon key, no browser Supabase client). RLS exists on exposed tables (a deploy gate requires it) but the app bypasses it via service_role." No external-issuer JWKS trust is configured on any service; Supabase-side auth of any kind (GoTrue or third-party) is unused, so the feature is not deployed though a DIY self-hosted path exists.
+
+**Value for MarketingHub (1/3).** Conceptually a good fit — we already run Cognito, so trusting Cognito JWTs in PostgREST/Storage would turn our currently-bypassed RLS into a real per-user boundary (aligns with the platform-hardening interest). But MarketingHub is a single-group (marketing) internal tool with a deliberate server-only service_role architecture, the in-app console's postgres-meta /pg/* path has no per-user JWT story anyway, and nothing on the roadmap (competitor-intel/pgvector, console parity) needs it. Defense-in-depth nice-to-have, not a driver.
+
+**Caveats.** Effort is L because the trust-wiring itself (JWKS env on rest/storage/realtime + Cognito Pre-Token-Generation Lambda adding role=authenticated) is only moderate, but realizing any value requires re-architecting the app away from service_role-only data access to per-user token forwarding and real RLS policies. Version caveats: our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07); asymmetric-JWT/JWKS support in the self-hosted compose (JWT_KEYS/JWT_JWKS, add-new-auth-keys.sh) shipped in 2025, so our clone likely includes it, but the exact PostgREST/Realtime/storage-api container versions and their JWKS env support are unverified. Self-hosted has no automatic JWKS refresh — provider key rotations need manual/scripted updates on all three services. Could not confirm whether arbitrary (non-first-class) OIDC issuers work self-hosted; on cloud, custom issuers are Team/Enterprise-gated. Cognito ID/access tokens lack a role claim by default and resolve to anon without the Lambda hook.
+
+Docs: <https://supabase.com/docs/guides/auth/third-party/overview> · <https://raw.githubusercontent.com/supabase/supabase/master/apps/docs/content/guides/auth/third-party/overview.mdx> · <https://supabase.com/docs/guides/auth/third-party/aws-cognito> · <https://supabase.com/blog/third-party-auth-mfa-phone-send-hooks> · <https://supabase.com/docs/guides/self-hosting/docker> · <https://supabase.com/docs/guides/self-hosting/self-hosted-auth-keys> · <https://github.com/orgs/supabase/discussions/32775>
+
+### Auth Hooks
+
+`Beta` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **L** · verified
+
+**What it is.** Auth Hooks let you inject custom logic at specific points in Supabase Auth's authentication lifecycle — e.g. adding custom JWT claims, gating signups, routing auth emails/SMS through your own provider, or vetoing MFA/password attempts. Each hook is either a Postgres function or an HTTP endpoint (commonly an Edge Function) that the Auth server calls synchronously with a JSON event and whose response alters the flow.
+
+**How it works.** Implemented entirely inside GoTrue (the supabase/auth server): at defined extensibility points it invokes a configured hook and merges the response back into the flow. Current source exposes seven points: Custom Access Token (mutate JWT claims before signing), Send SMS, Send Email, MFA Verification Attempt, Password Verification Attempt, Before User Created, and After User Created. Postgres-function hooks are JSONB-in/JSONB-out functions executed in the project database as the supabase_auth_admin role (2-second limit, request never leaves the instance); HTTP hooks receive a Standard-Webhooks-signed JSON POST (webhook-id/timestamp/signature headers, 5-second budget, up to 3 retries, 20KB payload) with secrets like v1,whsec_<base64>. Configuration is per-hook: on cloud via Dashboard > Authentication > Hooks; on CLI local dev via config.toml URIs (pg-functions://postgres/schema/fn or https://...); on plain self-hosted via GoTrue env vars GOTRUE_HOOK_<NAME>_ENABLED / _URI / _SECRETS (verified in supabase/auth example.env and internal/conf/configuration.go).
+
+**Components:** GoTrue (auth container) — hook dispatch and config; Postgres — pg-function hooks run as supabase_auth_admin; Edge Functions or any HTTPS endpoint — HTTP hooks (optional); Cloud dashboard / CLI config.toml / GOTRUE_HOOK_* env vars — configuration surfaces
+
+**Self-hosted availability.** Fully available self-hosted: hooks are native GoTrue functionality configured by env vars on the auth container (GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED/_URI/_SECRET etc., confirmed in the supabase/auth repo). No cloud control plane needed; the docker-compose bundle just doesn't wire these vars by default, and the cloud tier-gating of MFA/password-verification hooks (Teams/Enterprise) does not apply to self-hosted.
+
+**Our stack.** The implementing service runs but no hook is enabled and auth itself is bypassed: "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" — auth authority is "AWS Cognito (Google Workspace SAML) enforced at an ALB". No GOTRUE_HOOK_* configuration exists in the repo.
+
+**Value for MarketingHub (0/3).** Hooks only fire inside GoTrue auth flows, which MarketingHub never exercises — Cognito+ALB is the real authz boundary and the app uses service_role exclusively. Nothing on the roadmap (competitor-intel/pgvector, queues/cron, console parity, hardening) touches Supabase auth, so there is no flow for a hook to customize.
+
+**Caveats.** Mechanically enabling a hook is trivial (env vars + a SQL function), but meaningful adoption requires migrating auth from Cognito to GoTrue — that migration is the L in the effort rating. Our GoTrue version inside the v1.26.05 bundle (cloned 2026-07) is unverified; core hooks (custom access token, send SMS/email, MFA/password verification) shipped in 2024 and should be present, but Before User Created (2025) and especially After User Created are newer and may require a GoTrue upgrade. Feature is officially Beta. HTTP hooks from our private-subnet instance would need egress or would use the running (but empty) functions container; pg-function hooks avoid that. Cloud dashboard hook UI is not part of self-hosted Studio — config is env-var only in our setup.
+
+Docs: <https://supabase.com/docs/guides/auth/auth-hooks> · <https://supabase.com/docs/guides/self-hosting/auth/config> · <https://github.com/supabase/auth (example.env and internal/conf/configuration.go)>
+
+### Captcha protection
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **S** · verified
+
+**What it is.** Built-in bot/abuse protection for Supabase Auth: you can require a CAPTCHA challenge (hCaptcha or Cloudflare Turnstile) on sign-in, sign-up, and password-reset flows. It blocks scripted account creation and credential-stuffing against the auth endpoints.
+
+**How it works.** Implemented entirely in the GoTrue auth server (supabase/auth) as request middleware. When enabled, GoTrue looks for a captcha_token field in the body of protected auth requests (signup, sign-in, password recovery, etc.) and validates it server-side against the configured provider (hCaptcha or Turnstile) using a secret key; requests without a valid token are rejected. The frontend renders the provider's widget (e.g. the HCaptcha/Turnstile React component) and passes the resulting token via supabase-js, e.g. supabase.auth.signUp({ email, password, options: { captchaToken } }). On Supabase cloud it is toggled in Dashboard > Auth > Bot and Abuse Protection; self-hosted it is configured with GoTrue env vars SECURITY_CAPTCHA_ENABLED, SECURITY_CAPTCHA_PROVIDER, SECURITY_CAPTCHA_SECRET, SECURITY_CAPTCHA_TIMEOUT (GOTRUE_-prefixed in the docker bundle). No Postgres, Kong, or Studio involvement beyond configuration UI.
+
+**Components:** GoTrue (auth) server middleware; hCaptcha or Cloudflare Turnstile (external provider); supabase-js captchaToken option / provider widget in frontend; cloud dashboard toggle (cloud) or GOTRUE_SECURITY_CAPTCHA_* env vars (self-hosted)
+
+**Self-hosted availability.** Fully available self-hosted: it is a GoTrue feature configured via environment variables on the auth container (SECURITY_CAPTCHA_ENABLED/PROVIDER/SECRET/TIMEOUT per the supabase/auth README). No cloud control plane needed — only an account with hCaptcha or Cloudflare for the site/secret keys. Note the default docker-compose .env does not expose these vars; you add them to the auth service manually.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" — the captcha capability ships inside that running GoTrue container but no SECURITY_CAPTCHA_* config is set by our repo, and no auth flow exists for it to protect. Real auth is "AWS Cognito (Google Workspace SAML) enforced at an ALB."
+
+**Value for MarketingHub (0/3).** MarketingHub has no Supabase-auth sign-in/sign-up/password-reset forms to protect — auth is Cognito SAML behind the ALB and the app talks to PostgREST/Storage with the service_role key only. Nothing on the roadmap (competitor-intel/pgvector, queues/cron, console parity, hardening) involves GoTrue, so captcha has no attack surface to defend here.
+
+**Caveats.** Effort S reflects only flipping GOTRUE_SECURITY_CAPTCHA_* env vars on the already-running auth container; meaningful adoption would first require adopting GoTrue auth flows and a browser Supabase client, neither of which MarketingHub has (that would be L and contrary to the Cognito design). Both hCaptcha and Turnstile support shipped in GoTrue well before our v1.26.05 bundle pin, so version risk is low, but the exact GoTrue version in our image is unverified. The dashboard toggle described in docs is cloud-only; self-hosted config is env-var only and not present in the stock docker .env. Not verified: whether our Kong routes need changes (they should not — the captcha token rides inside existing auth request bodies).
+
+Docs: <https://supabase.com/docs/guides/auth/auth-captcha> · <https://supabase.com/docs/guides/self-hosting/auth/config> · <https://github.com/supabase/auth>
+
+### Custom Identity Providers
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Lets you connect any standards-compliant OAuth2 or OIDC identity provider to Supabase Auth beyond the ~20 built-in social providers — e.g., GitHub Enterprise Server, GitLab self-managed, regional/compliance IdPs, or niche healthcare/gaming identity networks. Once registered, a custom provider behaves exactly like a built-in one: same signInWithOAuth() flow, same client libraries, same sessions and RLS enforcement. GA'd April 8, 2026.
+
+**How it works.** Implemented entirely in the Auth server (GoTrue, supabase/auth): it handles the redirect to the external IdP, the authorization-code exchange (PKCE on by default), userinfo/ID-token retrieval, and minting Supabase JWT sessions. Providers are registered under a `custom:` identifier (e.g. custom:my-idp) in one of two modes: OIDC (supply only the issuer URL; discovery document, JWKS, and endpoints resolve automatically) or OAuth2 (manually supply authorization, token, and userinfo endpoint URLs). Provider configs are stored in the auth database and managed via the Dashboard UI (Authentication > Sign In / Providers > Custom Providers) or the Auth Admin API (supabase.auth.admin.customProviders create/list/update/delete). Sign-in is GET /auth/v1/authorize?provider=custom:my-idp or the SDK equivalent (JS/Flutter/Swift/Kotlin). Extras: acceptable_client_ids for multi-platform apps, email_optional for IdPs that return no email, extra authorization query params, per-provider custom_claims_allowlist (auth v2.192+), redirect-URI override (v2.194+). Server-side knobs in open-source GoTrue: GOTRUE_CUSTOM_OAUTH_ENABLED (default true), GOTRUE_CUSTOM_OAUTH_MAX_PROVIDERS (0 = unlimited), GOTRUE_CUSTOM_OAUTH_EXTERNAL_URL.
+
+**Components:** GoTrue auth server (supabase/auth >= v2.187.0; default-enabled >= v2.188.0); auth schema tables in Postgres (custom provider config storage); Auth Admin API (supabase-js auth.admin.customProviders); Studio/dashboard Auth Providers UI
+
+**Self-hosted availability.** Fully in the open-source GoTrue auth server — no cloud control plane involved. The supabase.com feature page explicitly lists self-hosted availability. Config lives in the auth database and is managed through GoTrue's admin API (service_role/admin JWT); CustomOAuthConfiguration in supabase/auth exposes GOTRUE_CUSTOM_OAUTH_ENABLED/MAX_PROVIDERS/EXTERNAL_URL env vars. The Free-plan 3-provider cap is a cloud billing construct; self-hosted MaxProviders defaults to 0 (unlimited).
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key" — the implementing service is up, but no custom providers are registered and no auth flow touches it; "Auth authority is AWS Cognito (Google Workspace SAML) enforced at an ALB."
+
+**Value for MarketingHub (0/3).** MarketingHub's identity boundary is deliberately Cognito + Google Workspace SAML at the ALB, with the app using only the service_role key (no anon key, no browser Supabase client, no GoTrue calls). Custom IdPs solve "bring your own OAuth into Supabase Auth," a layer we intentionally bypass; nothing on the roadmap (pgvector/RAG competitor-intel, queues/cron for SMS outbox, console parity, hardening) needs Supabase-side federation.
+
+**Caveats.** Version dependency: shipped in supabase/auth v2.187.0 (2026-02-24) and enabled by default from v2.188.0 (2026-03-19); GA blog 2026-04-08. Our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) almost certainly pins an auth image new enough, but the exact GoTrue container version is unverified — check the auth image tag in docker-compose before relying on it. Unverified whether our pinned self-hosted Studio build includes the Custom Providers dashboard UI (the Admin API path works regardless). Effort rated M because registering a provider on the running GoTrue is trivial (env + admin API), but making it useful requires the app to adopt Supabase Auth sessions at all — an architectural change away from the Cognito/service_role model.
+
+Docs: <https://supabase.com/docs/guides/auth/custom-oauth-providers> · <https://supabase.com/blog/custom-oauth-oidc-providers> · <https://supabase.com/features/custom-oidc-providers> · <https://github.com/supabase/auth/releases> · <https://raw.githubusercontent.com/supabase/auth/master/internal/conf/configuration.go>
+
+### Email login
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Classic email + password authentication for app users: sign up with an email address and password, optionally confirm the address via an emailed link/OTP, sign in, and reset forgotten passwords. It is the baseline method of Supabase Auth, alongside magic links, OTP, and OAuth providers.
+
+**How it works.** Implemented by the GoTrue-based Auth server (the `auth` container, github.com/supabase/auth), which stores users and hashed passwords in the `auth` schema of Postgres and issues JWTs that PostgREST/RLS can enforce. Clients call it through Kong at /auth/v1 via supabase-js: signUp(), signInWithPassword(), resetPasswordForEmail(), updateUser(), and verifyOtp() for email confirmation. Both implicit (browser) and PKCE (server-side) flows are supported. Confirmation/recovery emails go out over SMTP: Supabase Cloud provides a heavily rate-limited default sender (custom SMTP recommended); self-hosted deployments must supply their own SMTP via env vars (SMTP_HOST/PORT/USER/PASS etc. in the docker .env). Behavior knobs (require email confirmation, disable signup, redirect URLs, email templates) are dashboard settings on Cloud and GoTrue env vars when self-hosting.
+
+**Components:** auth container (GoTrue / supabase-auth); auth schema in Postgres; Kong route /auth/v1; supabase-js auth client; external SMTP server (self-hosted requirement)
+
+**Self-hosted availability.** The Auth (GoTrue) service ships in the open-source docker bundle ("JWT-based authentication API for user sign-ups, logins, and session management"). Fully functional with no cloud account; configured via env vars instead of the dashboard, and you must provide your own SMTP server for confirmation/recovery emails (no built-in email service self-hosted).
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key" — auth authority is "AWS Cognito (Google Workspace SAML) enforced at an ALB."
+
+**Value for MarketingHub (0/3).** MarketingHub already has a stronger, mandated auth boundary (Cognito + Google Workspace SAML at the ALB, `marketing` group as authz). Email/password login would duplicate and weaken that for an internal HIPAA-adjacent tool, and nothing on the roadmap (competitor-intel/pgvector, queues, console parity, hardening) needs end-user Supabase accounts.
+
+**Caveats.** Long-GA feature, no version risk at our v1.26.05 pin; supabase-js ^2.110.0 covers even the newest bits (updateUser current-password verification needs >=2.102.0). Effort M reflects config only (SMTP env vars, enable signup, add anon-key browser client); real adoption would be architecturally larger since the app is service_role-only with RLS bypassed — Supabase-auth JWTs would require RLS-enforced authz, conflicting with the Cognito model. Self-hosted has no default email sender, so an SMTP relay (e.g. SES) would be required. Exact GoTrue container version in our pinned bundle unverified.
+
+Docs: <https://supabase.com/docs/guides/auth/passwords> · <https://supabase.com/features/email-login> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Email Templates
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **S** · verified
+
+**What it is.** Customizable HTML email templates for every Supabase Auth email flow — signup confirmation, invite, magic link, email change, password recovery, reauthentication — plus newer security-notification emails (password changed, sign-in method added, etc.). Templates use Go template syntax with variables like {{ .ConfirmationURL }}, {{ .Token }}, {{ .TokenHash }}, {{ .Email }}, and {{ .Data }} (user metadata), enabling branded and even conditionally-rendered emails.
+
+**How it works.** The feature is implemented entirely by GoTrue (the supabase/auth server): when an auth flow triggers an email, GoTrue renders the configured Go/HTML template and sends it through the configured SMTP provider (GOTRUE_SMTP_* settings). On the cloud platform, templates are edited in the Dashboard (Authentication > Emails) or via the Management API. On self-hosted deployments there is no dashboard editor; instead each template is set via env vars GOTRUE_MAILER_TEMPLATES_<FLOW> and GOTRUE_MAILER_SUBJECTS_<FLOW> (flows: CONFIRMATION, RECOVERY, MAGIC_LINK, INVITE, EMAIL_CHANGE, REAUTHENTICATION), with parallel GOTRUE_MAILER_NOTIFICATIONS_* / *_NOTIFICATION vars for security notifications. Notably, GoTrue does not read templates from mounted volumes — each template must be served at an HTTP URL reachable from the auth container (docs suggest a small Caddy file server on the Docker network) that returns a valid Golang HTML template. For full takeover of email delivery, the Send Email Hook can intercept every auth email and delegate to custom code (e.g. an Edge Function).
+
+**Components:** GoTrue (supabase/auth) container; SMTP provider config (GOTRUE_SMTP_*); HTTP-served template files (GOTRUE_MAILER_TEMPLATES_* URLs); cloud dashboard editor / Management API (hosted only); CLI config.toml (local dev)
+
+**Self-hosted availability.** Fully available self-hosted: the GoTrue container in the docker bundle renders and sends the templates. Configuration differs from cloud — no Studio template editor exists self-hosted; you set GOTRUE_MAILER_TEMPLATES_<FLOW>/GOTRUE_MAILER_SUBJECTS_<FLOW> env vars pointing at HTTP-served HTML template files (reachable inside the Docker network) plus working SMTP settings. The feature page explicitly lists "Available on self-hosted: Yes."
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" — email templates are a GoTrue feature; the container is up (with stock default templates, no custom ones configured) but no auth flow ever fires, so no auth email is ever sent. Auth authority is "AWS Cognito (Google Workspace SAML) enforced at an ALB."
+
+**Value for MarketingHub (0/3).** MarketingHub deliberately does not use Supabase Auth — Cognito/SAML at the ALB is the identity boundary and the app talks to PostgREST/Storage with the service_role key only. Custom auth email templates have zero value unless the whole auth model changed to GoTrue, which nothing on the roadmap (competitor-intel/pgvector, SMS outbox, console parity, hardening) contemplates. The homegrown SMS outbox is unrelated to auth email.
+
+**Caveats.** Effort S covers only the mechanics (env vars + a tiny HTTP file server for templates + SMTP creds); it excludes the large prerequisite of actually adopting GoTrue auth, which is off-roadmap. The core six auth-flow templates are long-standing and safe on our v1.26.05 bundle (cloned 2026-07), but the security-notification template set ("seven new email templates" blog) is a recent GoTrue addition — the GOTRUE_MAILER_NOTIFICATIONS_* vars may require a newer auth image than ours; exact GoTrue version in our bundle unverified. We have not confirmed any SMTP configuration exists in our deployment (likely none, since no auth email is ever sent). Dashboard/Management-API template editing is cloud-only and does not apply to us.
+
+Docs: <https://supabase.com/docs/guides/auth/auth-email-templates> · <https://supabase.com/docs/guides/self-hosting/custom-email-templates> · <https://supabase.com/features/email-templates>
+
+### Multi-Factor Authentication (MFA)
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **L** · verified
+
+**What it is.** Supabase Auth MFA lets end users of your app add a second verification factor — an authenticator app (TOTP), a phone/SMS-or-WhatsApp code, or (newer) a WebAuthn credential — on top of their normal login. Sessions carry an Authenticator Assurance Level (aal1 = password/social only, aal2 = MFA-verified) in the JWT, so you can gate sensitive data on whether the user completed MFA. This is application-user MFA, distinct from the MFA on Supabase cloud dashboard accounts.
+
+**How it works.** MFA is implemented server-side in GoTrue (the supabase/auth container); there is no separate service. Clients drive it through supabase-js `supabase.auth.mfa.*`: enroll() registers a factor (returns a TOTP QR/secret or registers a phone number), challenge() issues a challenge (and sends the SMS code for phone factors), verify() confirms it and upgrades the session to AAL2, plus listFactors()/unenroll() and getAuthenticatorAssuranceLevel(). The resulting JWT carries `aal` and `amr` claims, and enforcement is done in Postgres with RLS policies that require `auth.jwt()->>'aal' = 'aal2'` (patterns for enforce-for-all, enforce-for-new-users, and opt-in users). Phone factors reuse the same SMS provider config (Twilio etc., or the Send SMS hook) as phone login; codes are valid up to 5 minutes with configurable length. Config knobs are GoTrue env vars / dashboard Auth settings: per-factor-type enroll/verify toggles (e.g. GOTRUE_MFA_WEB_AUTHN_ENROLL_ENABLED, phone/TOTP equivalents), GOTRUE_MAX_VERIFIED_FACTORS, and optional email notifications on factor enroll/unenroll.
+
+**Components:** GoTrue (supabase/auth) container — factors, challenges, AAL claims; supabase-js auth.mfa client API; Postgres RLS policies checking the aal JWT claim; External SMS provider (Twilio etc.) or Send-SMS hook for phone factors; Studio/dashboard Auth settings UI (or GoTrue env vars self-hosted)
+
+**Self-hosted availability.** Fully in the open-source GoTrue auth server that ships in the docker bundle; configured via GOTRUE_MFA_* env vars (repo example.env shows MFA factor toggles, GOTRUE_MAX_VERIFIED_FACTORS, factor-change email notifications). RLS aal enforcement is plain Postgres. Note: on Supabase cloud, phone MFA is a paid add-on ($75/mo Pro/Team), but that is a cloud-billing gate only — self-hosted just needs an SMS provider configured.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key" — MFA lives inside GoTrue, which is up but has zero users/factors; auth authority is "AWS Cognito (Google Workspace SAML) enforced at an ALB".
+
+**Value for MarketingHub (0/3).** MarketingHub's real auth boundary is Cognito + Google Workspace SAML at the ALB, where MFA belongs (and can be enforced by the IdP). The app bypasses GoTrue and RLS entirely via service_role, so GoTrue MFA and aal-based RLS policies would protect nothing; nothing on the roadmap (competitor-intel/pgvector, queues, console parity) needs it.
+
+**Caveats.** Effort is L only because meaningful adoption requires migrating app auth from Cognito/service_role to GoTrue sessions + anon-key RLS first; flipping MFA on in GoTrue itself is trivial config. Version: TOTP MFA is long-GA and certainly in our v1.26.05 (2026-07) bundle; phone MFA GA'd later (~2024) and WebAuthn factors are the newest addition — the exact GoTrue image version in our pinned bundle is unverified, so WebAuthn (and possibly phone) factor support there is unconfirmed. Cloud phone-MFA add-on pricing ($75/mo) does not apply self-hosted. The self-hosting auth config docs page does not list the GOTRUE_MFA_* vars; I confirmed them from the supabase/auth repo example.env instead.
+
+Docs: <https://supabase.com/docs/guides/auth/auth-mfa> · <https://supabase.com/docs/guides/auth/auth-mfa/phone> · <https://supabase.com/docs/guides/self-hosting/auth/config> · <https://raw.githubusercontent.com/supabase/auth/master/example.env>
+
+### OAuth2.1 Server
+
+`Public Beta` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **L** · verified
+
+**What it is.** Turns a Supabase project's Auth service into a full OAuth 2.1 + OpenID Connect identity provider, so third-party apps can offer "Sign in with Your App" against your Supabase user base. Main use cases are third-party integrations, enterprise SSO, and MCP authentication for AI agents (auto-discovery + dynamic client registration). Public beta since 2025-11-26, free on all plans during beta.
+
+**How it works.** Implemented entirely inside GoTrue (the supabase/auth server), not a Postgres extension or separate service. When enabled it exposes standard endpoints under the auth path: /auth/v1/oauth/authorize and /auth/v1/oauth/token (authorization-code flow with mandatory PKCE plus refresh tokens), JWKS at /auth/v1/.well-known/jwks.json, and OAuth/OIDC discovery documents; ID tokens are issued when the openid scope is requested. OAuth clients are registered via the cloud dashboard (Authentication > OAuth Apps), via GoTrue admin endpoints using the service_role key, or via RFC 7591 dynamic client registration at /oauth/clients/register when allowed (the MCP path). The developer must build their own consent/authorization frontend page at a configured path; supabase-js has methods to fetch the pending authorization and approve/deny it. Config knobs: dashboard toggle or config.toml for CLI local dev (CLI v2.54.11+), and on raw GoTrue the env vars GOTRUE_OAUTH_SERVER_ENABLED, GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION, GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH; state lives in auth-schema tables (oauth clients, oauth_consents, pending authorizations). Issued access tokens are ordinary Supabase JWTs (user_id, role, plus client_id claim), so RLS and Custom Access Token Hooks apply unchanged.
+
+**Components:** GoTrue / supabase-auth container (OAuth server mode, GOTRUE_OAUTH_SERVER_* env vars); auth schema Postgres tables (oauth clients, oauth_consents, pending authorizations); GoTrue admin API for client registration (service_role); cloud dashboard Authentication > OAuth Apps UI (cloud registration path); developer-built consent page frontend + supabase-js approve/deny methods; Supabase CLI config.toml (local dev enablement, v2.54.11+)
+
+**Self-hosted availability.** The feature lives in the open-source GoTrue server, so a self-hosted docker bundle gets it with no cloud account: set GOTRUE_OAUTH_SERVER_ENABLED (plus optional GOTRUE_OAUTH_SERVER_ALLOW_DYNAMIC_REGISTRATION and GOTRUE_OAUTH_SERVER_AUTHORIZATION_PATH) on the auth container and register clients through the GoTrue admin API with the service_role key. Only the dashboard OAuth Apps management UI is cloud; the official docs document dashboard/CLI paths and the self-hosting guide does not (yet) cover the env-var wiring, so self-hosted setup is hand-rolled.
+
+**Our stack.** Ground truth: "auth (GoTrue, unused)" — the container runs, but "the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key". OAuth server mode is off by default and no GOTRUE_OAUTH_SERVER_* enablement appears anywhere in the ground truth, so the capability is present in the running image (version permitting) but not enabled.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal tool whose real identity boundary is AWS Cognito (Google Workspace SAML) at the ALB; GoTrue has no users and the app never touches Supabase auth. Nothing on the roadmap (competitor-intel pgvector/RAG, queues/cron overlap, console parity, hardening) needs MarketingHub to act as an OAuth identity provider for third-party apps or MCP clients.
+
+**Caveats.** Version risk: the feature entered public beta 2025-11-26 (launch blog 2025-12-04) and requires a GoTrue/auth image newer than that; our bundle is pinned at supabase/supabase tag v1.26.05 cloned 2026-07 and the exact auth image version in its docker-compose is unverified — if it predates OAuth server support, adoption needs an auth image bump plus new auth-schema migrations. Adoption would also require MarketingHub to first have users in GoTrue at all (today identity is Cognito-only and GoTrue is empty), which is why effort is L. Official docs only document dashboard and CLI-local enablement; the GOTRUE_OAUTH_SERVER_* env-var path for the self-hosted docker bundle comes from the supabase/auth source (DeepWiki), not the official self-hosting guide, and I could not confirm whether self-hosted Studio exposes any OAuth Apps UI. Public beta: APIs may change before GA; developer must build and host the consent page themselves.
+
+Docs: <https://supabase.com/docs/guides/auth/oauth-server> · <https://supabase.com/docs/guides/auth/oauth-server/getting-started> · <https://supabase.com/blog/oauth2-provider> · <https://deepwiki.com/supabase/auth/10.3-oauth-server-mode> · <https://github.com/orgs/supabase/discussions/38022>
+
+### Passwordless login via Magic Links
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Passwordless email login: the user enters their email and receives a one-time-use link; clicking it authenticates them and creates a session, with no password involved. It is a built-in capability of Supabase Auth, enabled by default for email-based auth, and can optionally auto-create new users on first sign-in.
+
+**How it works.** Implemented entirely by the GoTrue auth server (the `auth` container), fronted by Kong at /auth/v1. The client calls supabase.auth.signInWithOtp({ email }), which sends a Magic Link by default via the configured SMTP server; the link carries a one-time token and redirects only to the configured Site URL or allow-listed redirect URLs, where GoTrue verifies it and issues a JWT session (verifyOtp() exchanges a token hash in the PKCE flow). Key knobs: email template customization ({{ .SiteURL }}/{{ .ConfirmationURL }}, or {{ .Token }} to switch to OTP codes), redirect-URL allowlist, shouldCreateUser to block auto-signup, request rate limit (default 1 per 60s per user), and link/OTP expiry (default 1 hour, configurable). Self-hosted, SMTP is configured through .env vars (SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_ADMIN_EMAIL, SMTP_SENDER_NAME) consumed by GoTrue.
+
+**Components:** GoTrue (auth) container; Kong gateway (/auth/v1 routes); supabase-js auth client (signInWithOtp / verifyOtp); SMTP server (env-configured for outbound email)
+
+**Self-hosted availability.** Fully available self-hosted: the GoTrue auth container ships in the open-source docker bundle and the feature page explicitly states "Available on self-hosted: Yes." Only requirement is configuring a real SMTP server in .env (docs recommend AWS SES); templates/expiry are set via GoTrue env vars instead of the cloud dashboard.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key" — auth authority is AWS Cognito (Google Workspace SAML) at the ALB, and "NOT used: GoTrue".
+
+**Value for MarketingHub (0/3).** MarketingHub's authn/authz boundary is deliberately Cognito + Google Workspace SAML with the marketing group as the authz gate; email magic links would weaken that HIPAA-adjacent SSO posture, and nothing on the roadmap (competitor-intel/pgvector, queues/cron, console parity, hardening) needs end-user Supabase auth.
+
+**Caveats.** Long-GA core GoTrue feature, so the v1.26.05 bundle pin is not a concern, though our exact GoTrue container version is unverified. Effort is M rather than S because flipping it on is trivial but actually using it would mean introducing an anon key + browser Supabase client, JWT-based RLS enforcement, SMTP setup, and redirect-URL config — an auth-model change that conflicts with the Cognito/ALB boundary. Self-hosted lacks the cloud dashboard UI for templates/rate limits; those are GoTrue env-var config. Could not confirm from fetched pages the exact env-var names for template overrides (GOTRUE_MAILER_TEMPLATES_*).
+
+Docs: <https://supabase.com/docs/guides/auth/auth-email-passwordless> · <https://supabase.com/features/passwordless-login-via-magicklink> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Phone logins
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **L** · verified
+
+**What it is.** Passwordless authentication where users sign in with their phone number and a one-time code (6-digit PIN by default) delivered over SMS or WhatsApp by a third-party provider. Supabase does not send SMS itself: you bring credentials for Twilio, MessageBird, Vonage, or TextLocal (community-supported), or plug in any other provider via the Send SMS auth hook. GA feature of Supabase Auth.
+
+**How it works.** Implemented entirely in GoTrue (the auth server); no Postgres extension or other service is involved. The client calls supabase-js `signInWithOtp({ phone })`, GoTrue generates an OTP and dispatches it through the configured SMS provider (WhatsApp channel is Twilio/Twilio Verify only); the client then calls `verifyOtp({ phone, token, type: 'sms' })` and receives a normal GoTrue session (access + refresh JWTs) with the user stored in auth.users. `updateUser()` handles phone-number changes for signed-in users. It is disabled-by-default in the sense that it cannot work until an SMS provider is configured: on cloud via the dashboard Auth Providers page, on self-hosted via env vars on the auth container (`GOTRUE_SMS_PROVIDER`, `GOTRUE_SMS_TWILIO_ACCOUNT_SID`/`AUTH_TOKEN`/`MESSAGE_SERVICE_SID`, plus knobs `SMS_OTP_EXP`, `SMS_OTP_LENGTH`, `SMS_MAX_FREQUENCY`, `SMS_TEMPLATE`). Defaults: one OTP request per 60s, OTP expires after 1h; docs recommend CAPTCHA and rate-limit tuning for production. A related but separate feature, phone-based MFA (`GOTRUE_MFA_PHONE_ENROLL/VERIFY_ENABLED`), is disabled by default.
+
+**Components:** GoTrue (auth container); third-party SMS provider (Twilio/MessageBird/Vonage/TextLocal, or any via Send SMS hook); supabase-js auth API (signInWithOtp/verifyOtp/updateUser); docker-compose .env GOTRUE_SMS_* config (self-hosted) or dashboard Auth Providers page (cloud)
+
+**Self-hosted availability.** Fully available self-hosted: the feature page marks it "Available on self-hosted", and there is a dedicated guide (supabase.com/docs/guides/self-hosting/self-hosted-phone-mfa) showing configuration via GOTRUE_SMS_* / MFA_PHONE_* env vars on the auth (GoTrue) container in docker-compose. Only the SMS delivery itself depends on an external commercial provider account (Twilio etc.), which is inherent to the feature, not a cloud-control-plane dependency.
+
+**Our stack.** Ground truth: "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key" and "Auth authority is AWS Cognito (Google Workspace SAML) enforced at an ALB." No SMS-provider (GOTRUE_SMS_*) configuration appears anywhere in the ground truth, so phone login is not enabled — the capability merely ships inside the running auth container. Reviewer concern resolved: per the convention used for Social login, disabled-by-default GoTrue sub-features that require explicit provider configuration are classified as available-unused (feature not enabled), while running-unused is reserved for the GoTrue service itself.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal tool whose auth authority is Cognito/Google Workspace SAML at the ALB; staff phone-OTP login would duplicate and weaken that boundary. The roadmap (competitor-intel/pgvector, console parity, hardening) has no end-user auth need. Our SMS interest is outbound marketing blasts via the homegrown outbox, unrelated to auth OTPs.
+
+**Caveats.** Effort note: merely enabling it is S (env vars + Twilio creds + auth container restart), but real adoption is L because the app has zero GoTrue integration today (service_role-only, no anon key, no browser Supabase client, Cognito as authz boundary) — it would mean building a parallel auth path and relying on RLS the app currently bypasses. Version: core phone/SMS login predates our v1.26.05 pin by years (Auth v2, 2021) and should be present; however phone-based MFA and the Send SMS hook are newer GoTrue features and our exact pinned GoTrue version is unverified — confirm before relying on those. The docker .env may ship ENABLE_PHONE_SIGNUP=true by default, but the feature is non-functional without SMS provider credentials, which we do not set. Compliance: SMS OTP to phones has regional regulatory requirements (e.g. India TRAI DLT) and per-message provider costs; HIPAA-adjacent posture would also require a BAA-capable SMS provider.
+
+Docs: <https://supabase.com/docs/guides/auth/phone-login> · <https://supabase.com/docs/guides/self-hosting/self-hosted-phone-mfa> · <https://supabase.com/features/phone-logins>
+
+### Server-side Auth
+
+`Beta` · self-hosted: **yes** · ours: **absent** · value **0/3** · effort **L** · verified
+
+**What it is.** Helpers for using Supabase Auth from server-rendered apps and server code: sessions are stored in cookies (instead of browser localStorage) so the server can read and refresh the user's session on every request. The primary implementation is the @supabase/ssr npm package (beta), which superseded the deprecated @supabase/auth-helpers-* packages and targets SSR frameworks like Next.js, SvelteKit, Remix, and Nuxt.
+
+**How it works.** This is a client-library feature, not a server component: @supabase/ssr wraps supabase-js and switches session storage to cookies via an adapter interface (you supply getAll()/setAll() hooks tied to your framework's request/response cycle). It exports createServerClient() for server contexts and createBrowserClient() for the browser, keeping one session consistent across both. It uses the PKCE auth flow (preferred over implicit) for OAuth/magic-link code exchange. Refresh tokens are single-use, so the recommended pattern is framework middleware that refreshes the session once per navigation to avoid concurrent-refresh conflicts. Tokens are still issued and verified by the GoTrue auth server (any Supabase Auth endpoint, cloud or self-hosted); no cloud control plane is involved.
+
+**Components:** @supabase/ssr npm package (client library wrapping supabase-js); GoTrue auth server (token issuance/verification backend); framework middleware (cookie read/write + per-request session refresh)
+
+**Self-hosted availability.** Fully available self-hosted (feature page states "Available on self-hosted: Yes"). It is an npm library in your app pointed at any GoTrue endpoint; the docker bundle's auth container (which we already run) is the only server-side dependency.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key (no anon key, no browser Supabase client)." The @supabase/ssr helpers are not in the app codebase at all; only the backend dependency (GoTrue) idles, and that is tracked separately as running-unused.
+
+**Value for MarketingHub (0/3).** Auth authority is deliberately AWS Cognito (Google Workspace SAML) at the ALB with the Cognito marketing group as the real authz boundary; the app uses a server-only service_role client. Nothing on the roadmap (competitor-intel/pgvector, queues/cron overlap, console parity, hardening) needs Supabase user sessions, and adopting this would mean re-architecting authz onto GoTrue sessions + RLS for no gain.
+
+**Caveats.** @supabase/ssr is officially Beta: docs say the API "is still unstable and may have breaking changes." It requires supabase-js v2 (ours is ^2.110.0, fine) and installs from npm, so our v1.26.05 bundle pin barely matters — except that newer auth capabilities (e.g., asymmetric JWT signing keys / local claim verification) depend on the GoTrue version baked into our pinned bundle, which is unverified. The official blurb says "popular server-side languages," but first-party helpers are JavaScript/TypeScript only (Next.js, SvelteKit, Remix, Nuxt patterns); other languages rely on community auth client libraries. Effort L reflects that real adoption means migrating authz from Cognito/service_role to GoTrue sessions + RLS, not merely installing the package.
+
+Docs: <https://supabase.com/docs/guides/auth/server-side> · <https://supabase.com/features/server-side-auth> · <https://github.com/supabase/ssr>
+
+### Social login
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **L** · verified
+
+**What it is.** OAuth/OIDC-based sign-in that lets users authenticate to your app with an existing account from ~20 providers (Apple, Google, GitHub, Slack, Azure, Discord, Keycloak, WorkOS, etc.), plus custom OAuth2/OIDC providers. Users get password-free access, and the app receives both a Supabase session JWT and the provider's access token for optional follow-on API calls.
+
+**How it works.** Implemented entirely by GoTrue (the auth container); no Postgres extension or cloud control plane is involved at runtime. The client calls supabase.auth.signInWithOAuth({ provider }) which redirects the browser to the provider's consent screen; the provider redirects back to GoTrue's /auth/v1/callback endpoint (routed through Kong), where GoTrue exchanges the authorization code, creates or links a row in auth.users/auth.identities, and issues a Supabase JWT session. Provider access/refresh tokens are returned to the client, but Supabase does not refresh provider tokens for you. On the hosted platform providers are toggled in the dashboard; self-hosted, each provider is enabled via env vars on the auth container: GOTRUE_EXTERNAL_{PROVIDER}_ENABLED / _CLIENT_ID / _SECRET / _REDIRECT_URI in .env/docker-compose (multi-word variants like GOTRUE_EXTERNAL_SLACK_OIDC_*). All providers default to disabled; production callbacks require HTTPS since most providers reject http:// redirect URIs.
+
+**Components:** GoTrue (auth) container — OAuth/OIDC flows, /auth/v1/callback, auth.users identity linking; Kong gateway — routes /auth/v1/* to GoTrue; docker-compose/.env GOTRUE_EXTERNAL_{PROVIDER}_* config (self-hosted) or cloud dashboard Auth providers UI (hosted); supabase-js auth client — signInWithOAuth()
+
+**Self-hosted availability.** Fully available in the open-source docker bundle with no cloud account: the GoTrue container implements all providers, and the feature page states "Available on self-hosted: Yes". The dedicated self-hosting guide (docs/guides/self-hosting/self-hosted-oauth) shows configuration purely via GOTRUE_EXTERNAL_{PROVIDER}_ENABLED/CLIENT_ID/SECRET/REDIRECT_URI env vars in .env/docker-compose — no dashboard toggle exists self-hosted, and no provider restrictions vs. cloud. You must register your own OAuth apps with each provider and serve HTTPS callbacks.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" and "Auth authority is AWS Cognito (Google Workspace SAML) enforced at an ALB". Reviewer concern resolved: running-unused applies to the GoTrue service as a whole; Social login is a disabled-by-default sub-feature of that service requiring explicit GOTRUE_EXTERNAL_{PROVIDER}_* env config that our deployment does not set, so it is classed available-unused — the same convention as the other unconfigured GoTrue sub-features (Captcha, SSO/SAML, OAuth2.1 Server, Web3, Auth Hooks).
+
+**Value for MarketingHub (0/3).** MarketingHub's auth authority is Cognito + Google Workspace SAML at the ALB, with the Cognito 'marketing' group as the real authz boundary; the app never touches GoTrue and uses service_role-only server clients. Social login duplicates already-solved workforce SSO, and nothing on the roadmap (competitor-intel/pgvector, queues/cron overlap, console parity, hardening) involves Supabase auth.
+
+**Caveats.** Effort split: merely enabling a provider is small (env vars + OAuth app registration on the running GoTrue container), but meaningful adoption is L because the app has no browser Supabase client, no anon key, and bypasses RLS via service_role — using GoTrue sessions would mean rearchitecting authz away from the Cognito/ALB boundary, which conflicts with the current HIPAA-adjacent posture. Version: feature is long-GA and present in any GoTrue shipped with our v1.26.05 bundle pin (2026-07 clone), but the exact GoTrue image version is unverified; recently added providers or the newer OIDC variants (slack_oidc, linkedin_oidc) and custom OAuth2/OIDC provider support could require a newer GoTrue than pinned. Supabase does not refresh provider tokens (app's responsibility). Not confirmed from ground truth: absence of GOTRUE_EXTERNAL_* vars in our .env (inferred from "GoTrue ... unused").
+
+Docs: <https://supabase.com/docs/guides/auth/social-login> · <https://supabase.com/docs/guides/self-hosting/self-hosted-oauth> · <https://supabase.com/features/social-login>
+
+### SSO with SAML
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Enterprise single sign-on for your app's end users via the SAML 2.0 protocol, letting employees of customer organizations authenticate through their corporate identity provider (Okta, Azure AD, Google Workspace, OneLogin, etc.). Supabase Auth acts as the SAML Service Provider and issues normal Supabase sessions/JWTs after the IdP asserts identity. On Supabase cloud it is Pro-plan-and-above; the underlying capability is open source.
+
+**How it works.** Implemented entirely in GoTrue (the auth container) — no Postgres extension or separate service. You enable the SAML engine with GOTRUE_SAML_ENABLED=true plus GOTRUE_SAML_PRIVATE_KEY (Base64 PKCS#1 RSA key, min 2048-bit); optional knobs include GOTRUE_SAML_ALLOW_ENCRYPTED_ASSERTIONS and relay-state/rate-limit settings. Identity providers are registered at runtime (no restart) via the Auth admin API (POST /auth/v1/admin/sso/providers with the service_role key), passing an IdP metadata URL or XML; each provider gets a UUID and optional email-domain mappings (cloud users instead use `supabase sso` CLI/dashboard). GoTrue exposes SP metadata at {API_EXTERNAL_URL}/sso/saml/metadata and an Assertion Consumer Service at /sso/saml/acs; Kong must route these two paths open (no key-auth plugin). Clients start an SP-initiated flow with supabase-js signInWithSSO({domain}) or ({providerId}), get redirected to the IdP, and return through the ACS with a Supabase session. IdP-initiated flows don't work with PKCE, and Single Logout (SLO) is not supported.
+
+**Components:** GoTrue (auth container) — SAML SP engine; Auth admin API /admin/sso/providers (provider CRUD); Kong gateway open routes for /auth/v1/sso/saml/{acs,metadata}; supabase-js signInWithSSO() client API; supabase CLI `sso` subcommands / dashboard (cloud management path only)
+
+**Self-hosted availability.** Fully available in the open-source docker bundle: GoTrue implements SAML and there is an official self-hosting guide (self-hosted-saml-sso). Enable via GOTRUE_SAML_ENABLED/GOTRUE_SAML_PRIVATE_KEY env vars and manage IdPs through the Auth admin API with the service_role key; the only cloud-specific parts are the dashboard/CLI/Management-API convenience layer and Pro-plan gating, neither needed self-hosted. Requires API_EXTERNAL_URL to be reachable by browsers/IdP for the ACS callback.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" — and SAML additionally requires GOTRUE_SAML_ENABLED + a signing key, which nothing in the ground truth sets. The capability ships in our running auth container but the SAML engine is not enabled; auth authority is "AWS Cognito (Google Workspace SAML) enforced at an ALB."
+
+**Value for MarketingHub (0/3).** MarketingHub already has Google Workspace SAML SSO via AWS Cognito at the ALB, and the app never uses Supabase auth (service_role-only access, Cognito group is the authz boundary). GoTrue SAML would duplicate the existing SSO layer and would require rearchitecting app auth while adding nothing the roadmap (competitor-intel/pgvector, console parity, hardening) asks for.
+
+**Caveats.** Version: GoTrue SAML support long predates our 2026-07 clone of tag v1.26.05, so the pinned auth image almost certainly supports it, but the exact GoTrue version and whether that tag's docker-compose/Kong config includes the SAML env-var passthrough and open ACS/metadata routes were not verified. Deployment mismatch: the SAML ACS endpoint must be reachable by user browsers posting IdP assertions, but our instance sits in private subnets behind a Cognito-authenticated ALB, which would block the unauthenticated POST to /auth/v1/sso/saml/acs — enabling it would need an ALB/Kong exception. Effort M covers only enabling the feature (env vars, signing key, admin-API IdP registration, Kong routes); actually using it would mean migrating app auth off Cognito onto GoTrue, which is L and architecturally regressive for us. Feature limits: no IdP-initiated flow with PKCE, no SAML Single Logout, assertions must contain an email, no identity linking between SSO and non-SSO accounts.
+
+Docs: <https://supabase.com/docs/guides/self-hosting/self-hosted-saml-sso> · <https://supabase.com/docs/guides/auth/enterprise-sso/auth-sso-saml> · <https://supabase.com/docs/guides/auth/enterprise-sso>
+
+### User Impersonation
+
+`Public Beta` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **S** · verified
+
+**What it is.** A Supabase Studio (dashboard) feature that lets a developer run queries "as" any of the project's auth users, or as the anon/service_role Postgres roles, to see exactly what that user would see. Its main purpose is testing and debugging Row Level Security policies against real data without writing a client app or hand-crafting JWTs. Public Beta; launched Launch Week 8 (Dec 2023).
+
+**How it works.** Implemented entirely in the Studio UI — no Postgres extension or separate service. A "Role" dropdown in the Table Editor, SQL Editor, GraphiQL, and Realtime Inspector lets you pick anon, service_role, or a specific user from the auth.users table (populated by GoTrue). Studio mints a JWT with that user's ID in the `sub` claim (using the project JWT secret) and executes the query under that token/role, so Postgres RLS policies and request.jwt.claims evaluate exactly as they would for the real user. Because it assumes UUID-keyed records in auth.users, it only works with Supabase Auth users — third-party auth providers (Clerk, Auth0, Cognito) are not supported (a community prototype for external auth exists as supabase/supabase PR #32786, not merged as a product feature). There are no config knobs; it is on by default wherever Studio runs.
+
+**Components:** Studio (dashboard) UI — Table Editor, SQL Editor, GraphiQL, Realtime Inspector role dropdown; Client-side JWT minting with the project JWT secret; Postgres roles (anon/authenticated/service_role) + RLS evaluation; GoTrue's auth.users table as the impersonation user source
+
+**Self-hosted availability.** Provided by the Studio container that ships in the open-source docker bundle; the official feature page explicitly lists self-hosted availability. It only needs the project JWT secret (which self-hosted Studio has) and auth.users rows — no cloud control plane involved.
+
+**Our stack.** "(The stock Studio container also runs, separately, behind the Cognito ALB.)" — so the feature is deployed and reachable — but the in-app console explicitly lists it as "NOT built: ... User Impersonation ...", and "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth", meaning auth.users is empty and there are no users to impersonate.
+
+**Value for MarketingHub (0/3).** MarketingHub has no Supabase Auth users (Cognito/SAML is the auth authority; GoTrue unused), so there is nobody to impersonate, and the app bypasses RLS entirely via service_role — the Cognito `marketing` group is the real authz boundary. At most it could role-switch to anon to sanity-check the deploy-gate RLS policies, which has negligible value; nothing on the roadmap (pgvector competitor-intel, queues/cron, console parity, hardening) needs it.
+
+**Caveats.** Feature shipped Dec 2023, so the Studio in our v1.26.05 bundle (cloned 2026-07) almost certainly includes it, but the exact Studio image version was not verified. Supabase-Auth-only: it cannot impersonate users from external IdPs like our Cognito setup (assumes UUID records in auth.users), so in our deployment only anon/service_role switching would function. Realtime Inspector surface is moot for us (Realtime unused). Public Beta maturity. Effort S reflects zero install work (already in the running Studio); making it meaningful would require migrating auth into GoTrue, which contradicts our architecture.
+
+Docs: <https://supabase.com/features/user-impersonation> · <https://supabase.com/blog/studio-introducing-assistant> · <https://github.com/supabase/supabase/pull/32786>
+
+### Web3 Authentication
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Wallet-based sign-in that lets users authenticate to a Supabase app with an Ethereum or Solana crypto wallet (MetaMask, Phantom, Solflare, etc.) instead of email/phone/OAuth. The user signs a standardized challenge message with their wallet key; Supabase Auth verifies the signature and issues a normal Supabase session/JWT, creating a user identified only by wallet address (no PII).
+
+**How it works.** Implemented entirely in the open-source Auth server (GoTrue) — no other Supabase component is involved. The client builds a Sign-In-With-Ethereum (EIP-4361/SIWE) or Sign-In-With-Solana (SIWS) message, the wallet signs it, and the client posts message+signature+chain to GoTrue's token endpoint (POST /token with grant_type=web3; handler in internal/api/web3.go, parsers in internal/utilities/siwe and siws). GoTrue validates message structure, cryptographic signature, timestamp freshness (~10-minute window), and that the message URI/domain matches configured redirect URLs, then creates/links the user and returns standard access/refresh tokens. supabase-js wraps the whole flow in supabase.auth.signInWithWeb3({ chain: 'ethereum' | 'solana', statement }) and can detect browser wallet extensions. Providers are off by default and enabled per chain: on the platform via dashboard or config.toml ([auth.web3.solana]/[auth.web3.ethereum] enabled = true); on plain GoTrue via GOTRUE_EXTERNAL_WEB3_SOLANA_ENABLED / GOTRUE_EXTERNAL_WEB3_ETHEREUM_ENABLED (plus *_MAXIMUM_VALIDITY_DURATION). Docs recommend pairing with the per-IP Web3 rate limit (default 30 logins/5 min) and CAPTCHA since wallet accounts are anonymous-ish and cheap to mass-create.
+
+**Components:** GoTrue (supabase/auth) container — web3 grant type on POST /token; supabase-js auth client (signInWithWeb3, linkIdentity); GoTrue env vars GOTRUE_EXTERNAL_WEB3_{SOLANA,ETHEREUM}_ENABLED (config.toml/dashboard on the platform)
+
+**Self-hosted availability.** Ships in the open-source GoTrue binary that the docker bundle's auth container runs; enable per chain with GOTRUE_EXTERNAL_WEB3_SOLANA_ENABLED / GOTRUE_EXTERNAL_WEB3_ETHEREUM_ENABLED (default false) in docker-compose. No cloud control plane needed. Note: the official self-hosting auth config page does not document these vars; the env var names are confirmed from the supabase/auth source (via DeepWiki code index), not official self-hosting docs.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth" and "Auth authority is AWS Cognito (Google Workspace SAML) enforced at an ALB." Web3 is a GoTrue sub-feature that defaults to disabled; no repo config sets GOTRUE_EXTERNAL_WEB3_* — so the code is present in the running auth container but the feature is not enabled, and nothing uses GoTrue at all.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal healthcare-marketing tool for Cognito/Google-Workspace-authenticated employees; crypto-wallet login has no user base or roadmap tie-in (roadmap is competitor-intel/pgvector, SMS outbox/queues, console parity, hardening). A no-PII anonymous-wallet identity would also undercut the HIPAA-adjacent authz model.
+
+**Caveats.** Version timing: Sign in with Solana shipped April 2025; Ethereum (SIWE) was added October 2025 (blog dated 2025-10-03). Our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) almost certainly carries a post-Oct-2025 auth image, but the exact GoTrue container version is unverified — verify before assuming Ethereum support. supabase-js ^2.110.0 includes signInWithWeb3 for both chains. Effort 'M' reflects that flipping the two env vars is trivial (S) but actual adoption is architectural: the app has no browser Supabase client, no anon key, and bypasses RLS via service_role, so any GoTrue-based login would make RLS the real authz boundary — a posture change. Could not confirm: which exact GoTrue release introduced each chain, and the GOTRUE_EXTERNAL_WEB3_* var names against official docs (they are absent from the self-hosting config page and the auth README; sourced from the code index).
+
+Docs: <https://supabase.com/docs/guides/auth/auth-web3> · <https://supabase.com/blog/login-with-solana-ethereum> · <https://supabase.com/docs/guides/self-hosting/auth/config> · <https://github.com/supabase/auth/blob/master/README.md> · <https://deepwiki.com/supabase/auth/4.6-web3-authentication>
+
+## Database features
+
+The heart of both the platform and our deployment: the Postgres database itself, the auto-generated PostgREST API, the pre-bundled extension roster, and Postgres roles are all live and load-bearing. The highest-value unused entries cluster around the roadmap — Vector database (pgvector, one CREATE EXTENSION away from the competitor-intel module), Cron and Queues (pgmq) which overlap the homegrown SMS outbox and app-level scheduler, and Declarative Schemas for hardening the migration workflow. The cloud-only entries (Branching, Database backups, read replicas, custom domains, Dedicated Poolers, Terraform) are N/A here, and in the backup case our own pgBackRest + Object-Lock stack already exceeds the hosted offering.
+
+### Auto-generated REST API via PostgREST
+
+`GA` · self-hosted: **yes** · ours: **live** · value **3/3** · effort **S** · verified
+
+**What it is.** Supabase automatically exposes your Postgres database as a RESTful API using PostgREST, a thin API layer that sits on top of Postgres. Every table, view, materialized view, and function in the exposed schemas gets HTTP endpoints for CRUD and RPC without writing any backend code. Endpoints update instantly as the database schema changes.
+
+**How it works.** PostgREST runs as a standalone web server (the `rest` container in the docker bundle) that introspects the schemas listed in PGRST_DB_SCHEMAS and generates endpoints from the catalog: /rest/v1/&lt;table&gt; for CRUD with filter/order/pagination query params (including embedded, arbitrarily deep relationship joins and computed columns), and /rest/v1/rpc/&lt;fn&gt; for Postgres functions. Each request is compiled to a single SQL statement for performance. Requests are routed through the Kong gateway at /rest/v1/ with key-auth: the JWT (anon or service_role, signed with the shared JWT secret) maps to a Postgres role, so authorization is enforced by Postgres grants plus Row Level Security. Key config knobs are PGRST_DB_SCHEMAS, PGRST_DB_MAX_ROWS (default 1000 row cap), and PGRST_DB_EXTRA_SEARCH_PATH. The supabase-js query builder (.from().select()/.insert()/.rpc() etc.) is a client-side wrapper over this API.
+
+**Components:** PostgREST server (`rest` container); Kong gateway (routes /rest/v1, key-auth); Postgres roles + RLS (authorization layer); supabase-js client library (optional wrapper)
+
+**Self-hosted availability.** Fully available with no cloud account: PostgREST is a core service in the open-source docker-compose bundle, configured via PGRST_* env vars and reachable through Kong at :8000/rest/v1/. It needs only the database and the shared JWT secret; no control-plane dependency.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... rest (PostgREST; schemas public,storage,graphql_public,marketinghub)" and "App usage (Next.js 15, supabase-js ^2.110.0, server-only service-role client): PostgREST CRUD + .textSearch(), exactly one RPC (claim_due_sms_recipients ...)". We run it and the app uses it as its primary data path.
+
+**Value for MarketingHub (3/3).** It is MarketingHub's core data-access layer today — all app CRUD, full-text search, and the SMS-outbox claim RPC go through PostgREST. The roadmap (competitor-intel module, console parity) builds on the same path, so it is load-bearing, not optional.
+
+**Caveats.** Core, long-GA feature with no recent-version dependency; our bundle pin (supabase/supabase v1.26.05, cloned 2026-07) is fine, though the exact PostgREST container version is unverified. Deployment-specific caveat: Supabase's documented security model (anon key + RLS) is not how we use it — the app talks to PostgREST exclusively with the service_role key, which bypasses RLS, so the Cognito ALB is the real authz boundary. PGRST_DB_MAX_ROWS (default 1000) silently caps unpaginated reads.
+
+Docs: <https://supabase.com/docs/guides/api> · <https://supabase.com/features/auto-generated-rest-api> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Postgres database
+
+`GA` · self-hosted: **yes** · ours: **live** · value **3/3** · effort **S** · verified
+
+**What it is.** Every Supabase project is a full, unmodified PostgreSQL database — not an abstraction or a proprietary fork. It is the foundation the rest of the platform (Auth, Storage, Realtime, PostgREST API) is built on, giving you complete SQL, ACID transactions, complex data types, and 100% portability to/from any other Postgres.
+
+**How it works.** The database is provided by the supabase/postgres distribution (github.com/supabase/postgres): stock Postgres (15.x / 17.x, plus an experimental OrioleDB-17 variant) with 40+ pre-installed extensions (pgvector, PostGIS, pg_cron, pgaudit, pgsodium/vault, pgmq, pg_graphql, TimescaleDB, etc.). In the docker bundle this is the `db` service. Client connections go through the Supavisor pooler by default (port 5432 session mode, 6543 transaction mode); direct connections are possible by exposing the Postgres port. HTTP access is via PostgREST (`/rest/v1/`, auto-generated REST API over your schema) behind the Kong gateway, and Studio's Table Editor / SQL Editor talk to it via postgres-meta. On the cloud platform Supabase additionally manages backups, PITR, and read replicas; self-hosters manage those themselves.
+
+**Components:** supabase/postgres image (db container); Supavisor connection pooler; PostgREST (rest container); postgres-meta (meta container); Kong gateway; Studio Table/SQL editors; bundled extension set (pgvector, pg_cron, pgaudit, pgsodium, etc.)
+
+**Self-hosted availability.** Fully available in the open-source docker bundle: the `db` service runs the supabase/postgres image with the same bundled extensions; Supavisor, PostgREST, and postgres-meta all ship in the compose file. Cloud-managed conveniences layered on top (automated daily backups, PITR, read replicas) are NOT part of the OSS bundle — self-hosters run their own backup/HA tooling.
+
+**Our stack.** "Containers RUNNING: db (supabase/postgres, PG17) ... supavisor (pooler :5432 session/:6543 txn)" and "App usage ... PostgREST CRUD + .textSearch(), exactly one RPC (claim_due_sms_recipients ...), postgres-meta /pg/* including POST /query = arbitrary SQL (powers our in-app console)" — the database is the core data store the app actively uses.
+
+**Value for MarketingHub (3/3).** It IS MarketingHub's data layer: all app data, the homegrown SMS outbox with its FOR UPDATE SKIP LOCKED claim RPC, blast scheduling, and full-text search run on it, and the next roadmap item (competitor-intel with pgvector/RAG) depends on the same database and its bundled extensions.
+
+**Caveats.** Our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07) with PG17; the current supabase/postgres repo documents 17.6, but the exact Postgres minor version and extension versions baked into our pinned image are unverified. Cloud-platform database features (automated backups, PITR, read replicas) do not exist in self-hosting — we cover backups ourselves with pgBackRest + AWS Backup, and have no read replicas/HA by design. Extension availability claims (e.g. pg_cron/pgmq shipping in the image) come from the current repo README, not verified against our pinned image build.
+
+Docs: <https://supabase.com/docs/guides/database/overview> · <https://supabase.com/features/postgres-database> · <https://supabase.com/docs/guides/self-hosting/docker> · <https://github.com/supabase/postgres>
+
+### Postgres Extensions
+
+`GA` · self-hosted: **yes** · ours: **live** · value **3/3** · effort **S** · verified
+
+**What it is.** Supabase pre-bundles 50+ popular Postgres extensions (pgvector, PostGIS, pg_cron, pgcrypto, pgaudit, pgmq, etc.) in its Postgres distribution so you can add capabilities like embeddings, geospatial, cron jobs, and crypto without leaving the database. You toggle them on per-project via the dashboard or plain SQL. It is a database-layer feature, not a separate service.
+
+**How it works.** The implementing component is the supabase/postgres image itself: extension binaries/SQL are compiled into the image (e.g. pgvector 0.8.0, pg_cron 1.6.4, pgmq 1.4.4, pg_graphql 1.5.11 in the current PG17 build), so "enabling" is just standard Postgres `CREATE EXTENSION` / `DROP EXTENSION`. Studio's Database > Extensions page provides a toggle UI, which executes those statements through postgres-meta. Most extensions install into the shared `extensions` schema (public-accessible by default; docs warn not to put your own objects there); a few need dedicated schemas. Pure-SQL extensions can additionally be installed via the SQL editor or the database.dev package manager (pg_tle). New extension versions arrive only with a Postgres image/infrastructure upgrade — you cannot add arbitrary compiled extensions to a running instance.
+
+**Components:** supabase/postgres image (bundled extension binaries); Postgres CREATE EXTENSION mechanism; Studio Database > Extensions UI; postgres-meta (executes the toggles)
+
+**Self-hosted availability.** Fully available with no cloud account: the docker bundle's db container is the same supabase/postgres image with all extensions baked in; enable via SQL or self-hosted Studio. The features page explicitly lists self-hosted availability. Only difference vs cloud: no managed upgrade path — new extension versions require pulling/building a newer image yourself, and extensions not in the image require a custom image build.
+
+**Our stack.** "Postgres extensions ENABLED by our SQL: pgcrypto, pgaudit." — we actively run and use the extension mechanism. Also: "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector, pg_graphql, pgsodium+supabase_vault, pgjwt" (available-unused inventory), and pg_net is enabled but locked down (EXECUTE revoked, DROP candidate).
+
+**Value for MarketingHub (3/3).** The next major roadmap item (competitor-intel via pgvector/RAG) depends entirely on enabling a pre-baked extension — one CREATE EXTENSION away. pg_cron/pgmq (upstream repo confirms both ship in the image) could replace the homegrown SMS outbox scheduler, and pgaudit already underpins the platform-hardening/audit interest.
+
+**Caveats.** Our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07); exact extension versions in our db image are unverified — upstream currently lists pgvector 0.8.0, pg_cron 1.6.4, pgmq 1.4.4, pgaudit 17.0 for PG17, but our image may carry older builds. pg_cron/pgmq ship in the upstream image per the repo README, but no repo SQL enables them here (available-unused per ground truth); confirm presence with `select * from pg_available_extensions` before relying on them. Cloud-style automatic extension upgrades do not apply self-hosted: newer extension versions require a new image (a Postgres upgrade/restore cycle for us). Extensions not compiled into the image cannot be added without a custom image build. pgvector version matters for the RAG roadmap (0.7+/0.8 wanted for HNSW improvements) — verify before building competitor-intel.
+
+Docs: <https://supabase.com/docs/guides/database/extensions> · <https://supabase.com/features/postgres-extensions> · <https://github.com/supabase/postgres>
+
+### Vector database
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **3/3** · effort **S** · verified
+
+**What it is.** Supabase Vector lets you store vector embeddings in ordinary Postgres tables next to your relational data and run similarity search over them, so you don't need a separate vector database. It is the foundation for semantic search, hybrid (vector + full-text) search, and RAG applications. It is GA and entirely Postgres-native.
+
+**How it works.** Implemented by the pgvector Postgres extension (SQL extension name is `vector`), which ships pre-bundled in the supabase/postgres image — no cloud control plane involved. You enable it with `create extension vector with schema extensions;` (or via Studio's Extensions UI), add `vector(N)` columns, and query with distance operators (`<->` L2, `<=>` cosine, `<#>` inner product), typically wrapped in a SQL `match_documents`-style function exposed to the app via PostgREST RPC or plain SQL. HNSW and IVFFlat indexes accelerate approximate nearest-neighbor search; because it's plain SQL, vector similarity composes with WHERE filters, JOINs, and tsvector full-text search for hybrid search. Embedding generation is not part of the database: you produce vectors externally (OpenAI, Hugging Face, Transformers.js, or a Supabase Edge Function) and insert them like any row. Supabase also offers a `vecs` Python client and an "automatic embeddings" pattern built on pgmq/pg_net/pg_cron, both optional.
+
+**Components:** pgvector Postgres extension (SQL name: vector), pre-bundled in the supabase/postgres image; Postgres HNSW / IVFFlat indexes; PostgREST RPC + supabase-js (match/search functions); Studio Extensions UI (optional enable path); Optional: Edge Functions or external API for embedding generation; vecs Python client
+
+**Self-hosted availability.** Fully self-hostable: pgvector is compiled into the open-source supabase/postgres image used by the docker bundle; enabling and querying it is pure SQL through the db/rest containers. No Supabase cloud account or control plane is needed for any part of it (only the optional third-party embedding APIs are external).
+
+**Our stack.** Ground truth: "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector, pg_graphql, pgsodium+supabase_vault, pgjwt." and app usage lists "NOT used: ... vectors/embeddings."
+
+**Value for MarketingHub (3/3).** Roadmap says the next major feature is a "competitor-intel module using pgvector/RAG" — this feature is the exact enabler, already sitting in our image waiting for CREATE EXTENSION.
+
+**Caveats.** Our bundle is pinned at supabase/supabase v1.26.05 (cloned 2026-07) and the exact pgvector version in our PG17 image is unverified: HNSW indexes need pgvector >= 0.5.0 and iterative index scans (recommended for filtered ANN queries) need >= 0.8.0 — a PG17-era image almost certainly satisfies both, but confirm with `select extversion from pg_available_extensions where name='vector'` before designing indexes. Embedding generation must happen outside Postgres; our functions container runs zero deployed functions, so embeddings would come from server-side app code or an external API (HIPAA-adjacent posture: keep PHI out of third-party embedding calls). Supabase's "automatic embeddings" recipe depends on pgmq/pg_net/pg_cron — pg_net is EXECUTE-revoked (DROP candidate) and pgmq/pg_cron are not enabled in our repo SQL, so that pattern would need extra enablement or a homegrown trigger/outbox approach. Effort S covers enabling the extension + indexes + a match RPC; the competitor-intel RAG app itself is separate feature work.
+
+Docs: <https://supabase.com/docs/guides/ai> · <https://supabase.com/docs/guides/database/extensions/pgvector> · <https://supabase.com/features/vector-database>
+
+### Cron
+
+`Beta` · self-hosted: **yes** · ours: **available-unused** · value **2/3** · effort **S** · verified
+
+**What it is.** Supabase Cron is a Postgres "module" for scheduling recurring jobs directly inside the database using cron syntax (or natural language in the dashboard). Jobs can run SQL snippets, database functions, HTTP webhooks, or invoke Edge Functions, on schedules from every second to once a year. It is a branded packaging of the open-source pg_cron extension plus a dashboard UI and run-history tooling.
+
+**How it works.** The engine is the pg_cron Postgres extension (from Citus Data), loaded via shared_preload_libraries as a background-worker launcher inside the db container; no separate service is involved. Enabling the extension creates a `cron` schema: job definitions live in `cron.job` and execution history in `cron.job_run_details` (not auto-purged — can grow disk). Jobs are managed via SQL: `cron.schedule('name','schedule','command')`, `cron.alter_job()`, `cron.unschedule()`; the launcher opens a new connection to the database named in `cron.database_name` (defaults/hardcoded to `postgres`) and runs the command. Sub-minute "N seconds" schedules require a newer pg_cron build (Supabase says postgres image 15.1.1.61+). The HTTP-webhook and Edge-Function job types are simply SQL commands that call `net.http_post()` from the pg_net extension. The dashboard's Integrations -> Cron page (Studio UI) is a front-end over the same cron schema; Supabase advises max ~8 concurrent jobs and ~10-minute job duration.
+
+**Components:** pg_cron extension (background worker in the supabase/postgres db container); cron schema tables: cron.job, cron.job_run_details; SQL API: cron.schedule / cron.alter_job / cron.unschedule; Studio dashboard Integrations -> Cron UI; pg_net extension (only for HTTP-webhook / Edge Function job types)
+
+**Self-hosted availability.** Fully self-hostable: pg_cron ships pre-installed in the supabase/postgres image used by the docker bundle; enable with CREATE EXTENSION pg_cron and manage jobs via SQL against the db container — no cloud control plane involved. Caveats: cron.database_name is hardcoded to `postgres` in the bundle's postgresql.conf (breaks with a custom POSTGRES_DB — github issue #42413), and the dashboard's Edge-Function picker/observability niceties are cloud-oriented; self-hosters typically hand-write net.http_post() calls (using docker-network hostnames, not localhost) for HTTP-type jobs. SQL/database-function jobs need nothing beyond the extension.
+
+**Our stack.** "pg_cron / pgmq: not enabled by any repo SQL; if docs say they ship in the image, mark available-unused with that caveat." Official docs confirm pg_cron is pre-installed in the supabase/postgres image, but no repo SQL runs CREATE EXTENSION pg_cron, so it is present-but-not-enabled in our deployment.
+
+**Value for MarketingHub (2/3).** Ground truth flags direct overlap: the homegrown SMS outbox uses an app-level scheduler ("potential Queues/Cron overlap"), and the 2026-08 blast-scheduling feature ticks on zoned 30-min slots — Cron could move that polling into Postgres, and seconds-level schedules pair well with the existing claim_due_sms_recipients SKIP LOCKED RPC. Also useful for maintenance jobs (audit/job-history pruning). Not a 3 because the app scheduler already works, and HTTP-type jobs would collide with our deliberately locked-down pg_net (EXECUTE revoked, candidate for DROP) — SQL-only jobs are the realistic scope.
+
+**Caveats.** Officially Beta as a packaged module, though pg_cron itself is mature (launched as Supabase Cron 2024-12-04). Our bundle (tag v1.26.05, cloned 2026-07, PG17) postdates all of this, so the extension and seconds-syntax (needs image >= 15.1.1.61) should be present, but exact pg_cron version and whether pg_cron is already in shared_preload_libraries in our pinned image are unverified — if not preloaded, enabling needs a config change + db restart (bumps effort toward M). cron.database_name is hardcoded to `postgres` in the bundle config; fine if we use the default db name, broken otherwise. HTTP/Edge-Function job types require pg_net, which we have locked down (EXECUTE revoked, DROP candidate) — only SQL/db-function jobs fit our posture. cron.job_run_details is never auto-purged; schedule a cleanup job. Could not verify whether our pinned Studio build includes the Integrations -> Cron UI page.
+
+Docs: <https://supabase.com/docs/guides/cron> · <https://supabase.com/docs/guides/cron/quickstart> · <https://supabase.com/blog/supabase-cron> · <https://supabase.com/docs/guides/database/extensions/pg_cron> · <https://github.com/supabase/supabase/issues/42413>
+
+### Declarative Schemas
+
+`GA` · self-hosted: **yes** · ours: **absent** · value **2/3** · effort **M** · verified
+
+**What it is.** A schema-as-code workflow where you define the desired end-state of your Postgres database in plain .sql files instead of hand-writing incremental migrations. The tooling diffs your declared state against your existing migration history and auto-generates the migration files needed to get there. Launched GA April 3, 2025 after ~2 years of internal use at Supabase.
+
+**How it works.** Implemented entirely in the Supabase CLI (dev-machine tooling) — no runtime container, Postgres extension, or cloud control plane is involved. You keep schema definitions as SQL files in supabase/schemas/; `supabase db diff -f <name>` compares those files against your versioned migrations (using the pg-delta engine by default, or legacy migra) and emits a timestamped migration file. Importantly, the diff reads your schema files and migration history, not the live database, so out-of-band changes (e.g., via Studio or a SQL console) are invisible to it. Migrations are applied locally with `supabase migration up` and to any target database with `supabase db push` (which accepts --db-url for non-cloud targets). Schema-file application order is configurable via [db.migrations] schema_paths glob patterns in supabase/config.toml; existing databases are onboarded by `supabase db dump > supabase/schemas/prod.sql`.
+
+**Components:** Supabase CLI (supabase db diff / migration up / db push); pg-delta diff engine (CLI default; legacy migra optional); supabase/schemas/*.sql files in the repo; supabase/config.toml [db.migrations] schema_paths
+
+**Self-hosted availability.** Pure CLI/dev-workflow feature with no cloud dependency: diffing and local application work offline, and `supabase db push --db-url` can target any reachable Postgres, including a self-hosted docker-bundle instance. The feature page explicitly lists availability on self-hosted deployments. Only convenience linking (`supabase login`/`link`) is cloud-specific and is not required.
+
+**Our stack.** Ground truth describes no Supabase CLI, supabase/schemas directory, or migration-diff workflow anywhere; schema changes flow through ad-hoc SQL instead: "postgres-meta /pg/* including POST /query = arbitrary SQL (powers our in-app console)" and the in-app "SQL Editor (read-write; write-confirm handshake + query audit)".
+
+**Value for MarketingHub (2/3).** Real fit with the roadmap's platform-hardening interest (audit, tamper-evidence): version-controlled declarative schema files give reviewable, reproducible schema changes and would strengthen the RLS deploy gate, and the upcoming competitor-intel/pgvector module means non-trivial new schema is coming. Not a 3 because it delivers process value, not user-facing features, and it directly conflicts with the current in-app SQL console change path (diff never sees live-DB edits).
+
+**Caveats.** Version: this is a CLI-side feature (GA April 2025), so our pinned supabase/supabase bundle tag v1.26.05 is irrelevant — adoption requires installing a current Supabase CLI (2025+; exact minimum CLI version not documented; pg-delta default engine is newer than the original migra-based release). Workflow conflict: db diff ignores live-database state, so every change made through our in-app SQL editor or postgres-meta POST /query would silently drift from the declared schema; adopting this means routing all DDL through the schema files. Diff-engine gaps (official): DML, RLS policy alterations, view ownership/security_invoker, materialized views, column-level and schema privileges, comments, partitions, custom domains — these still need hand-written migrations; docs advise reviewing every generated migration. Push to our private-subnet EC2 requires --db-url over the SSM tunnel. Unconfirmed: exact minimum CLI version and pg-delta introduction version.
+
+Docs: <https://supabase.com/docs/guides/local-development/declarative-database-schemas> · <https://supabase.com/features/declarative-schemas> · <https://supabase.com/blog/declarative-schemas>
+
+### Postgres Roles
+
+`GA` · self-hosted: **yes** · ours: **live** · value **2/3** · effort **S** · verified
+
+**What it is.** Native Postgres access-control primitives (roles acting as users or groups) that Supabase pre-configures with a default role set wired into its API stack. Every Supabase database ships roles like postgres, anon, authenticated, authenticator, service_role, supabase_admin, supabase_auth_admin, supabase_storage_admin, and dashboard_user. Permissions are managed with standard GRANT/REVOKE and role inheritance, complementing RLS for row-level authz.
+
+**How it works.** This is core Postgres functionality, not a separate service: the supabase/postgres image's init migrations create the default role set when the database first boots. PostgREST connects as the low-privilege authenticator role, validates the incoming JWT, then SET ROLEs into anon, authenticated, or service_role based on the JWT's role claim; service_role is granted RLS bypass while anon/authenticated are subject to RLS policies. Custom roles are created with plain SQL (CREATE ROLE ... LOGIN PASSWORD) and scoped with GRANT/REVOKE; role hierarchies let child roles inherit permissions. Studio's Database > Roles UI manages roles through postgres-meta, which exposes REST endpoints (GET/POST/PATCH/DELETE /roles) plus /query. On Supabase cloud the postgres role is deliberately NOT a superuser (ALTER USER ... WITH SUPERUSER and COPY ... FROM PROGRAM are blocked); self-hosted deployments retain a true superuser (supabase_admin).
+
+**Components:** Postgres engine (supabase/postgres image + init migrations creating the default role set); PostgREST (authenticator JWT role-switching into anon/authenticated/service_role); postgres-meta /roles REST API; Studio Database > Roles UI
+
+**Self-hosted availability.** Fully available with no cloud dependency: roles are a database-engine feature, the default roles are baked into the supabase/postgres image's init SQL, postgres-meta (in the docker bundle, reachable via Kong /pg/*) provides the role CRUD API, and self-hosted Studio can manage them. The official features page explicitly lists self-hosted availability. Self-hosted is actually LESS restricted than cloud: you keep genuine superuser access (supabase_admin), which the cloud platform withholds.
+
+**Our stack.** We run and actively use the role system: "it talks to PostgREST/Storage exclusively with the service_role key (no anon key, no browser Supabase client)" — service_role is one of the Supabase-defined Postgres roles, and PostgREST's authenticator role-switching executes on every request. We also do role-based GRANT/REVOKE hardening: "LOCKED DOWN: pg_net (EXECUTE revoked from app roles)". RLS exists on exposed tables (deploy gate) even though service_role bypasses it, and postgres-meta /pg/* (which manages roles) is reachable via Kong.
+
+**Value for MarketingHub (2/3).** Already foundational and in use, so no new capability to unlock; the incremental value is least-privilege hardening. Today the app runs everything as service_role (RLS bypassed; Cognito is the real authz boundary). Creating a scoped custom role for the app (or per-module roles for the upcoming competitor-intel work) would shrink blast radius of a leaked key and directly serves the stated "platform hardening (audit, tamper-evidence)" roadmap interest — meaningful for a HIPAA-adjacent posture, but not roadmap-critical.
+
+**Caveats.** Roles are a core Postgres feature so our v1.26.05-pinned bundle unquestionably has them, but the exact default-role roster varies by supabase/postgres image version — e.g. supabase_etl_admin (replication/CDC) is a newer addition that may not exist in our image (unverified). The cloud docs' superuser restrictions (no ALTER USER ... WITH SUPERUSER, no COPY FROM PROGRAM) do not bind self-hosted deployments. Unconfirmed: whether the Studio version in our pinned bundle includes the Database > Roles management page; our custom in-app console has no role-management view (only Schema/RLS viewers), so role changes go through SQL, the stock Studio container, or postgres-meta /pg/roles. Note our SQL-editor write path and POST /query already permit arbitrary role DDL as the connecting superuser-ish role.
+
+Docs: <https://supabase.com/docs/guides/database/postgres/roles> · <https://supabase.com/features/postgres-roles> · <https://supabase.com/docs/guides/database/postgres/roles-superuser> · <https://github.com/supabase/postgres-meta>
+
+### Queues
+
+`Public Alpha` · self-hosted: **yes** · ours: **available-unused** · value **2/3** · effort **S** · verified
+
+**What it is.** Supabase Queues is a Postgres-native durable message-queue system with guaranteed delivery, built on the open-source pgmq extension (originally by Tembo). Messages live in Postgres tables, are delivered to a consumer exactly once within a configurable visibility window, and can be archived to companion tables for auditing. It targets background jobs and producer/consumer patterns without adding an external broker.
+
+**How it works.** The core is the pgmq Postgres extension: each queue is a pair of tables in the pgmq schema (queue + archive), created via pgmq.create()/managed with plain SQL. Two queue types exist: Basic (logged table, durable) and Unlogged (faster, transient). Consumers use send/send_batch (with optional visibility delay), read (N messages with visibility timeout), pop (read+delete), archive, and delete. For client-side access, a pgmq_public schema of wrapper functions over a subset of pgmq is exposed through PostgREST as RPC endpoints (supabase-js .rpc()), gated by function grants plus RLS on the queue tables; queue create/drop is deliberately not exposed there. The Studio dashboard (Integrations > Queues Postgres Module) enables the extension, creates queues, and generates the pgmq_public wrappers; on local/self-hosted you additionally add pgmq_public to PGRST_DB_SCHEMAS (docker .env) or config.toml [api].schemas. Everything executes inside the database — no separate queue server or cloud control plane.
+
+**Components:** pgmq Postgres extension (queue + archive tables in pgmq schema); pgmq_public wrapper schema (send/send_batch/read/pop/archive/delete RPCs); PostgREST Data API (PGRST_DB_SCHEMAS exposure); Studio dashboard Queues module (Integrations UI)
+
+**Self-hosted availability.** Fully database-resident, so it works with no cloud account: the pgmq extension ships in the supabase/postgres image (docs: available in image version 15.6.1.143+), and there is an official guide, "Expose Queues for local and self-hosted Supabase," covering adding pgmq_public to PGRST_DB_SCHEMAS in the docker .env and restarting. Self-hosted setup is more manual than cloud: you enable the extension and create the pgmq_public wrapper schema yourself (the cloud dashboard flow automates this); server-side consumers can also skip PostgREST entirely and call pgmq.* via SQL.
+
+**Our stack.** Ground truth: "pg_cron / pgmq: not enabled by any repo SQL; if docs say they ship in the image, mark available-unused with that caveat." Official docs confirm pgmq ships in the supabase/postgres image (15.6.1.143+), and our db container is "db (supabase/postgres, PG17)" — so pgmq is present in the image but no CREATE EXTENSION or pgmq_public setup exists in our repo, and the app instead uses "a homegrown SMS outbox table" with the claim_due_sms_recipients RPC.
+
+**Value for MarketingHub (2/3).** Direct overlap with the roadmap-flagged homegrown SMS outbox + app-level scheduler: pgmq's visibility-timeout read is exactly the FOR UPDATE SKIP LOCKED claim pattern we hand-rolled (claim_due_sms_recipients), and archive tables give a tamper-friendly delivery audit trail that fits the platform-hardening interest. Not a 3 because the existing outbox already works, we're service_role-only (pgmq_public's RLS/grant model adds nothing for us), and the upcoming competitor-intel module doesn't need queues; value is consolidation and future background-job plumbing, not a blocker.
+
+**Caveats.** Minimal adoption is S (CREATE EXTENSION pgmq + call pgmq.* from our service-role/SQL paths; no PostgREST exposure needed since we have no browser client), but migrating the existing SMS outbox/scheduler onto it is closer to M. Public Alpha maturity. Version: docs require supabase/postgres image 15.6.1.143+; Queues launched Dec 2024, well before our bundle clone (tag v1.26.05, 2026-07), and our PG17 image should include pgmq — but the exact image version and pgmq presence are unverified (`select * from pg_available_extensions where name='pgmq'` to confirm). Also unverified: whether our pinned Studio container includes the Queues Integrations UI; if not, all management is SQL-only, which is fine given our in-app SQL console. pgmq_public wrappers must be created manually on self-hosted if client-side RPC access is ever wanted.
+
+Docs: <https://supabase.com/docs/guides/queues> · <https://supabase.com/docs/guides/queues/quickstart> · <https://supabase.com/docs/guides/queues/api> · <https://supabase.com/docs/guides/queues/expose-self-hosted-queues> · <https://supabase.com/docs/guides/database/extensions/pgmq>
+
+### Authorization via Row Level Security
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Row Level Security (RLS) is Postgres's native per-row authorization mechanism, which Supabase adopts as its primary authz model: SQL policies attached to tables decide which rows each user can SELECT/INSERT/UPDATE/DELETE. Supabase layers convenience on top — auth helper functions (auth.uid(), auth.jwt()) and JWT-to-role mapping — so policies can reference the authenticated user's identity and claims. Authorization logic lives in the database, so it applies uniformly no matter how the data is accessed.
+
+**How it works.** The enforcement engine is Postgres itself: `ALTER TABLE ... ENABLE ROW LEVEL SECURITY` plus `CREATE POLICY` rules that effectively add a WHERE clause (USING for reads/deletes, WITH CHECK for writes) to every query. GoTrue issues JWTs on login; PostgREST (and storage-api/Realtime) validates the JWT, switches to the matching Postgres role (anon, authenticated, or service_role), and exposes claims via `request.jwt.claims`, which the auth.uid()/auth.jwt() helper functions (shipped in the supabase/postgres image's auth schema) read inside policies. Policies can be scoped with the TO clause; service_role has BYPASSRLS and skips all policies, which is why it must never reach a browser. Studio provides a policy editor and templates. Documented performance knobs: index policy columns, wrap helpers as `(select auth.uid())` for per-statement caching, specify TO roles, use security-definer functions for join-heavy checks.
+
+**Components:** Postgres core RLS engine (CREATE POLICY / ENABLE ROW LEVEL SECURITY); supabase/postgres image auth helper functions (auth.uid(), auth.jwt()); PostgREST (JWT validation, anon/authenticated/service_role role switching, request.jwt.claims); GoTrue (JWT issuance feeding the helpers); Studio policy editor/templates UI
+
+**Self-hosted availability.** Fully self-hosted: RLS is core Postgres, and the helper functions, role mapping, and PostgREST/GoTrue plumbing all ship in the open-source docker bundle. The supabase.com/features/row-level-security page explicitly lists it as GA and available on self-hosted. No cloud control plane involved.
+
+**Our stack.** "RLS exists on exposed tables (a deploy gate requires it) but the app bypasses it via service_role; the Cognito group marketing is the real authz boundary." Policies are enabled in the database and a deploy gate enforces their presence, but every app request uses the service_role key (BYPASSRLS), so RLS never actually gates any traffic. The in-app console has only a read-only "RLS-policies viewer".
+
+**Value for MarketingHub (1/3).** MarketingHub is an internal single-group tool where the Cognito `marketing` group at the ALB is the real authz boundary; per-user row filtering adds little functional value. Its only payoff is defense-in-depth for the HIPAA-adjacent hardening interest (limiting blast radius of the service_role-everywhere pattern), which is real but secondary to the stated roadmap (competitor-intel/pgvector, console parity).
+
+**Caveats.** No version concerns: RLS is core Postgres (long predates PG17) and the auth helpers are standard in the supabase/postgres image at our v1.26.05 pin. Adoption caveat: auth.uid()/auth.jwt() only resolve when requests carry a Supabase-signed user JWT via PostgREST — our app sends only service_role, so existing policies are exercised by the deploy gate, not by traffic. Making RLS real would mean minting authenticated-role JWTs from Cognito identity (GoTrue runs but is unused; Cognito is the auth authority) and moving every app data path off the service_role client — M effort, closer to L if per-user policy semantics must be authored. The postgres-meta POST /query console path operates outside RLS regardless.
+
+Docs: <https://supabase.com/docs/guides/database/postgres/row-level-security> · <https://supabase.com/features/row-level-security>
+
+### Branching
+
+`Beta` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **1/3** · effort **N/A** · verified
+
+**What it is.** Branching spins up isolated copies of a Supabase project (schema, functions, config — no production data) so schema changes can be developed and tested without touching production. Branches come in two flavors: ephemeral preview branches (typically tied to a GitHub pull request, auto-paused/deleted) and persistent branches for staging/QA. Branching 2.0 removed the Git requirement, letting branches be created and merged straight from the dashboard, CLI, or Management API.
+
+**How it works.** This is implemented entirely by the Supabase cloud control plane, not by any component in the open-source stack: each branch is a separate managed Postgres instance the platform provisions, with its own API credentials. Branch creation happens via the cloud Dashboard, the Supabase CLI, the Management API, or automatically via the GitHub integration when a PR opens. On creation the platform runs a deployment workflow (clone repo, pull migrations, health check, apply config.toml, run migrations from ./supabase/migrations, seed from ./supabase/seed.sql, deploy Edge Functions); if a parent step fails, dependent steps are skipped. For dashboard-only projects with no CLI migrations, the platform dumps the production database schema and replays it as a migration on the new branch. Merging is done through a dashboard merge page with schema diff preview; merging to main triggers an automatic deployment of the changes to production (branches can only merge to main, not to each other; migration conflicts are resolved manually on the branch).
+
+**Components:** Supabase cloud control plane (provisions per-branch Postgres instances); Cloud Dashboard (branch create/merge UI, schema diff); Supabase CLI (branch commands, migrations); Management API (programmatic branch management); GitHub integration app (PR-driven preview branches)
+
+**Self-hosted availability.** Not available self-hosted. The feature page explicitly marks Branching as "N/A" for self-hosted, and the self-hosting guide lists Branching among features unavailable in self-hosted deployments (self-hosted operates as "a single project"). It cannot exist there because it depends on the cloud control plane to provision, pause, and destroy per-branch Postgres instances and to run the merge/deploy workflow — none of that orchestration ships in the docker bundle.
+
+**Our stack.** "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05 ... No Supabase cloud account or control plane is involved anywhere." Branching requires the cloud control plane, so it is impossible in this deployment.
+
+**Value for MarketingHub (1/3).** Isolated schema-change testing would be genuinely useful for the upcoming competitor-intel (pgvector/RAG) migrations and ongoing console-parity work, but the capability is unusable in our cloud-account-free deployment; the same safety can be approximated with a throwaway Postgres container restored from our pgBackRest/pg_dump backups, so the feature itself adds little.
+
+**Caveats.** Officially Beta; the Git-less Branching 2.0 workflow (dashboard/CLI/Management API creation, merge page) is even newer and was described as behind a feature preview with early-stage limitations (manual migration-conflict resolution, merge-to-main only). Cloud pricing/plan requirements and per-branch compute billing were not verified. Our bundle pin (v1.26.05) is irrelevant here since no version of the docker bundle includes branching.
+
+Docs: <https://supabase.com/docs/guides/deployment/branching> · <https://supabase.com/features/branching> · <https://supabase.com/docs/guides/self-hosting> · <https://supabase.com/blog/branching-2-0>
+
+### Database Webhooks
+
+`Beta` · self-hosted: **yes** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Database Webhooks fire an HTTP request to an external URL whenever a row in a chosen table is inserted, updated, or deleted. They let the database push change events to your app, a third-party API, or an Edge Function instead of the app polling for changes. Officially Beta.
+
+**How it works.** They are a thin convenience wrapper around ordinary Postgres AFTER-row triggers: the trigger executes supabase_functions.http_request(url, method, headers, params, timeout_ms), a SECURITY DEFINER function that calls net.http_post/net.http_get from the async pg_net extension, so the outbound HTTP call does not block the transaction. POST payloads are auto-built JSON containing type (INSERT/UPDATE/DELETE), table, schema, record (NEW), and old_record (OLD). The supabase_functions schema, hooks audit table, and pg_net extension are created by webhooks.sql, which ships in the self-hosted docker bundle (docker/volumes/db/webhooks.sql) and runs at db init; request history is also visible in the net schema. You create webhooks either from the Studio dashboard (Database > Webhooks UI) or with plain CREATE TRIGGER SQL. Delivery is fire-and-forget via pg_net with a per-hook timeout; there is no built-in retry/queue semantics.
+
+**Components:** pg_net Postgres extension (async HTTP); supabase_functions schema: http_request() trigger function + hooks audit table (from docker/volumes/db/webhooks.sql); native Postgres triggers; Studio dashboard webhooks UI (optional config front-end)
+
+**Self-hosted availability.** Fully self-hostable: the docker bundle ships webhooks.sql which creates the supabase_functions schema, http_request() function, hooks table, and pg_net extension in the db container; the feature page explicitly lists self-hosted availability. Everything runs inside Postgres — no cloud control plane involved; Studio (also in the bundle) provides the optional UI, and plain SQL works without it.
+
+**Our stack.** The bundle's db init ships the webhook plumbing, but ground truth says pg_net is "LOCKED DOWN: pg_net (EXECUTE revoked from app roles; candidate for DROP)", and no repo SQL creates webhook triggers — app usage is "PostgREST CRUD + .textSearch(), exactly one RPC (claim_due_sms_recipients...)" with no webhook/HTTP-trigger usage listed.
+
+**Value for MarketingHub (1/3).** Marginal: it could turn the homegrown SMS outbox's app-level polling into event push (trigger -> HTTP to the app on insert), but the team has deliberately revoked pg_net EXECUTE and flagged it for DROP, and DB-initiated egress of full row payloads sits poorly with the HIPAA-adjacent posture; no roadmap item (competitor-intel/pgvector, console parity, hardening) needs it.
+
+**Caveats.** Presence of webhooks.sql/supabase_functions verified only on supabase/supabase master, not on our pinned tag v1.26.05 (it has shipped in the bundle for years, so it is very likely present, but unconfirmed) ; pg_net version in our PG17 image unverified. Our pg_net EXECUTE revocation targets app roles — http_request() is SECURITY DEFINER, so webhooks might still function despite the lockdown, but the planned pg_net DROP would break them entirely. Delivery is fire-and-forget (no retries/dead-letter); payloads contain full old/new rows, so any PHI-adjacent columns would egress to the target URL. Studio webhook UI behavior on our stock Studio container untested.
+
+Docs: <https://supabase.com/docs/guides/database/webhooks> · <https://supabase.com/features/database-webhooks> · <https://raw.githubusercontent.com/supabase/supabase/master/docker/volumes/db/webhooks.sql>
+
+### Foreign Data Wrappers
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Foreign Data Wrappers let you query external systems (Stripe, BigQuery, ClickHouse, Firebase, S3, Airtable, HubSpot, MySQL, Redis, and 30+ more) as if they were ordinary Postgres tables, using plain SQL. Supabase implements this via "Wrappers," an open-source (Apache-2.0) Rust framework and Postgres extension built on pgrx, with newer connectors shipped as WebAssembly modules. Data stays in the remote system; queries execute against it on demand.
+
+**How it works.** The implementing component is the `wrappers` Postgres extension (github.com/supabase/wrappers), pre-baked into the supabase/postgres image — this is pure database-side functionality, not GoTrue/storage-api/Realtime/control-plane. You enable it with CREATE EXTENSION wrappers, then per-source: CREATE FOREIGN DATA WRAPPER ... HANDLER/VALIDATOR, CREATE SERVER with connection options (credentials ideally referenced via supabase_vault key IDs rather than plain text), optional CREATE USER MAPPING, and CREATE FOREIGN TABLE (or IMPORT FOREIGN SCHEMA) mapping remote objects to local columns. SELECT/INSERT/etc. on the foreign table are translated into remote API/DB calls, with WHERE/ORDER BY/LIMIT pushdown where supported; some FDWs are read-only, some read-write. Since wrappers v0.4+ many connectors are Wasm FDWs fetched from a package URL declared in the server options, so new sources can be added without rebuilding the extension. Supabase cloud adds a dashboard Integrations/Wrappers UI as convenience, but everything is drivable from SQL. Foreign tables bypass RLS, so official guidance is to keep them in a private schema (not API-exposed) and expose filtered views/functions instead.
+
+**Components:** wrappers Postgres extension (Rust/pgrx, bundled in supabase/postgres image, v0.5.4 on current master); Wasm FDW runtime inside the wrappers extension (loads connector .wasm packages); supabase_vault + pgsodium (optional, recommended credential storage for server options); cloud dashboard Wrappers/Integrations UI (convenience layer only)
+
+**Self-hosted availability.** Fully self-hostable: the wrappers extension lives entirely inside the supabase/postgres database image (feature page explicitly says "Available on self-hosted: Yes") and is operated via SQL through any client (psql, SQL Editor, PostgREST-adjacent tooling). No cloud control plane involved. The only cloud-specific piece is the dashboard's point-and-click Wrappers UI; self-hosted use is SQL-first (self-hosted Studio parity for that UI unconfirmed).
+
+**Our stack.** Ground truth: "Postgres extensions ENABLED by our SQL: pgcrypto, pgaudit" — wrappers is not among them and appears in no repo SQL; it ships pre-baked in the supabase/postgres image (like the listed "Pre-baked in the supabase/postgres image but NOT enabled/used" set), matching the instruction "if docs say they ship in the image, mark available-unused with that caveat."
+
+**Value for MarketingHub (1/3).** Marginal fit for the roadmap. The competitor-intel/RAG module could conceivably ingest external sources (S3, HubSpot, Airtable FDWs) via SQL, but RAG ingestion is more naturally app-level, and MarketingHub's data flows are already served by PostgREST + S3-backed Storage. No current external-DB/SaaS query need; also awkward under the HIPAA-adjacent posture since FDW credentials and RLS-bypassing foreign tables add attack surface on a service_role-only stack.
+
+**Caveats.** Wrappers version in our pinned bundle (supabase/supabase v1.26.05, cloned 2026-07; PG17 image) is unverified — current supabase/postgres master bundles wrappers 0.5.4, and Wasm-based FDWs require wrappers >=0.4.0, so newer connectors may not exist at our image's version. Recommended credential storage uses supabase_vault, which is pre-baked but NOT enabled in our deployment; without it, secrets sit in plain text in foreign server options (pg_dump/backup exposure — significant for HIPAA-adjacent posture). Foreign tables bypass RLS: must live in a private schema, never in our PostgREST-exposed schemas (public, storage, graphql_public, marketinghub). Remote sources also require outbound network egress from the private-subnet EC2 instance. Self-hosted Studio's Wrappers UI parity unconfirmed; SQL path works regardless. postgres_fdw (plain Postgres-to-Postgres) is documented separately and not confirmed present in the PG17 image extension list.
+
+Docs: <https://supabase.com/docs/guides/database/extensions/wrappers/overview> · <https://supabase.com/features/foreign-data-wrappers> · <https://github.com/supabase/wrappers> · <https://github.com/supabase/postgres>
+
+### MCP Server
+
+`Public Alpha` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** The official Supabase Model Context Protocol server lets AI assistants and agents (Claude, Cursor, Windsurf, ChatGPT, etc.) operate on Supabase projects through natural language: run SQL, design tables and migrations, manage config, fetch logs/advisors, generate TypeScript types, and (cloud) create/pause projects and manage branches. It is Public Alpha, launched April 2025, with 20+ tools organized into feature groups.
+
+**How it works.** Three deployment shapes. (1) Hosted: an HTTP MCP endpoint at https://mcp.supabase.com/mcp run by the Supabase CLOUD control plane; it authenticates via OAuth 2.1 dynamic client registration (or a personal access token for CI) and its tools call the cloud Management API. Config knobs: ?project_ref= for project scoping, read_only mode (queries run as a read-only Postgres role), and feature-group filtering (database, docs, storage, functions, branching, development, debugging, account). (2) Local dev: the Supabase CLI serves MCP at http://localhost:54321/mcp. (3) Self-hosted docker bundle: the Studio container implements the endpoint at studio:3000/api/mcp and Kong exposes it at /mcp — but the route ships blocked by default via a request-termination plugin; enabling it means editing volumes/api/kong.yml to swap in an ip-restriction allowlist, restarting Kong, and accessing only over SSH tunnel/VPN. Self-hosted mode has no OAuth 2.1 (network-level IP allowlist is the only control) and offers only a limited subset of tools, since account/project/branching tools depend on the cloud Management API.
+
+**Components:** Studio container (serves /api/mcp in self-hosted bundle); Kong gateway (/mcp route, ip-restriction allowlist, blocked by default); hosted mcp.supabase.com service + cloud Management API (full tool set, cloud only); Supabase CLI local-dev MCP endpoint (localhost:54321/mcp); @supabase/mcp-server-postgrest (standalone MCP over any PostgREST endpoint)
+
+**Self-hosted availability.** The docker bundle's Studio container serves an MCP endpoint (studio:3000/api/mcp, exposed via Kong at /mcp) with no cloud account — but it is deny-all by default, secured only by a Kong IP allowlist (no OAuth 2.1), documented for tunnel/VPN access only, and exposes just a limited tool subset (database/docs-style tools). The full tool set — project creation/pause, branching, account tools, OAuth — requires the cloud Management API and cannot exist self-hosted.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... kong (gateway; admin ports loopback-only) ... studio (behind the Cognito ALB)" — and MCP appears nowhere in it. Repo-verified: cdk/assets/bootstrap.sh pins SUPABASE_REF="v1.26.05" and copies the stock docker/ tree; that tag's kong.yml contains the /mcp -> studio:3000/api/mcp route with "Block access to /mcp by default" (request-termination), and grep of MarketingHub (incl. cdk/assets docker-compose.override.yml) finds zero MCP references or kong.yml overrides. So the endpoint ships in our bundle but was never enabled.
+
+**Value for MarketingHub (1/3).** Marginal: it would let Claude-driven tooling introspect schema and run SQL over the existing SSM tunnel during dev (mildly useful for the upcoming pgvector/RAG competitor-intel build), but it duplicates access we already have via postgres-meta POST /query and the in-app console, adds an auth-less (IP-allowlist-only, alpha) SQL surface to a HIPAA-adjacent prod box, and Supabase itself warns against pointing MCP at production data.
+
+**Caveats.** Public Alpha and evolving fast. Version dependency confirmed OK: our pinned tag v1.26.05 ships the Kong /mcp route and studio image 2026.04.27-sha-5f60601, so the endpoint exists in our bundle (actual on-instance kong.yml/studio versions not independently verified, but they were cloned from this tag at first boot 2026-07). Self-hosted mode's exact tool list is not enumerated anywhere official — only "a limited subset of tools and no OAuth 2.1". Security: docs mandate never exposing /mcp to the Internet (tunnel/VPN only), the only access control is Kong ip-restriction, and Supabase advises against connecting MCP to production data (prompt-injection/mutation risk) — significant for our HIPAA-adjacent posture. OAuth 2.1/dynamic client registration and full tool set (branching, project management, account) remain cloud-only.
+
+Docs: <https://supabase.com/docs/guides/getting-started/mcp> · <https://supabase.com/docs/guides/self-hosting/enable-mcp> · <https://supabase.com/features/mcp-server> · <https://github.com/supabase-community/supabase-mcp> · <https://supabase.com/blog/mcp-server> · <https://raw.githubusercontent.com/supabase/mcp/main/README.md> · <https://raw.githubusercontent.com/supabase/supabase/v1.26.05/docker/volumes/api/kong.yml>
+
+### Network restrictions
+
+`GA` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** A database-level IP firewall: you define an allowlist of IPv4/IPv6 CIDR ranges that are permitted to connect to your project's Postgres and its connection pooler, and all other source addresses are dropped before any credential check. It covers only direct Postgres and pooler (Supavisor) traffic — it does not apply to the HTTPS data APIs (PostgREST, Storage, Auth) or supabase-js.
+
+**How it works.** On the hosted platform the allowed CIDRs are stored per project by the Supabase cloud control plane and enforced "before traffic reaches your database": at the platform network layer for direct Postgres connections and, since 2024-01-24, automatically propagated into the Supavisor pooler's per-tenant `allow_list` (a CIDR list added in Supavisor v1.1.2 that validates incoming client addresses) for pooled connections. Configuration is via the dashboard Database Settings > Network Restrictions (Owner/Admin required), the experimental CLI (`supabase network-restrictions get|update --db-allow-cidr`, requires a linked cloud project), or the Management API. Enforcement is pre-authentication, so blocked IPs never get a credential exchange; valid credentials are still required for allowed IPs. Known side effect: with restrictions on, Edge Functions lose direct database access, and IPv6-resolving projects must list both IPv4 and IPv6 CIDRs unless they have the IPv4 add-on. The dashboard/CLI/API management surface is cloud-only; the only open-source enforcement component is Supavisor's tenant allow_list.
+
+**Components:** Supabase cloud control plane (dashboard Database Settings, Management API); Supabase CLI experimental network-restrictions commands (cloud projects only); Supavisor pooler per-tenant allow_list (open source, enforces CIDRs on pooled connections); platform network firewall in front of Postgres (cloud infrastructure)
+
+**Self-hosted availability.** The productized feature (dashboard UI, CLI commands, Management API, automatic platform-firewall enforcement) is cloud-control-plane-only. What self-hosters get is the enforcement primitive: the open-source Supavisor pooler supports a per-tenant `allow_list` of CIDRs (v1.1.2+), configurable through Supavisor's tenant admin API — but the docker bundle exposes no UI/knob for it, and direct-to-Postgres connections must be restricted with your own controls (pg_hba.conf, OS/cloud firewall, security groups). The feature page's "available on self-hosted: Yes" effectively means "you control your own network."
+
+**Our stack.** "Containers RUNNING: ... supavisor (pooler :5432 session/:6543 txn)" — the component that implements self-hosted enforcement (Supavisor allow_list) is up, but no repo SQL/config sets an allow_list; actual network restriction comes from AWS, per "one EC2 instance (Postgres 17) in AWS us-east-1 private subnets" and "kong (gateway; admin ports loopback-only)". No cloud control plane exists in our deployment, so the dashboard/CLI/API feature itself cannot be in use.
+
+**Value for MarketingHub (1/3).** Marginal defense-in-depth only: the DB is already unreachable from the internet (private subnets, security groups, Cognito ALB in front of HTTP), so a Supavisor allow_list would largely duplicate AWS-layer controls. Slight relevance to the roadmap's platform-hardening interest (HIPAA-adjacent posture likes layered pre-auth controls), but it protects none of the paths the app actually uses (PostgREST/Storage over Kong).
+
+**Caveats.** Supavisor allow_list requires Supavisor >= v1.1.2 (Jan 2024); our bundle tag v1.26.05 cloned 2026-07 almost certainly ships a newer Supavisor, but the exact container version is unverified. Unverified whether the docker-compose bundle's Supavisor tenant bootstrap lets you set allow_list without calling Supavisor's admin API directly. The CLI commands are experimental and require a linked cloud project — unusable for us. Docs do not state hosted-plan availability tiers. Restrictions never cover HTTPS APIs, so on any deployment PostgREST/Storage need separate controls (ours: Kong + Cognito ALB).
+
+Docs: <https://supabase.com/docs/guides/platform/network-restrictions> · <https://supabase.com/features/network-restrictions> · <https://supabase.com/docs/reference/cli/supabase-network-restrictions> · <https://supabase.com/changelog/20522-supavisor-starts-enforcing-network-restrictions> · <https://supabase.github.io/supavisor/configuration/tenants/> · <https://github.com/orgs/supabase/discussions/20195>
+
+### SSL enforcement
+
+`GA` · self-hosted: **partial** · ours: **absent** · value **1/3** · effort **M** · verified
+
+**What it is.** SSL enforcement lets you mandate that all client connections to your Supabase Postgres database use SSL/TLS, rejecting plaintext connections that are otherwise accepted by default for client compatibility. It covers direct Postgres connections and connections through the Supavisor/PgBouncer poolers. Supabase's HTTP APIs (PostgREST, Storage, Auth) always enforce TLS regardless, so this feature is specifically about raw database wire connections.
+
+**How it works.** It is a Supabase cloud control-plane feature: a per-project toggle ("Enforce SSL on incoming connections" under Database Settings > SSL Configuration in the dashboard), a Management API endpoint (GET/PUT https://api.supabase.com/v1/projects/{ref}/ssl-enforcement, OAuth scope database:read/write, response {"currentConfig":{"database":true},"appliedSuccessfully":true}), and CLI commands (supabase ssl-enforcement get/update --project-ref ... --enable-db-ssl-enforcement --experimental, CLI >= 1.37.0). When toggled, the control plane applies a database-level restriction that rejects non-SSL connections and triggers a fast database reboot (seconds on small projects). Enforcement applies to direct Postgres plus Supavisor and PgBouncer traffic; docs recommend clients then use sslmode verify-full. The docs do not document the underlying Postgres mechanism (e.g., pg_hba.conf hostssl rules) — it is managed opaquely by the platform. Requires Postgres >= 13.3.0 on the managed platform.
+
+**Components:** Supabase cloud control plane / Management API (/v1/projects/{ref}/ssl-enforcement); cloud dashboard Database Settings toggle; Supabase CLI ssl-enforcement commands (experimental); Postgres server connection-level SSL restriction; Supavisor/PgBouncer pooler (in enforcement scope)
+
+**Self-hosted availability.** The managed feature (dashboard toggle, Management API endpoint, CLI command) is cloud-control-plane-only; the self-hosted docker bundle has no equivalent switch and the official ssl-enforcement guide never mentions self-hosting. However, the security outcome is fully achievable in self-hosted with plain Postgres administration: provision server certs, set ssl=on in postgresql.conf, and restrict pg_hba.conf to hostssl entries in the db container, plus TLS config on Supavisor. The features page's "available on self-hosted" claim refers to this manual capability, not the toggle. (Note the feature page does say "managed via Dashboard or CLI" and "available on self-hosted," which is loose — self-hosted Studio exposes no such control.)
+
+**Our stack.** Ground truth: "No Supabase cloud account or control plane is involved anywhere," so the managed toggle cannot exist here; and the only database hardening it records is "Postgres extensions ENABLED by our SQL: pgcrypto, pgaudit" — no SQL or config enabling SSL-only connections (pg_hba/hostssl) on the db or "supavisor (pooler :5432 session/:6543 txn)" is mentioned. TLS terminates at the Cognito ALB; internal Postgres wire connections are not documented as SSL-enforced, so the manual equivalent is not deployed.
+
+**Value for MarketingHub (1/3).** Modest defense-in-depth for the HIPAA-adjacent posture ("platform hardening interest" is on the roadmap): enforcing SSL on Postgres/Supavisor would encrypt intra-VPC wire traffic. But value is limited because everything runs on ONE EC2 instance — app-to-db traffic traverses the local docker network in private subnets, external access is TLS at the Cognito ALB, and no roadmap item (competitor-intel/pgvector, console parity) depends on it. It mainly hardens the supavisor :5432/:6543 listeners against in-VPC snooping.
+
+**Caveats.** Version: managed platform requires Postgres >= 13.3.0 (our PG17 clears it) and CLI >= 1.37.0 with --experimental; no version constraint applies to the manual self-hosted route. Unconfirmed: whether the supabase/postgres image at our pinned bundle tag v1.26.05 ships with ssl=on and a self-signed server cert by default (upstream images historically do, but exact state at our tag unverified); the docs never disclose the actual server-side mechanism (presumed pg_hba.conf hostssl). Adopting manually means owning cert issuance/rotation ourselves and updating supavisor, pgBackRest, and any admin psql connections to sslmode=require/verify-full; a db restart is needed. The features page's "available on self-hosted" label overstates it — no toggle/API exists outside the cloud control plane.
+
+Docs: <https://supabase.com/docs/guides/platform/ssl-enforcement> · <https://supabase.com/features/ssl-enforcement> · <https://supabase.com/docs/reference/api/v1-get-ssl-enforcement-config> · <https://github.com/supabase/supabase/blob/master/apps/docs/content/guides/platform/ssl-enforcement.mdx>
+
+### Auto-generated GraphQL API via pg_graphql
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **S** · verified
+
+**What it is.** pg_graphql is an open-source (Apache-2.0) Postgres extension that reflects your existing SQL schema into a GraphQL schema automatically — every table becomes queryable with pagination, foreign keys become nested fields, and insert/update/delete mutations are generated. No separate GraphQL server or resolver code is needed; each GraphQL request compiles to a single SQL statement, avoiding N+1 queries.
+
+**How it works.** The extension lives entirely inside Postgres: `create extension pg_graphql;` installs a `graphql` schema whose `graphql.resolve(query, variables)` SQL function parses and executes GraphQL operations against the reflected schema. HTTP exposure is piggybacked on PostgREST: a wrapper function in the `graphql_public` schema is called as a PostgREST RPC, and Kong routes `/graphql/v1` to it — no dedicated GraphQL service runs. Visibility is controlled by normal Postgres grants and search_path; RLS policies apply because queries execute as the requesting role's SQL. Configuration is via comment directives on schemas/tables (e.g. name inflection to camelCase, and `@graphql({"introspection": true})` — introspection is off by default since pg_graphql 1.6.0). Requires Postgres 14+; version upgrades are done by drop/recreate of the extension.
+
+**Components:** pg_graphql Postgres extension (graphql.resolve); graphql_public schema wrapper function; PostgREST (RPC exposure; graphql_public in exposed schemas); Kong gateway (/graphql/v1 route)
+
+**Self-hosted availability.** Fully self-hostable with no cloud dependency: the extension ships in the supabase/postgres image, resolution happens in the database, and the docker bundle's PostgREST + Kong provide the /graphql/v1 HTTP path. Apache-2.0 licensed.
+
+**Our stack.** "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector, pg_graphql, pgsodium+supabase_vault, pgjwt" and "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." Note the plumbing is partially present: "rest (PostgREST; schemas public,storage,graphql_public,marketinghub)".
+
+**Value for MarketingHub (0/3).** The app already covers all data access with PostgREST CRUD, one RPC, and arbitrary SQL via postgres-meta; GraphQL's headline benefits (RLS-scoped client access, nested single-round-trip fetches) don't apply to a server-only service_role architecture, and nothing on the roadmap (pgvector/RAG, queues, console parity, hardening) calls for it. It would only add a second query surface to secure.
+
+**Caveats.** Exact pg_graphql version baked into our pinned bundle (supabase/supabase tag v1.26.05, cloned 2026-07; PG17 image) is unverified; introspection default-off applies if it is >=1.6.0 (likely, that shipped 2024). Unconfirmed whether our bundle's init scripts pre-create the graphql_public.graphql wrapper function or whether enabling requires creating both the extension and the wrapper (PostgREST already exposes graphql_public, and the stock Kong config includes /graphql/v1). If enabled in our deployment, service_role access would bypass RLS on the GraphQL path exactly as it does on PostgREST — RLS-based GraphQL authz would be inert.
+
+Docs: <https://supabase.com/docs/guides/graphql> · <https://supabase.com/docs/guides/database/extensions/pg_graphql> · <https://github.com/supabase/pg_graphql> · <https://supabase.com/blog/pg-graphql>
+
+### Custom domains
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** A paid Supabase Cloud add-on that lets a hosted project answer API traffic on your own branded hostname (e.g. api.example.com) instead of the default <project-ref>.supabase.co domain. It white-labels the Supabase endpoints (PostgREST, Auth, Storage, Realtime, Functions) so OAuth consent screens, webhooks, and stored URLs show your domain and stay portable across projects. A second, experimental variant offers vanity subdomains on supabase.co.
+
+**How it works.** It is implemented entirely by the Supabase CLOUD control plane and its edge/load-balancing layer, not by any component in the open-source bundle. You configure it via the Dashboard (project General Settings) or the CLI command group `supabase domains` (create / get / reverify / activate / delete, keyed by --project-ref), which call the platform Management API. You point a CNAME at your project's supabase.co subdomain and add TXT records for an ACME challenge; the platform verifies DNS and issues an SSL certificate (up to ~30 min). `domains activate` then reconfigures the platform edge to serve the project on the custom hostname; the default domain keeps working, but third-party auth providers must have redirect URIs updated to the new domain first, and SAML EntityID changes can break existing IdP setups. Billing is hourly as a paid-plan add-on; custom domains and vanity subdomains are mutually exclusive per project.
+
+**Components:** Supabase cloud control plane / Management API; cloud dashboard (project General Settings); supabase CLI `domains` command group; Supabase platform edge (DNS verification + SSL issuance)
+
+**Self-hosted availability.** The official feature page marks self-hosted availability as "N/A", and the CLI/dashboard flows operate only on the cloud Management API with a --project-ref. Nothing in the docker bundle implements it — nor needs to: a self-hosted operator already owns the hostname by pointing DNS/TLS at their own reverse proxy (Kong, ALB, etc.), which is the self-hosted equivalent.
+
+**Our stack.** "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle ... No Supabase cloud account or control plane is involved anywhere." With no cloud project, there is no <ref>.supabase.co endpoint to white-label; our hostnames are already ours via the Cognito ALB in front of Kong/Studio.
+
+**Value for MarketingHub (0/3).** Zero relevance: MarketingHub is an internal tool in private subnets behind a Cognito ALB with server-only service_role access — no public branded API surface, no OAuth consent screens via GoTrue (auth is unused), and domain control already exists natively in self-hosting. Nothing on the roadmap (competitor-intel/pgvector, queues/cron, console parity, hardening) touches this.
+
+**Caveats.** Version pinning is irrelevant here: the feature lives in the cloud control plane, so our v1.26.05 bundle age has no bearing. Cloud-side caveats (for completeness): paid-plan add-on billed hourly; vanity subdomains are experimental; activation breaks third-party OAuth on the old domain until redirect URIs are updated, and SAML EntityID changes can break IdP configs; not intended for hosting frontends via Edge Functions. Could not confirm exact pricing (not listed on the feature page).
+
+Docs: <https://supabase.com/docs/guides/platform/custom-domains> · <https://supabase.com/features/custom-domains> · <https://supabase.com/docs/reference/cli/supabase-domains>
+
+### Database backups
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** Supabase automatically backs up hosted projects daily (Pro 7-day, Team 14-day, Enterprise up to 30-day retention) and offers Point-in-Time Recovery (PITR) as a paid add-on that lets you restore the database to any second within the retention window. Backups and restores are managed from the cloud Dashboard or Management API; backups cover the Postgres database only (Storage objects are excluded).
+
+**How it works.** This is a Supabase CLOUD control-plane feature, "managed and monitored by the Supabase team" — no component in the docker bundle implements it. Daily backups are logical (pg_dump-based) for smaller/older projects and physical snapshots on newer Postgres versions (15.8.1.079+) or databases >15GB. PITR uses WAL-G: a physical base backup plus WAL archives shipped every 2 minutes (or sooner on size thresholds), giving a worst-case RPO of 2 minutes and second-granularity restore; enabling PITR replaces daily backups. Management is via Dashboard (Database > Backups), the Management API (list backups, trigger PITR restore), and the CLI's `supabase db dump` for manual logical dumps. Restores take the project offline for a duration proportional to DB size; custom replication slots/subscriptions must be dropped before and recreated after a PITR restore, and custom role passwords are not preserved.
+
+**Components:** Supabase cloud control plane (backup orchestration); WAL-G (physical backups + WAL archiving for PITR); pg_dump (logical daily backups); cloud dashboard (Database > Backups); Management API (backup list/restore endpoints); supabase CLI (`db dump` manual dumps)
+
+**Self-hosted availability.** The self-hosting docs explicitly list "managed backups and PITR" as unavailable when self-hosting and state operators bear full responsibility for "Backups and disaster recovery." Nothing in the docker bundle schedules or stores backups; the feature is orchestration in Supabase's cloud infrastructure. Self-hosters must roll their own (pg_dump/pgBackRest/WAL-G against the db container — the feature page notes DIY PITR "requires wal-g").
+
+**Our stack.** "No Supabase cloud account or control plane is involved anywhere" — and we already run an independent equivalent: "Backups: pgBackRest (weekly full, daily diff, nightly pg_dump) to an Object-Lock S3 bucket + AWS Backup on the EBS data volume; WAL archiving on (RPO<=5min)."
+
+**Value for MarketingHub (0/3).** Impossible in our deployment, and unneeded: our pgBackRest + WAL archiving + AWS Backup stack already matches or beats it (RPO<=5min vs cloud's 2-min worst case, plus Object-Lock immutability the cloud feature lacks). Ground truth: "backups already strong."
+
+**Caveats.** Version pin (v1.26.05 bundle) is irrelevant since no bundle component implements this — it cannot appear via upgrade. Cloud backups exclude Storage API objects and custom role passwords; our S3-backed storage bucket is covered separately by our own AWS setup. Plan-based retention/pricing details ($0.137-$0.55/hr PITR add-on tiers) are cloud-billing facts, current as of fetch date. Could not confirm any roadmap to open-source the backup orchestration.
+
+Docs: <https://supabase.com/docs/guides/platform/backups> · <https://supabase.com/features/database-backups> · <https://supabase.com/docs/guides/self-hosting>
+
+### Dedicated Poolers
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** A PgBouncer connection pooler that Supabase provisions on the same node as your project's Postgres database, so pooled connections skip the network hop through the shared multi-tenant Supavisor fleet. It targets high-connection-count workloads (serverless at scale) that need the lowest possible latency and per-project isolation. It is a paid-plan Supabase Cloud offering (GA March 20, 2025) that runs alongside, not instead of, the shared Supavisor pooler.
+
+**How it works.** On paid cloud projects (Micro Compute and above), the Supabase cloud control plane provisions a dedicated PgBouncer instance co-located with the project's Postgres, consuming the project's own compute. It is enabled from the dashboard's project Connect settings and reached at db.[project-ref].supabase.co:6543 in transaction mode only (session-mode needs the Shared Pooler/Supavisor). Connectivity is IPv6 by default; IPv4 requires the paid IPv4 add-on. Pool sizing is shared with Supavisor's config while client connection limits are independent per pooler; prepared-statement support in transaction mode was slated for PgBouncer 1.21+. Client connection counts are monitored via the dashboard's Observability reports. Nothing of this exists as a self-hostable component: the OSS docker bundle's only pooler is Supavisor.
+
+**Components:** PgBouncer instance (provisioned per project, co-located with the database); Supabase cloud control plane (provisioning + compute-tier gating); Cloud dashboard Connect settings + Observability reports
+
+**Self-hosted availability.** The self-hosted docker bundle ships no dedicated-pooler component: current supabase/supabase docker-compose.yml defines only a supavisor service (container_name: supabase-pooler, POOLER_POOL_MODE=transaction) plus pooler.sql/pooler.exs config — no PgBouncer service or toggle. Provisioning/enablement lives in the cloud dashboard and is gated by paid compute tiers. The feature page's "Available on self-hosted: Yes" is a marketing-matrix artifact meaning you can DIY-run OSS PgBouncer beside your own Postgres; also, in a single-node self-host, Supavisor is already co-located with the DB, which is the whole benefit this feature adds in cloud.
+
+**Our stack.** Ground truth: "No Supabase cloud account or control plane is involved anywhere" and the running-container list includes only "supavisor (pooler :5432 session/:6543 txn)" — no PgBouncer container exists. Resolving the reviewer flag: running-unused was wrong (it described Supavisor, which is its own catalog entry); "absent" is also wrong because self-hosting does not support this feature — no bundle component provides it and enablement is cloud-dashboard-only. The managed Dedicated Pooler requires the Supabase cloud control plane, hence cloud-only-na.
+
+**Value for MarketingHub (0/3).** MarketingHub's app talks to PostgREST/Storage over HTTP with a service-role key, not direct Postgres connections at scale, and its Supavisor already runs co-located on the same single EC2 instance as Postgres — the latency benefit a Dedicated Pooler exists to provide is already inherent to our topology. Nothing on the roadmap (pgvector RAG, queues/cron, console parity, hardening) needs a second pooler.
+
+**Caveats.** The feature page's availability matrix says "Available on self-hosted: Yes", contradicting the actual bundle contents; verified against current master docker-compose.yml (checked 2026-08-07: supavisor only, no pgbouncer service). I could not inspect our exact pinned tag v1.26.05's compose file, but the ground-truth container list confirms our deployment matches (Supavisor, no PgBouncer). Feature is cloud-GA since 2025-03-20, so version pinning is irrelevant to us. At launch, prepared statements in transaction mode required PgBouncer >=1.21 (support was "planned"); current cloud status of that not confirmed. A DIY co-located PgBouncer container is always possible on our EC2 but would be self-built infrastructure, not this Supabase feature.
+
+Docs: <https://supabase.com/docs/guides/database/connecting-to-postgres> · <https://supabase.com/features/dedicated-poolers> · <https://supabase.com/blog/dedicated-poolers> · <https://supabase.com/changelog/34404-dedicated-pooler-with-pgbouncer> · <https://raw.githubusercontent.com/supabase/supabase/master/docker/docker-compose.yml>
+
+### OrioleDB
+
+`Public Alpha` · self-hosted: **yes** · ours: **absent** · value **0/3** · effort **L** · verified
+
+**What it is.** OrioleDB is an experimental Postgres storage engine (a table access method built on Postgres's pluggable-storage framework) that replaces the default Heap storage. It aims to remove Heap's scalability bottlenecks: no VACUUM (undo-log MVCC), less buffer-pool contention, index-organized tables, and built-in compression, with claimed 3-5x throughput gains on write-heavy benchmarks. Supabase acquired the OrioleDB team and offers it as a Public Alpha Postgres flavor.
+
+**How it works.** It is implemented as the `orioledb` Postgres extension, but it requires a specially patched Postgres build — the extension refuses to compile against stock Postgres — plus `shared_preload_libraries = 'orioledb.so'` and `CREATE EXTENSION orioledb;`. Tables opt in via `CREATE TABLE ... USING orioledb`; in Supabase's OrioleDB image it is the default table access method, so plain CREATE TABLE uses it. Mechanically it stores rows in index-organized B-trees, keeps prior row versions in an undo log (eliminating VACUUM and table bloat), links in-memory pages directly to storage pages to bypass shared-buffers contention with lock-less page reads, and uses copy-on-write checkpoints with row-level WAL. On Supabase cloud you get it by creating a project with the "OrioleDB Public Alpha" Postgres version; self-hosted you get it by running the orioledb-17 variant of the supabase/postgres database image (built from Dockerfile-orioledb-17) instead of the standard PG15/PG17 heap image. Key current limitation: only B-tree indexes are supported — no GIN/GiST or pgvector HNSW until an "index access method bridge" ships.
+
+**Components:** orioledb Postgres extension (requires patched Postgres build); supabase/postgres orioledb-17 Docker image variant (Dockerfile-orioledb-17); cloud dashboard Postgres-version picker (cloud enablement path only)
+
+**Self-hosted availability.** Available with no cloud account: Supabase's feature page lists it as available self-hosted, and the supabase/postgres repo builds an OrioleDB-PostgreSQL 17 image flavor (Dockerfile-orioledb-17) you run as the `db` container in place of the standard image. It cannot be enabled in place on the standard heap image because OrioleDB needs a patched Postgres; adoption means swapping the database image (and migrating data), not flipping an extension on.
+
+**Our stack.** Ground truth: "Containers RUNNING: db (supabase/postgres, PG17)" — the standard heap image, and the extensions list ("Postgres extensions ENABLED by our SQL: pgcrypto, pgaudit... Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector, pg_graphql, pgsodium+supabase_vault, pgjwt") does not include orioledb. Since OrioleDB requires a different, patched Postgres image, it is not merely unenabled — it is not deployed at all, though self-hosting supports it via the image swap.
+
+**Value for MarketingHub (0/3).** Negative fit: it is Public Alpha (upstream says "not recommended for production"), which clashes with MarketingHub's HIPAA-adjacent posture; a single-instance internal tool has no Heap-scalability pain; and its B-tree-only index limitation blocks pgvector HNSW, directly conflicting with the roadmap's next feature (competitor-intel pgvector/RAG module). Swapping storage engines would also put pgBackRest/WAL backup guarantees (RPO<=5min) at risk for zero user-visible benefit.
+
+**Caveats.** Maturity conflict in sources: Supabase labels it Public Alpha while upstream OrioleDB calls itself public beta and explicitly not production-ready. Adoption is not an in-place upgrade: our v1.26.05 bundle's standard PG17 image cannot load orioledb (patched Postgres required); it needs a db-image swap plus dump/restore data migration. Only B-tree indexes are supported today (no pgvector HNSW, GIN, etc.). Unconfirmed: whether pre-built supabase/postgres orioledb-17 images were published for the era matching our v1.26.05 pin, and whether pgBackRest and our WAL-archiving/RPO setup are fully compatible with OrioleDB's copy-on-write checkpointing and row-level WAL. Roadmap items (S3-native storage, columnar indexes, multi-master) are not yet shipped.
+
+Docs: <https://supabase.com/docs/guides/database/orioledb> · <https://supabase.com/features/orioledb> · <https://github.com/orioledb/orioledb/blob/main/README.md> · <https://github.com/supabase/postgres>
+
+### Read replicas
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** Read-only copies of a project's Postgres database, kept in sync with the primary via asynchronous replication, deployable in the same or other regions. They offload read traffic (analytics, dashboards), reduce latency for geographically distributed users, and add read capacity beyond a single instance. Replicas accept only reads; all writes still go to the primary.
+
+**How it works.** Implemented entirely by the Supabase CLOUD control plane, not by any component in the open-source docker bundle. It uses a hybrid Postgres physical replication strategy: WAL streaming replication plus file-based log shipping via WAL-G to S3, piggybacking on the platform's PITR/WAL-archiving infrastructure (so PITR-grade WAL archiving is a prerequisite; projects need AWS and at least a Small compute add-on, Pro plan or higher). Each replica gets its own dedicated database endpoint, its own Supavisor connection pool, and a dedicated PostgREST instance; a platform API load balancer endpoint routes Data API GET requests, with geo-routing (since April 2025) sending reads to the nearest database. Only PostgREST GETs (and read-only RPCs called with the `get: true` option) can hit replicas; Auth (GoTrue), Storage, and Realtime always route to the primary. Creation, region/compute selection, monitoring, and the Source dropdown for the SQL editor are all managed in the cloud Dashboard under Project Settings > Infrastructure.
+
+**Components:** Supabase cloud control plane (provisioning + API load balancer with geo-routing); Postgres physical replication (WAL streaming + WAL-G log shipping to S3); per-replica PostgREST instance; per-replica Supavisor connection pool; cloud dashboard (Infrastructure settings, Source selector, monitoring)
+
+**Self-hosted availability.** The supabase.com/features/read-replicas page explicitly marks self-hosted availability as "N/A". The docker bundle has no replica orchestration: provisioning, WAL-G-based sync, per-replica PostgREST/Supavisor endpoints, and the geo-routing load balancer are all managed-platform infrastructure. A self-hoster can hand-roll vanilla Postgres streaming replication (e.g. standby from pgBackRest/WAL archive), but that is DIY Postgres, not this feature — no endpoint routing, dashboard integration, or automatic GET steering exists.
+
+**Our stack.** Ground truth: "No read replicas / no HA: single instance + EC2 auto-recovery." and "the open-source supabase/supabase docker bundle ... No Supabase cloud account or control plane is involved anywhere." The feature requires the cloud control plane, so it is impossible in our deployment.
+
+**Value for MarketingHub (0/3).** Impossible in our self-hosted deployment, and unneeded: MarketingHub is an internal single-team tool with modest read load on one EC2 instance. The roadmap (competitor-intel pgvector/RAG, console parity, hardening) has no read-scaling or multi-region need. If read isolation ever mattered, we would build a vanilla Postgres standby off our existing pgBackRest/WAL archiving, not this feature.
+
+**Caveats.** Cloud requirements (Pro/Team/Enterprise plan, AWS-hosted project, Small+ compute) are irrelevant to us but noted for completeness. Even on cloud, only Data API GET requests use replicas — Auth, Storage, and Realtime always hit the primary. Our v1.26.05 bundle pin is moot since no version of the self-hosted bundle includes this. A closely related DIY path (Postgres streaming replica fed from our WAL archive) exists but was not evaluated here; it would provide none of the Supabase endpoint/load-balancer mechanics.
+
+Docs: <https://supabase.com/docs/guides/platform/read-replicas> · <https://supabase.com/features/read-replicas> · <https://supabase.com/blog/introducing-read-replicas>
+
+### Supabase Pipelines
+
+`Public Alpha` · self-hosted: **partial** · ours: **absent** · value **0/3** · effort **M** · verified
+
+**What it is.** Supabase Pipelines is a managed change-data-capture (CDC) product that replicates Postgres tables to external analytical destinations in near real time, so analytics workloads run off the production database. In the Public Alpha (launched 2026-07-21) BigQuery is the generally available destination; ClickHouse, Snowflake, and DuckLake are early-access. It does an initial parallel copy of existing rows, then streams inserts/updates/deletes/truncates continuously, and can auto-apply supported schema changes (add/remove/rename columns, nullability) to the destination.
+
+**How it works.** It is built on standard Postgres logical replication: you create a Postgres publication (via SQL or the Dashboard) defining which tables and change types to replicate, and the pipeline reads changes from the WAL through a logical replication slot. The actual replication work is done by supabase/etl, an open-source (Apache-2.0) Rust CDC engine that needs no Kafka/Debezium, usable as an embeddable library or a standalone replicator binary; it supports Postgres 14–18. The managed product wraps this engine in Supabase's cloud control plane: you enable Pipelines in the cloud Dashboard, configure a destination (BigQuery credentials etc.), and monitor status there; tuning knobs include batch wait time, table sync workers, copy connections per table, and invalidated-slot behavior. The managed replicator infrastructure runs exclusively in AWS eu-central-1 (Frankfurt), requires a Pro/Team/Enterprise plan, and is billed at $0.053/hr per pipeline + $0.60/GB initial copy + $3/GB ongoing replication. Nothing in the self-hosted docker bundle implements Pipelines; a self-hoster would run the OSS etl binary themselves against their own Postgres.
+
+**Components:** Postgres logical replication (publications + replication slots, wal_level=logical); supabase/etl engine (open-source Rust CDC replicator, github.com/supabase/etl); Supabase cloud dashboard + managed replicator infrastructure (AWS eu-central-1); Destination warehouse (BigQuery stable; ClickHouse/Snowflake/DuckLake in progress)
+
+**Self-hosted availability.** The Pipelines product itself (dashboard UI, managed replicator fleet, billing, monitoring) is cloud-control-plane-only and is not part of the self-hosted docker bundle — self-hosted Studio has no Pipelines UI. However, the core engine, supabase/etl, is Apache-2.0 open source and explicitly runnable as a standalone replicator binary (or embedded Rust library) against any Postgres 14–18 with logical replication enabled, so a self-hoster can DIY the same Postgres-to-BigQuery CDC without a Supabase cloud account, just without the managed UX.
+
+**Our stack.** Ground truth lists every running container — "db ... kong ... rest ... meta ... storage ... imgproxy, realtime, functions ... supavisor ... studio ... auth (GoTrue, unused)" — with no ETL/replicator process, and "No Supabase cloud account or control plane is involved anywhere," so the managed product is unreachable and no self-run etl replicator is deployed. Marked absent (not cloud-only-na) because the OSS supabase/etl binary could be self-run against our PG17.
+
+**Value for MarketingHub (0/3).** The roadmap (competitor-intel via pgvector/RAG, console parity, audit/tamper-evidence hardening) has no analytical-warehouse or BigQuery/ClickHouse destination need; analytics/Logflare was deliberately never enabled and CloudWatch is the log source of truth. Streaming HIPAA-adjacent marketing data out to an external warehouse would add compliance surface for no current use case.
+
+**Caveats.** Public Alpha (launched 2026-07-21): APIs/behavior may change and BigQuery is the only stable destination; schema-change auto-apply covers column add/remove/rename and nullability only. Managed product needs a Pro/Team/Enterprise cloud plan and runs only in AWS eu-central-1 — irrelevant to us. Our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) predates or is contemporaneous with the launch and contains no Pipelines/etl component regardless; adoption for us means running the OSS supabase/etl binary ourselves. DIY path requires wal_level=logical, a publication, and a replication slot on our PG17 (engine supports PG 14–18) plus destination credentials; I did not verify our current wal_level or whether the supabase/postgres PG17 image needs config changes for logical replication. Effort M assumes the DIY OSS route (deploying an alpha Rust binary, slot monitoring, warehouse provisioning); replicating data outward would need HIPAA-adjacent compliance review.
+
+Docs: <https://supabase.com/docs/guides/database/replication/pipelines> · <https://supabase.com/docs/guides/database/replication/pipelines-faq> · <https://supabase.com/blog/supabase-pipelines-public-alpha> · <https://github.com/supabase/etl>
+
+### Terraform provider
+
+`Public Alpha` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** An official Terraform plugin (supabase/supabase on the Terraform Registry) that lets you manage Supabase platform resources as infrastructure-as-code. You declare projects, project settings, and branches in HCL, then use standard Terraform plan/apply workflows and CI/CD to provision and version-control them. Officially Public Alpha, though the registry ships 1.x versions.
+
+**How it works.** The provider is a Go binary (built from HashiCorp's terraform-provider-scaffolding-framework) that runs on the operator's machine or CI runner — it is not part of the Supabase runtime stack at all. It authenticates with a required `access_token` (a Supabase personal access token) and calls the Supabase cloud Management API (configurable `endpoint`, default api.supabase.com) to create and mutate resources. Supported resources are `supabase_project` (create/manage cloud projects), `supabase_settings` (API/PostgREST, auth, pooler, and storage configuration for a project), and `supabase_branch` (preview database branches), plus a `supabase_branch` data source. Existing cloud projects can be adopted via `terraform import`. Everything it manages lives in the Supabase cloud control plane; it does not touch database schema, Postgres extensions, or self-hosted containers.
+
+**Components:** terraform-provider-supabase Go plugin (Terraform Registry: supabase/supabase); Supabase cloud Management API (api.supabase.com); Supabase personal access token; cloud control plane resources: projects, settings, branches
+
+**Self-hosted availability.** The provider is only a client for the Supabase cloud Management API; the open-source docker bundle ships no Management API service or control plane for it to talk to, and its resources (projects, branches, platform settings) are cloud-account concepts that do not exist in a self-hosted install. The provider's `endpoint` knob can point elsewhere, but no self-hosted component implements the API. Self-hosted infra must be managed with generic IaC (in our case CDK/EC2/docker-compose) instead.
+
+**Our stack.** "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05 ... No Supabase cloud account or control plane is involved anywhere." — with no cloud account or Management API, there is nothing for the Terraform provider to manage.
+
+**Value for MarketingHub (0/3).** It can only manage Supabase cloud projects/branches/settings; MarketingHub has no cloud account and its infra (EC2, S3, ALB/Cognito) is already IaC-managed via AWS tooling. Nothing on the roadmap (pgvector competitor-intel, console parity, hardening) benefits from it.
+
+**Caveats.** Supabase labels it Public Alpha even though registry versions are 1.x (latest ~1.10.x as of research date); resource coverage is narrow (project, settings, branch) and APIs may change. Irrelevant to our v1.26.05 bundle pin since the provider is an external client tool, not a bundled component. Could not confirm any official path to use it against self-hosted deployments; the `endpoint` option exists but no self-hosted Management API ships in the docker bundle.
+
+Docs: <https://supabase.com/docs/guides/platform/terraform> · <https://supabase.com/docs/guides/platform/terraform/reference> · <https://supabase.com/docs/guides/deployment/terraform> · <https://github.com/supabase/terraform-provider-supabase>
+
+## Functions features
+
+Deno Edge Functions and their sub-features. The edge-runtime container runs but zero functions are deployed — all custom logic lives in the Next.js 15 server, and nothing on the roadmap changes that. Regional invocations is cloud-only routing that is meaningless on one EC2 instance, and Persistent Storage is moot because we already reach our KMS-encrypted S3 bucket directly.
+
+### Deno Edge Functions
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Server-side TypeScript/JavaScript/WASM functions that run on Supabase's Deno-based Edge Runtime, intended for webhooks, custom API endpoints, and third-party integrations. On the cloud platform they are deployed globally and execute close to users; the same functions are portable to any Deno-compatible or self-hosted environment.
+
+**How it works.** The implementing piece is supabase/edge-runtime, a Rust web server embedding a custom Deno runtime. A long-lived "main worker" V8 isolate receives HTTP requests (JWT validation, CORS, routing) and spawns a per-request "user worker" V8 isolate for each function, sandboxed with a restricted API and configurable limits (default 150 MB memory, 60 s duration); env vars/secrets are injected into workers via envVars. In the cloud, deploys go through the Dashboard/CLI/MCP to Supabase's global edge nodes. Self-hosted, it is the `functions` container in the docker-compose bundle: each function lives at volumes/functions/<NAME>/index.ts, is loaded from disk per request, and is exposed through Kong at /functions/v1/<NAME>; a container restart picks up code changes, while env/secret changes require recreating the container. Functions are designed for short-lived idempotent work (cold starts possible) and should use connection pooling for DB access.
+
+**Components:** functions container (supabase/edge-runtime image); Kong gateway route /functions/v1/*; volumes/functions/<name>/index.ts file mounts (self-hosted deploy mechanism); Supabase CLI (supabase functions serve for local dev; deploy targets cloud); cloud control plane (global distribution, dashboard/MCP deploys — cloud only)
+
+**Self-hosted availability.** The docker bundle ships the `functions` service running supabase/edge-runtime, routed via Kong at /functions/v1/. Deployment is file-based (drop code in volumes/functions and restart the service) rather than dashboard/CLI-push, and there is no global distribution — it is a single container in your region.
+
+**Our stack.** Ground truth: "functions (Deno edge-runtime; zero functions deployed/invoked)" under Containers RUNNING, and "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings."
+
+**Value for MarketingHub (1/3).** MarketingHub already has a Next.js 15 server with a service-role client and a homegrown app-level scheduler/outbox, so custom business logic, webhooks, and jobs have a home; the roadmap (competitor-intel pgvector/RAG, console parity, hardening) needs none of Edge Functions' properties. Marginal value only as an alternate host for isolated jobs (e.g. webhook receivers or cron-triggered work near the DB), and a new /functions/v1 path would need care to stay inside the Cognito/ALB authz boundary.
+
+**Caveats.** Our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07) and the exact edge-runtime image version is unverified; the feature is long-GA so presence is not in doubt (container confirmed running), but recent runtime improvements (newer Deno/edge-runtime releases, per-function config) may not be in our pinned image. Self-hosted differences vs cloud: no global distribution, no dashboard/CLI push-deploy (file mount + restart; container recreate needed for env/secret changes). Unconfirmed: whether self-hosted Studio at our pin offers any Edge Functions management UI, and default JWT-verification behavior of the bundled functions service (relevant since our app has no anon key and authz is Cognito at the ALB).
+
+Docs: <https://supabase.com/docs/guides/functions> · <https://supabase.com/blog/edge-runtime-self-hosted-deno-functions> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Persistent Storage
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **0/3** · effort **S** · verified
+
+**What it is.** Lets Edge Functions mount any S3-compatible bucket (including Supabase Storage via its S3 protocol) as a directory under /s3/BUCKET-NAME, so files persist across function invocations instead of vanishing like /tmp ephemeral storage. Functions read/write those files with ordinary Deno/node:fs file APIs. It shipped alongside runtime cold-start work (dedicated blocking pool, sync file APIs at script eval) that produced the advertised ~97% faster cold starts.
+
+**How it works.** It is implemented entirely inside the supabase/edge-runtime binary (the Deno-based functions runtime): a Rust virtual-filesystem layer, crates/fs/impl/s3_fs.rs, that translates POSIX-style file operations under the /s3/ path prefix into S3 API calls. You enable it by providing four env vars — S3FS_ENDPOINT_URL, S3FS_REGION, S3FS_ACCESS_KEY_ID, S3FS_SECRET_ACCESS_KEY (set as Edge Function Secrets on cloud; as container env vars self-hosted, since the functions entrypoint forwards env to workers). Function code then uses standard Deno.readFile/Deno.writeTextFile/Deno.mkdir or node:fs against /s3/YOUR-BUCKET-NAME; there is no per-mount size limit (unlike /tmp's 256/512MB). No Postgres, GoTrue, storage-api, or cloud control-plane involvement — storage-api is only relevant if you point S3FS at a Supabase Storage bucket's S3-compatible endpoint. The related cold-start gains come from the same edge-runtime release (blocking-pool worker init + sync file APIs during initial script evaluation, enabling e.g. SQLite libraries).
+
+**Components:** supabase/edge-runtime container (functions service) — Rust s3_fs virtual filesystem, crates/fs/impl/s3_fs.rs; S3FS_* environment variables (Edge Function Secrets on cloud; container env self-hosted); any S3-compatible bucket, optionally Supabase Storage's S3 protocol endpoint
+
+**Self-hosted availability.** The feature lives in the open-source edge-runtime image that is the docker bundle's `functions` container — no cloud control plane involved. The supabase.com/features/persistent-storage page explicitly lists Self-hosted: Yes. Enable it by adding the four S3FS_* env vars to the functions service; the self-hosted entrypoint forwards container env to function workers. Requires an edge-runtime image new enough to include s3_fs (feature launched 2025-07-18).
+
+**Our stack.** Ground truth: containers RUNNING include "functions (Deno edge-runtime; zero functions deployed/invoked)" and "NOT used: ... Edge Functions". The capability is baked into our running edge-runtime image (bundle tag v1.26.05 pins supabase/edge-runtime:v1.71.2, which post-dates the July 2025 launch), but no S3FS_* env vars are configured and no functions exist to use it.
+
+**Value for MarketingHub (0/3).** MarketingHub deploys zero Edge Functions and all logic runs in the Next.js server; the roadmap (competitor-intel pgvector/RAG, SMS outbox, console parity, hardening) has no Edge Functions work, and we already reach our KMS-encrypted S3 bucket directly via storage-api. A feature that only matters inside Edge Function workers has no current or planned consumer.
+
+**Caveats.** Feature launched 2025-07-18; I verified our tag v1.26.05's docker/docker-compose.yml pins supabase/edge-runtime:v1.71.2, which post-dates the launch, so our image almost certainly includes s3_fs — but the exact edge-runtime version that first shipped it is unverified (release notes don't name it). The stock compose wires no S3FS_* vars, so adoption means manually adding the four env vars (use an IAM key scoped to the target bucket, given HIPAA-adjacent posture). Self-hosted Edge Functions configuration is documented as beta with possible breaking changes; could not confirm whether any runtime flag beyond the env vars is needed, and could not test since zero functions are deployed. The 97% cold-start figure is a Supabase cloud benchmark from the companion runtime change, not the S3 mount itself.
+
+Docs: <https://supabase.com/docs/guides/functions/ephemeral-storage> · <https://supabase.com/blog/persistent-storage-for-faster-edge-functions> · <https://supabase.com/features/persistent-storage> · <https://github.com/supabase/edge-runtime> · <https://raw.githubusercontent.com/supabase/supabase/v1.26.05/docker/docker-compose.yml>
+
+### Regional invocations
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** Lets you pin a Supabase Edge Function to execute in a specific geographic region instead of the default behavior of running in the region closest to the caller. The point is to co-locate the function with your Postgres database so DB- or storage-heavy functions (bulk writes, multi-round-trip queries, file uploads) avoid cross-region latency. It is a Supabase Cloud platform capability, GA, with 15 selectable regions across four continents.
+
+**How it works.** On Supabase Cloud, Edge Functions run on a globally distributed fleet of Deno edge-runtime workers; the cloud's edge routing layer normally picks the region nearest the requester. Regional invocation is a routing override implemented in that cloud gateway: the caller sets an `x-region` HTTP header (e.g. `x-region: us-east-1`), or — since the July 3, 2025 update, for CORS/webhook cases where headers can't be controlled — a `forceFunctionRegion` query parameter (e.g. `/functions/v1/hello-world?forceFunctionRegion=eu-west-3`). supabase-js exposes this as a `region` option (`FunctionRegion` enum) on `functions.invoke()`. When a region is explicitly specified, requests stay pinned to it even during outages (no automatic fallback). Nothing in the open-source edge-runtime container performs this routing; it exists only in Supabase's managed multi-region infrastructure.
+
+**Components:** Supabase Cloud edge routing layer (multi-region gateway); Supabase Cloud edge-runtime fleet (Deno); supabase-js functions client (FunctionRegion enum / region option); x-region header / forceFunctionRegion query param
+
+**Self-hosted availability.** The official feature page states "Available on self-hosted: N/A". The self-hosted docker bundle runs a single edge-runtime container behind Kong in one location; there is no multi-region worker fleet or geo-routing control plane to route to, so the concept cannot exist there. Self-hosters get the equivalent benefit trivially by running the functions container next to the database, which is what the bundle already does.
+
+**Our stack.** "No Supabase cloud account or control plane is involved anywhere." Additionally moot for us: "functions (Deno edge-runtime; zero functions deployed/invoked)" and "NOT used: ... Edge Functions" — and our single-EC2 deployment already co-locates the functions container with Postgres.
+
+**Value for MarketingHub (0/3).** Impossible in our self-hosted deployment (cloud routing feature), and pointless even conceptually: we deploy zero Edge Functions, and our functions container already lives on the same EC2 instance as Postgres, so DB proximity is inherent. No roadmap item (competitor-intel pgvector/RAG, queues/cron, console parity, hardening) touches multi-region function routing.
+
+**Caveats.** Cloud-only, so our v1.26.05 bundle pin is irrelevant. The `forceFunctionRegion` query parameter shipped July 3, 2025 (cloud-side change); older docs/clients only mention the `x-region` header. Our supabase-js ^2.110.0 does include the FunctionRegion option, but it has no effect against a self-hosted single-region gateway. Exact current region list (15 across four continents) is cloud inventory and may change; pricing-tier availability was not stated on the feature page.
+
+Docs: <https://supabase.com/docs/guides/functions/regional-invocation> · <https://supabase.com/features/regional-invocations> · <https://supabase.com/changelog/36850-update-to-edge-functions-regional-invocations>
+
+## Platform features
+
+A grab bag: client SDKs, the CLI, observability, the Supavisor pooler, Vault secrets, compliance attestations, and cloud management surfaces. supabase-js is one of our seven live features — it carries the entire data path — while the best absent item is the CLI (TypeScript typegen and a disposable local stack, effort S). The observability entries (Logs & Analytics, Reports & Metrics) stay unused by design since CloudWatch is the source of truth and Logflare was never enabled; Management API, PrivateLink, SOC 2, and Terraform live in the cloud control plane and are N/A.
+
+### Client Library - JavaScript
+
+`GA` · self-hosted: **yes** · ours: **live** · value **3/3** · effort **S** · verified
+
+**What it is.** supabase-js is Supabase's official isomorphic JavaScript/TypeScript SDK for talking to a Supabase stack from browsers, Node, Deno, Bun, React Native, and edge runtimes. It gives one client object covering database CRUD, auth, realtime subscriptions, file storage, and edge-function invocation. It is a pure client-side HTTP/WebSocket library, not a server component.
+
+**How it works.** You call createClient(url, key) with the project's API gateway URL (Kong in self-hosted) and an API key (anon or service_role JWT); the key is sent as apikey/Authorization headers. The package is an umbrella over sub-libraries in the supabase-js monorepo: @supabase/postgrest-js (query builder that compiles .from().select()/.insert()/.rpc()/.textSearch() calls into PostgREST REST requests), @supabase/auth-js (GoTrue endpoints), @supabase/storage-js (storage-api), @supabase/realtime-js (WebSocket to the Realtime server), and @supabase/functions-js (edge-runtime invocation). Each sub-client is addressed via supabase.auth, supabase.storage, supabase.channel(), supabase.functions, etc. Config knobs include per-service options (schema selection for PostgREST, auth persistence/autoRefresh, realtime params, global fetch/headers override); related packages @supabase/ssr (and newer @supabase/server) handle cookie-based sessions in SSR frameworks. Requires native fetch (WebSocket only for Realtime); Node support tracks active LTS (Node 18 dropped at v2.79.0).
+
+**Components:** @supabase/supabase-js npm package; @supabase/postgrest-js; @supabase/auth-js (gotrue-js); @supabase/storage-js; @supabase/realtime-js; @supabase/functions-js; Kong gateway (server endpoint it targets)
+
+**Self-hosted availability.** Fully available: it is an npm library that speaks plain HTTP/WS to whatever URL you give it — point createClient at the self-hosted Kong gateway with the bundle's anon/service_role keys and every sub-client works against the corresponding self-hosted container (PostgREST, GoTrue, storage-api, Realtime, edge-runtime). No cloud control plane involved.
+
+**Our stack.** "App usage (Next.js 15, supabase-js ^2.110.0, server-only service-role client): PostgREST CRUD + .textSearch(), exactly one RPC (claim_due_sms_recipients ...), Storage API (list/upload/signedUrl/move/remove on private buckets)" — the library is installed and is the app's primary data-access layer. We use only the postgrest-js and storage-js surfaces; per ground truth "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL".
+
+**Value for MarketingHub (3/3).** It is the backbone of MarketingHub's entire data path: all CRUD, full-text search, the SMS-outbox RPC claim, and Storage operations go through supabase-js today, and roadmap work (competitor-intel pgvector/RAG tables, console parity) will ride the same client.
+
+**Caveats.** Already adopted, so effort S means staying current, not new adoption. The npm library versions independently of our server bundle pin (supabase/supabase tag v1.26.05, cloned 2026-07); we run supabase-js ^2.110.0 and the core wire protocols (PostgREST/storage REST) are stable, but exact server container versions in our pinned bundle are unverified, so the newest client features (recent storage/realtime options) could outrun our servers — say so before relying on brand-new methods. Node support: v2.79.0+ dropped Node 18 (fine for Next.js 15). We deliberately run a server-only service_role client (no anon key, no browser client, no @supabase/ssr), so the auth/realtime/functions sub-clients are unused dependency weight — normal and harmless.
+
+Docs: <https://supabase.com/docs/reference/javascript/introduction> · <https://github.com/supabase/supabase-js>
+
+### CLI
+
+`GA` · self-hosted: **partial** · ours: **absent** · value **2/3** · effort **S** · verified
+
+**What it is.** The Supabase CLI is an open-source command-line tool for developing a Supabase project locally and deploying it. It spins up the full Supabase stack in Docker on a dev machine, manages database migrations and schema diffs, generates TypeScript types from the schema, and (for cloud projects) deploys Edge Functions, secrets, and branches. It is a developer-workstation/CI tool, not a server component of the stack itself.
+
+**How it works.** It is a standalone binary (currently TypeScript/Bun in a pnpm monorepo, with legacy Go components), installed via npm/Homebrew/Scoop/Linux packages; npm use requires Node 20+. It is project-scoped: `supabase init` creates a supabase/ directory with config.toml, and `supabase start` pulls Docker images and runs the whole stack (Postgres, GoTrue, PostgREST, Storage, Realtime, edge-runtime, plus dev extras like a local SMTP server and a schema-diff tool) locally. Database commands (`db diff/push/pull/dump/reset`, `migration new/up/list`, `gen types`) work locally or against ANY Postgres via `--db-url` or a linked project. Platform commands (`login`, `link`, `projects`, `branches`, `functions deploy`, `secrets`, custom domains, network restrictions) authenticate with a SUPABASE_ACCESS_TOKEN and drive the cloud Management API, so they only target hosted projects. Supabase explicitly states the CLI's local stack is for dev/testing and "is not a self-hosted deployment"; production self-hosting is done with the separate docker compose bundle.
+
+**Components:** supabase CLI binary (github.com/supabase/cli, TypeScript/Bun + legacy Go); local Docker dev stack (full Supabase images) driven by supabase start; supabase/ project directory + config.toml; Supabase cloud Management API (backs link/projects/branches/functions deploy/secrets/domains commands only)
+
+**Self-hosted availability.** The CLI itself is open-source and needs no cloud account for its core workflows: local dev stack, migrations, `db diff/push/dump --db-url` against any Postgres (including a self-hosted instance), and `gen types --db-url`. But the platform half of the command surface (link, projects, branches, functions deploy, secrets, custom domains, network/SSL config, SSO) talks exclusively to the cloud Management API, which does not exist in the docker-compose self-hosted bundle, so those commands cannot target a self-hosted deployment. Supabase docs also state the CLI's local stack is not a production self-hosting method.
+
+**Our stack.** The ground truth never mentions the CLI; deployment is via the compose bundle, not CLI tooling: "runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05, cloned at first boot onto one EC2 instance". No migration/type-gen/CLI workflow appears anywhere in the repo-verified facts, and the CLI is a workstation tool, not one of the listed RUNNING containers.
+
+**Value for MarketingHub (2/3).** Two concrete wins for the roadmap: (1) `gen types typescript --db-url` would give the Next.js 15 / supabase-js service-role client typed rows instead of untyped CRUD; (2) `supabase start` + `db diff`/migrations gives a disposable local stack with pgvector to prototype the competitor-intel RAG module before enabling pgvector in prod, plus versioned schema migrations. The deploy-side features (functions, branches, secrets) are useless to us (cloud-only, and we run zero edge functions), which caps it at 2.
+
+**Caveats.** Version skew: current CLI releases pull the latest stack Docker images for `supabase start`, which will be newer than our bundle pinned at supabase/supabase v1.26.05 (cloned 2026-07), so local-vs-prod parity is approximate, and `db push --db-url` against prod should be tested carefully; exact compatible CLI version unverified. Recent rewrite from Go to TypeScript/Bun means npm installs need Node 20+. Direct `--db-url` use against our instance requires network reach into the private subnets (existing SSM-tunnel recipe, via supavisor :5432 session port or db directly). Cloud-only command groups (link, branches, functions deploy, secrets, domains) can never work in our deployment.
+
+Docs: <https://supabase.com/docs/guides/local-development/cli/getting-started> · <https://supabase.com/docs/reference/cli/introduction> · <https://github.com/supabase/cli> · <https://supabase.com/docs/guides/self-hosting>
+
+### Client Library - Python
+
+`Beta` · self-hosted: **yes** · ours: **absent** · value **1/3** · effort **S** · verified
+
+**What it is.** supabase-py is Supabase's official Python client library (Beta), letting Python apps (Flask, Django, FastAPI, scripts, data/ML pipelines) talk to a Supabase backend. It covers database CRUD via PostgREST, auth, storage, realtime subscriptions, and edge-function invocation — the Python equivalent of supabase-js.
+
+**How it works.** It is purely a client-side SDK: no server component implements it. The library is a monorepo of six packages — supabase (main client), postgrest (query builder), supabase_auth (GoTrue), storage3 (storage-api), realtime-py (Realtime websockets), supabase_functions (edge functions) — each a thin HTTP/websocket wrapper over the corresponding Supabase service exposed through the Kong gateway. You install with `pip install supabase` (Python 3.7+) and initialize with `create_client(supabase_url, key)`, where the URL is any Supabase API endpoint (cloud project URL or a self-hosted Kong URL) and the key is an anon or service_role JWT. From there it offers .table().select/insert/update/delete, .rpc(), .auth.*, .storage.*, .functions.invoke(), and .channel().subscribe() for realtime. Sync and async client variants exist. MIT-licensed, maintained in github.com/supabase/supabase-py.
+
+**Components:** supabase-py SDK (pip package `supabase`); sub-packages: postgrest, supabase_auth, storage3, realtime-py, supabase_functions; server side: existing Kong gateway + PostgREST/GoTrue/storage-api/Realtime/edge-runtime containers (already part of any Supabase stack)
+
+**Self-hosted availability.** Fully self-host compatible (feature page explicitly says "Available on self-hosted"). It is just an HTTP/websocket client: point create_client() at the self-hosted Kong gateway URL with the stack's anon/service_role key and every wrapped service (PostgREST, GoTrue, storage-api, Realtime, functions) works with no cloud control plane involved.
+
+**Our stack.** Ground truth: "App usage (Next.js 15, supabase-js ^2.110.0, server-only service-role client)" — the app is TypeScript-only via supabase-js; no Python client is deployed or used anywhere in MarketingHub.
+
+**Value for MarketingHub (1/3).** MarketingHub is a Next.js/supabase-js app, so no current need. Marginal future value: the roadmap's competitor-intel pgvector/RAG module could use Python for embedding/ingestion pipelines (supabase-py is popular in the AI/ML community), but that work can equally stay in TypeScript, so it's optional convenience, not a capability gap.
+
+**Caveats.** Officially Beta — API surface can still change between releases. The SDK version is independent of our server bundle (supabase/supabase v1.26.05), but some newest SDK methods (e.g. analytics/vector bucket storage helpers, OAuth admin endpoints seen in current docs) target newer/cloud-side services that our pinned self-hosted stack may not expose — core PostgREST/Storage/RPC/Realtime usage is safe. Exact current supabase-py version and its minimum-supported Python version were not verified beyond "3.7+" from launch-era docs; async client specifics (acreate_client) not confirmed from the fetched pages.
+
+Docs: <https://supabase.com/docs/reference/python/introduction> · <https://github.com/supabase/supabase-py> · <https://supabase.com/features/client-library-python> · <https://supabase.com/blog/python-support>
+
+### Logs & Analytics
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **1/3** · effort **M** · verified w/ correction (confirmed/corrected)
+
+**What it is.** Supabase's built-in observability layer: every service in the stack (API gateway, Postgres, Auth, Storage, Realtime, Edge Functions, pooler) emits structured log events that you can browse per-service or query with SQL in Studio's Logs Explorer. It is powered by Logflare, an Apache-2.0 Elixir ingest/query server Supabase acquired and open-sourced. The feature page also advertises OpenTelemetry export and a Prometheus-compatible Metrics API on the hosted platform.
+
+**How it works.** A dedicated `analytics` container runs Logflare, which "manages the ingestion and query pipelines for searching and aggregating structured analytics events." A `vector` container tails the other containers' Docker logs, normalizes each event into {event_message, timestamp, metadata}, and POSTs it to Logflare's ingest API (http://analytics:4000/api/logs?source_name=...); some services (Realtime, Storage) can send events natively. Logflare stores events in a pluggable backend: for self-hosting the default is a Postgres backend (tables in an `_analytics` schema, with a BigQuery-SQL-to-Postgres translation layer; documented as development-focused), or a BigQuery backend for production scale. Key config knobs are LOGFLARE_SINGLE_TENANT=true, LOGFLARE_SUPABASE_MODE=true, LOGFLARE_PUBLIC/PRIVATE_ACCESS_TOKEN, and POSTGRES_BACKEND_URL/POSTGRES_BACKEND_SCHEMA (or GOOGLE_PROJECT_ID + gcloud.json for BigQuery); Logflare's sources/endpoints/teams REST API is exposed through Kong under /api/*. Studio's Logs Explorer and per-product log tabs query this analytics service. Note: since ~June 2026 the CLOUD platform's Logs Explorer runs on a ClickHouse pipeline in Supabase's control plane; self-hosted remains the Logflare architecture.
+
+**Components:** Logflare analytics server (`analytics` container, Elixir); Vector log-shipping agent (`vector` container); Postgres storage backend (`_analytics` schema) or BigQuery backend; Kong gateway routing (/api/* analytics endpoints); Studio Logs Explorer / per-service log UI
+
+**Self-hosted availability.** Officially "Available on self-hosted: Yes." The docker bundle ships the `analytics` (Logflare) + `vector` containers; with the Postgres backend it needs no external services or cloud account, and Studio's Logs tabs work against it. Caveats within that yes: the Postgres backend is documented as dev-focused/not production-optimized (production guidance is the BigQuery backend, which needs GCP egress), and cloud-adjacent extras — Log Drains, the Reports/usage dashboards, plan-based retention, and the new ClickHouse-backed explorer — are control-plane-only.
+
+**Our stack.** "NOT RUNNING: analytics (Logflare) and the log-shipping vector agent were never enabled — Studio Logs/Reports tabs are inert; CloudWatch is the log source of truth."
+
+**Value for MarketingHub (1/3).** CloudWatch is already the log source of truth with proper AWS-side retention/audit, so enabling Logflare would duplicate it with a dev-grade Postgres backend. Marginal upside is limited to un-inerting the stock Studio Logs tabs and slightly nicer per-service SQL log querying; it does not advance the roadmap priorities (competitor-intel/pgvector, console parity, tamper-evidence — where pgaudit-to-CloudWatch is the stronger play).
+
+**Caveats.** Our bundle is pinned at supabase/supabase v1.26.05 (cloned 2026-07); I could not verify whether that tag wires analytics/vector into the main docker-compose.yml or via a docker-compose.logs.yml overlay (current docs describe `sh run.sh config add logs`), nor the exact Logflare/Vector image versions it pins — check the repo compose files before estimating enablement work. The Postgres backend is explicitly dev-focused ("limited optimization; not recommended for production"); the production-grade BigQuery backend requires Google Cloud egress, which conflicts with MarketingHub's private-subnet HIPAA-adjacent posture. The cloud platform's newer ClickHouse-based Logs Explorer (default since ~June 2026) and features like Log Drains, Reports, OpenTelemetry export, and plan-based retention are not part of the self-hosted bundle. Enabling it would also store log events (potentially PHI-adjacent request metadata) unencrypted-at-app-level in the same Postgres instance — retention/scrubbing would be on us.
+
+Docs: <https://supabase.com/docs/guides/telemetry/logs> · <https://supabase.com/docs/reference/self-hosting-analytics/introduction> · <https://supabase.com/blog/supabase-logs-self-hosted> · <https://supabase.com/features/logs-analytics>
+
+### Reports & Metrics
+
+`GA` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Observability dashboards in Supabase Studio ("Reports") that chart project health — Database (CPU, memory, disk IOPS, connections), Auth (sign-ins/sign-ups/errors), Storage (requests, caching), Realtime (websocket/channel activity), and API/Edge Functions traffic — filterable by time range. The companion "Metrics API" is a Prometheus-compatible endpoint exposing ~200 Postgres health series for scraping into Grafana/Datadog/etc.
+
+**How it works.** Two distinct data paths feed the Reports pages. (1) Log-derived charts (project-home activity, API request/error/latency charts, auth/storage event charts) are computed by Logflare Endpoints — HTTP query endpoints over logs ingested into the analytics (Logflare) service, shipped there by a Vector agent; Studio renders them as time-series. (2) Infrastructure charts (CPU, RAM, disk IO, connection counts) come from the Supabase cloud control plane's telemetry pipeline, surfaced to the dashboard and via the Metrics API endpoint (https://<ref>.supabase.co/customer/v1/privileged/metrics, HTTP Basic auth with service_role + secret key, refreshed every minute) — that pipeline has no self-hosted equivalent. Report history retention is plan-gated on cloud (24h Free/Pro, up to 28d Team/Enterprise). Self-hosted, the analytics server runs Logflare with a Postgres (or BigQuery) backend; enabling it plus Vector lights up the log-derived charts, while infra charts and the Metrics API stay dark.
+
+**Components:** Studio UI (Reports pages + home-page charts); analytics container (Logflare) with Postgres/BigQuery backend; vector log-shipping agent; Logflare Endpoints (chart query layer); Supabase cloud control-plane telemetry + Metrics API endpoint (infra charts, cloud-only)
+
+**Self-hosted availability.** Resolving the reviewer's concern: cloud-only-na was wrong, but full "yes" would also be wrong. The docker bundle ships the Studio Reports UI plus the analytics (Logflare) + vector services; when those are enabled, the Logflare-Endpoint-backed charts (Studio home page and API/log-derived report charts) work with no cloud account — Logflare's own docs state its Endpoints power "log query UIs and most time-series charts... such as the project home page and API reports." However, the infrastructure-metric charts (CPU/memory/disk IOPS) and the Prometheus Metrics API come from the cloud control plane's telemetry pipeline: docs state the Metrics API "is not available in self-hosted Supabase instances" and the Reports guide blanket-claims "Reports are only available for projects hosted on the Supabase Cloud platform" — while the features page contradicts it with "self-hosted: yes." Net: the log-derived subset self-hosts (same stack as Logs & Analytics, hence consistency with that entry's selfHosted=yes); the infra-metrics subset cannot exist self-hosted.
+
+**Our stack.** "NOT RUNNING: analytics (Logflare) and the log-shipping vector agent were never enabled — Studio Logs/Reports tabs are inert; CloudWatch is the log source of truth." The Studio container runs ("studio (behind the Cognito ALB)"), so the Reports tabs exist but are unpowered because their backing analytics service, present in the bundle, was never enabled — matching the same rating as the Logs & Analytics entry.
+
+**Value for MarketingHub (1/3).** CloudWatch is already the declared source of truth for logs/metrics, so enabling Logflare+Vector would duplicate an existing pipeline and add a heavy container to a single EC2 instance just to light up partial charts (infra charts would stay dark regardless). Marginal upside: in-Studio API/storage traffic charts during SMS-blast windows, and it is a prerequisite if console-parity work ever wants native report charts. Roadmap priorities (competitor-intel/pgvector, console parity, audit hardening) are not advanced by it.
+
+**Caveats.** Official sources contradict each other: the features page marks Reports & Metrics self-hosted=yes, the telemetry/reports guide says cloud-only, and a maintainer once said Logs/Reports "require BigQuery" (since superseded — self-hosted Logflare now defaults to a Postgres backend). Exactly which report tabs render, and how many charts populate, in our pinned bundle (supabase/supabase tag v1.26.05, cloned 2026-07; Studio/analytics component versions unverified) was not confirmed — historically self-hosted Studio only renders the home-page and API-report charts, not the Database/Auth/Storage/Realtime infra reports. Newer supabase master made analytics/vector opt-in overlay services with Studio's logs features flagged off by default (ENABLED_FEATURES_LOGS_ALL=false); whether v1.26.05 predates or includes that change is unverified. The Metrics API is beta, cloud-only, and metric names may change; enabling Vector typically needs Docker-socket access for log scraping (security-relevant on our HIPAA-adjacent host, unverified for our compose version).
+
+Docs: <https://supabase.com/docs/guides/telemetry/reports> · <https://supabase.com/docs/guides/telemetry/metrics> · <https://supabase.com/features/reports-and-metrics> · <https://supabase.com/docs/reference/self-hosting-analytics/introduction> · <https://github.com/orgs/supabase/discussions/13570> · <https://docs.logflare.app/case-studies/supabase/>
+
+### Role-Based Access Control (RBAC)
+
+`GA` · self-hosted: **yes** · ours: **absent** · value **1/3** · effort **L** · verified
+
+**What it is.** A documented pattern (GA) for defining user roles and granular permissions in Supabase apps and enforcing them at the database layer. Roles live in your own Postgres tables, get stamped into each user's JWT as a custom claim at sign-in, and Row Level Security policies check that claim to allow or deny each operation. It is a recipe built from Auth + Postgres primitives rather than a standalone service.
+
+**How it works.** GoTrue (the Auth server) issues JWTs; a "Custom Access Token" auth hook — a PL/pgSQL function GoTrue calls before minting each token — looks up the user in a `user_roles` table and injects a `user_role` claim into the JWT. A `role_permissions` table maps roles to fine-grained permissions (e.g. `channels.delete`). A PL/pgSQL `authorize(permission)` function reads the role from `auth.jwt()` and checks `role_permissions`; RLS policies on tables call it, e.g. `USING (SELECT authorize('channels.delete'))`, so Postgres enforces access on every PostgREST/Realtime/Storage request made with the user's JWT. On cloud the hook is registered in Dashboard > Authentication > Hooks; locally via config.toml; self-hosted via GoTrue env vars GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED / GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI (pg-functions:// URI). Clients read the role by decoding the access token (claims appear only in the JWT, not the auth response). Enforcement is entirely bypassed by the service_role key.
+
+**Components:** GoTrue (auth) Custom Access Token hook; Postgres: user_roles/role_permissions tables + authorize() PL/pgSQL function; Postgres RLS policies (enforced via PostgREST/Realtime/Storage); Hook registration: cloud dashboard UI, or GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_* env vars / config.toml when self-hosted
+
+**Self-hosted availability.** Fully self-hostable: the role/permission tables, hook function, authorize(), and RLS are plain SQL in your Postgres, and the docker bundle's GoTrue supports the Custom Access Token hook via GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED/URI env vars in docker-compose (confirmed in supabase discussion #22957 and community guides). Note the supabase.com feature page's availability matrix marks self-hosted "N/A" — that reflects the dashboard hook-config UI, not the mechanism itself.
+
+**Our stack.** "The GoTrue (auth) container RUNS but is unused: the app never calls Supabase auth; it talks to PostgREST/Storage exclusively with the service_role key... RLS exists on exposed tables (a deploy gate requires it) but the app bypasses it via service_role; the Cognito group marketing is the real authz boundary." No custom access token hook, role tables, or authorize() function exist; RBAC's enforcement path (user JWT + RLS) is never exercised, so the feature is not deployed even though self-hosting supports it.
+
+**Value for MarketingHub (1/3).** Marginal today: MarketingHub is a single-group internal tool where Cognito `marketing` membership at the ALB is the real boundary, and every Supabase call uses service_role, which bypasses RLS/RBAC by design. It would only pay off under the "platform hardening" roadmap thread as defense-in-depth (e.g. read-only vs admin roles, making the deploy-gated RLS actually enforced), but that requires abandoning the service_role-only architecture — nothing on the roadmap (competitor-intel/pgvector, queues/cron overlap, console parity) needs it.
+
+**Caveats.** Effort is L because adoption means re-architecting auth: minting per-user JWTs (adopting GoTrue, or signing Cognito-derived JWTs with the Supabase JWT secret + role claims), building role/permission tables + authorize(), and switching the app off service_role so RLS actually runs. Version: the Custom Access Token hook shipped in GoTrue ~v2.130 (early 2024); our v1.26.05 bundle cloned 2026-07 almost certainly includes it, but the exact GoTrue container version is unverified. Also unconfirmed: whether stock self-hosted Studio exposes an Auth Hooks config UI (self-hosted config is documented via env vars, not dashboard); and the feature page's "self-hosted: N/A" marking conflicts with working env-var-based setups — treat dashboard-managed hook config as cloud-only, the mechanism as self-hostable. MFA/password-verification hooks are Teams/Enterprise-gated on cloud, but the RBAC-relevant Custom Access Token hook is not.
+
+Docs: <https://supabase.com/docs/guides/database/postgres/custom-claims-and-role-based-access-control-rbac> · <https://supabase.com/features/role-based-access-control> · <https://supabase.com/docs/guides/auth/auth-hooks> · <https://github.com/orgs/supabase/discussions/22957>
+
+### Supabase AI Assistant
+
+`Public Alpha` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** An LLM-powered chat assistant built into the Supabase Studio dashboard for managing Postgres. It helps design schemas, write and debug SQL, query data in natural language, and create/modify RLS policies, Postgres functions, and triggers. v2 (launched Dec 2024) made it a persistent panel across the whole dashboard, invoked with cmd+i.
+
+**How it works.** It is implemented in the Studio (dashboard) UI, not in Postgres or any data-plane service. Studio gathers context — your schema structure via postgres-meta, the SQL you are editing, and dashboard state — and sends prompts to an LLM; by default only schema structure is sent, not row data (raw-data sharing is a separate opt-in on the hosted platform). On the hosted platform the assistant runs through Supabase's cloud AI backend with their LLM and integrates dashboard-wide tools (charts, query execution, supabase-js code generation via sql-to-rest). In the self-hosted docker bundle a scoped-down version is enabled by setting OPENAI_API_KEY in docker/.env, which makes Studio call the OpenAI API directly for help "writing SQL queries, statements, and policies." There is no server-side component beyond Studio; postgres-meta supplies the schema context.
+
+**Components:** Studio dashboard container (assistant UI and logic); postgres-meta (schema context source); OpenAI API via OPENAI_API_KEY env var (self-hosted path); Supabase cloud AI backend (hosted v2 full experience)
+
+**Self-hosted availability.** The self-hosted Studio container includes an AI assistant, enabled by adding your own OPENAI_API_KEY to docker/.env ("you can enable AI services, which help with writing SQL queries, statements, and policies"). However, the full Assistant v2 experience (persistent cross-dashboard panel, chart rendering, Advisor/logs integrations) is documented for the hosted dashboard and runs through Supabase's cloud AI backend; self-hosted gets the BYO-OpenAI-key SQL/policy assistant subset, and its exact feature parity per Studio version is not documented.
+
+**Our stack.** Ground truth: "studio (behind the Cognito ALB)" is RUNNING, so the assistant code ships in our bundle's Studio image; but it is not enabled — repo check confirms no OPENAI_API_KEY in cdk/assets (render-env.sh, bootstrap.sh, docker-compose.override.yml all lack it), and ground truth lists no AI config. Matches "available-unused = present in the image/bundle but not enabled."
+
+**Value for MarketingHub (1/3).** Marginal convenience only: MarketingHub already built its own Cognito-gated in-app console (SQL Editor with write-confirm + audit, Table Editor, RLS viewer), and the team's real authoring surface is that console, not stock Studio. An AI helper for SQL/RLS drafting could mildly speed console-parity and pgvector/RAG schema work, but it would send schema metadata to OpenAI — awkward for a HIPAA-adjacent posture with no BAA — and does nothing for the roadmap items (competitor-intel, outbox/scheduler, tamper-evidence).
+
+**Caveats.** Our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07), well after the Dec 2024 v2 launch, so the Studio image almost certainly contains the assistant, but the exact Studio version and which assistant generation it ships were not verified. Unconfirmed: exact feature delta between self-hosted (BYO OpenAI key) and hosted v2, whether self-hosted supports any LLM other than OpenAI, and whether any query results (vs schema only) ever reach the LLM in the self-hosted path — a compliance question given the HIPAA-adjacent posture (OpenAI BAA would be needed before enabling). Enabling requires only adding OPENAI_API_KEY to the Studio env and restarting, but our env is rendered by cdk/assets/render-env.sh, so the change belongs there.
+
+Docs: <https://supabase.com/features/ai-assistant> · <https://supabase.com/blog/supabase-ai-assistant-v2> · <https://supabase.com/docs/guides/self-hosting/docker> · <https://raw.githubusercontent.com/supabase/supabase/master/docker/.env.example>
+
+### Supavisor
+
+`Public Beta` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Supavisor is Supabase's open-source, cloud-native connection pooler for Postgres, written in Elixir. It sits between database clients and Postgres, multiplexing large numbers of client connections onto a small pool of real database connections. On the Supabase platform it is the "Shared Pooler"; in self-hosted deployments it replaces PgBouncer as the bundled pooler.
+
+**How it works.** It is a standalone Elixir/Erlang proxy service (its own container in the docker bundle), not a Postgres extension. Clients connect to it with normal Postgres wire protocol on two ports: 5432 for session mode (one client = one backend connection for the session's lifetime, behaves like a direct connection) and 6543 for transaction mode (a backend connection is borrowed only for each transaction, suited to many short-lived clients). It is multi-tenant: the username encodes a tenant ID (e.g. postgres.[POOLER_TENANT_ID]) and per-tenant pools are spawned on demand; it can also run single-tenant as a PgBouncer replacement. Configuration is via environment variables (in the self-hosted compose: POOLER_TENANT_ID, POOLER_PROXY_PORT_TRANSACTION, pool-size vars), with a management REST API (OpenAPI/Swagger) and a Prometheus /metrics endpoint. It can cluster across nodes for HA and scale; transaction mode historically does not support named prepared statements (docs still advise disabling them in client libraries).
+
+**Components:** supavisor container (standalone Elixir proxy service in the docker compose bundle); docker compose .env config (POOLER_TENANT_ID, ports 5432 session / 6543 transaction); Supavisor management REST API + Prometheus /metrics endpoint
+
+**Self-hosted availability.** Fully open source (Apache-2.0, github.com/supabase/supavisor) and shipped as the pooler in the self-hosted docker compose bundle; no cloud control plane involved. Clients connect via postgres://postgres.[POOLER_TENANT_ID]:...@host:5432 (session) or :6543 (transaction).
+
+**Our stack.** Ground truth lists it among "Containers RUNNING: ... supavisor (pooler :5432 session/:6543 txn)", but app usage is HTTP-only: "the app ... talks to PostgREST/Storage exclusively with the service_role key" and app usage is "PostgREST CRUD + .textSearch(), exactly one RPC ..., Storage API ..., postgres-meta /pg/*" — no direct Postgres wire connections route through the pooler.
+
+**Value for MarketingHub (1/3).** MarketingHub is a single-instance app reaching the DB only through PostgREST/Storage/postgres-meta HTTP APIs, so a pooler adds nothing today. Marginal future value: if the competitor-intel pgvector/RAG module or the SMS scheduler ever adds direct-Postgres workers or many short-lived connections, the already-running pooler gives free headroom on ports 5432/6543.
+
+**Caveats.** Supavisor has shipped in the self-hosted compose since early 2024, so our v1.26.05 bundle includes it, but the exact Supavisor container version in our pin is unverified. Transaction mode (:6543) does not support named prepared statements per current docs (newer Supavisor releases added partial support — version-dependent; disable prepared statements in client libs to be safe). Cloud-specific behaviors (IPv4 shared-pooler endpoints, dedicated pooler tiers) do not apply to our self-hosted setup. Could not verify from the ground truth whether any internal bundle service (e.g. PostgREST) connects via supavisor or directly to db; assumed direct, which is the compose default.
+
+Docs: <https://github.com/supabase/supavisor> · <https://supabase.com/docs/guides/database/connecting-to-postgres> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Vault
+
+`Public Alpha` · self-hosted: **yes** · ours: **available-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Supabase Vault is a Postgres extension (supabase_vault) for storing secrets — API keys, access tokens, env-var-like values — encrypted inside the database. Secrets are encrypted on disk, in backups, and in replication streams, but can be read back in plaintext through a special decrypting view. It launched in 2022 and is bundled with every Supabase Postgres, though the docs still label it Public Alpha.
+
+**How it works.** It is implemented entirely in the database as the supabase_vault Postgres extension (enabled with CREATE EXTENSION supabase_vault CASCADE), historically layered on pgsodium/libsodium AEAD (Authenticated Encryption with Associated Data); pgsodium is now pending deprecation and Vault's internals are moving off it while keeping the same API. Secrets live in the vault.secrets table with the value stored as encrypted ciphertext; the vault.decrypted_secrets view decrypts on the fly at query time so plaintext never touches disk. The main APIs are vault.create_secret(secret, name, description), vault.update_secret(), and selecting from vault.decrypted_secrets. The root encryption key is kept outside SQL reach: on the hosted platform Supabase manages a per-project root key (retrievable via the cloud Management API); on self-hosted supabase/postgres it is materialized on the DB host via the pgsodium/vault getkey script at server boot. Docs also recommend disabling statement logging so plaintext secrets don't leak into logs; the hosted Studio dashboard adds a Vault management UI on top.
+
+**Components:** supabase_vault Postgres extension (in the supabase/postgres image); pgsodium/libsodium encryption backend (pgsodium pending deprecation); root-key getkey script on the Postgres host; Studio dashboard Vault UI; cloud Management API root-key retrieval endpoint (hosted only)
+
+**Self-hosted availability.** Pure database-side feature: the supabase_vault (and pgsodium) extensions ship pre-baked in the supabase/postgres image used by the open-source docker bundle; enable with CREATE EXTENSION supabase_vault CASCADE. The root key is auto-generated and stored on the DB host at first boot via the image's getkey script — no cloud account needed. Cloud-only extras (managed per-project root key, Management API key-retrieval endpoint) simply don't apply; note that self-hosted keeps the root key on the same host as the data unless you customize the getkey script.
+
+**Our stack.** Ground truth: "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector, pg_graphql, pgsodium+supabase_vault, pgjwt." The extension is in our image but no repo SQL enables it and the app does not use it.
+
+**Value for MarketingHub (1/3).** Marginal. MarketingHub's secrets (SMS provider keys, etc.) live app-side/AWS (SSM/KMS territory), the app is server-only service_role, and pg_net is deliberately locked down, so there is little in-database code that needs secrets. It could add encrypted-at-column storage for third-party tokens ahead of the competitor-intel module and fits the platform-hardening theme, but our in-app SQL console (arbitrary SQL as service_role) would let any Cognito marketing user read vault.decrypted_secrets, undercutting the benefit.
+
+**Caveats.** Officially Public Alpha despite broad rollout. pgsodium is pending deprecation; Vault's API is promised stable but its internals are migrating off pgsodium — could not confirm which supabase_vault version (self-contained 0.3.x vs pgsodium-backed 0.2.x) is in our v1.26.05 / PG17 image, so verify before enabling. Self-hosted root key lives on the same EC2 host (data-dir key file), so Vault protects dumps/backups/replication, not host compromise; that key file must be preserved alongside pgBackRest/pg_dump backups or restored secrets become undecryptable. Disable statement logging (and note our pgaudit + in-app query audit) or plaintext secrets can land in logs. Anyone with SQL access (our service_role app and POST /query console) can read decrypted secrets. Studio Vault UI presence in self-hosted Studio unverified; Management API root-key retrieval is hosted-only.
+
+Docs: <https://supabase.com/docs/guides/database/vault> · <https://github.com/supabase/vault> · <https://supabase.com/blog/supabase-vault> · <https://supabase.com/docs/guides/database/extensions/pgsodium>
+
+### Client Library - Flutter
+
+`GA` · self-hosted: **yes** · ours: **absent** · value **0/3** · effort **M** · verified
+
+**What it is.** supabase_flutter is Supabase's official Dart/Flutter SDK (GA, v2.x line, currently ~2.17.1 on pub.dev). It lets a Flutter app on Android/iOS/web/macOS/Windows/Linux do Postgres CRUD via PostgREST, auth, Storage file management, Realtime subscriptions, and Edge Function invocation against any Supabase backend. It is purely a client-side library — nothing runs on the Supabase server for it.
+
+**How it works.** The app calls Supabase.initialize(url, anonKey/publishableKey), which builds a singleton SupabaseClient speaking HTTPS/WebSocket to the project's API gateway (Kong), which in turn fronts PostgREST (database), GoTrue (auth), Realtime, storage-api, and the edge-functions runtime. The supabase/supabase-flutter monorepo (Melos) composes Dart sub-clients — postgrest, gotrue, realtime_client, storage_client, functions_client — under the supabase_flutter package. On top of the plain `supabase` Dart package it adds Flutter-specific glue: session persistence via SharedPreferences (pluggable LocalStorage, e.g. flutter_secure_storage, or EmptyLocalStorage to disable), deep-link handling via app_links for OAuth/magic-link/password-reset redirects, and automatic token refresh surfaced through supabase.auth.onAuthStateChange. Query surface mirrors supabase-js: filters/modifiers (eq, textSearch, limit...), rpc(), storage signed URLs, channel subscriptions. No server-side config knobs exist beyond the URL and API key handed to initialize.
+
+**Components:** supabase_flutter Dart package (pub.dev, supabase/supabase-flutter repo); Dart sub-clients: postgrest, gotrue, realtime_client, storage_client, functions_client; server counterparts it talks to: Kong gateway fronting PostgREST, GoTrue, Realtime, storage-api, edge runtime
+
+**Self-hosted availability.** Client-side SDK with no cloud-control-plane dependency: point Supabase.initialize at the self-hosted Kong URL with the stack's anon (or service) key and every sub-API works against the docker bundle. The official feature page explicitly states "Available on self-hosted: Yes". The repo's own test suite runs against a local Docker Supabase stack.
+
+**Our stack.** Ground truth lists only a web app and JS client: "App usage (Next.js 15, supabase-js ^2.110.0, server-only service-role client)". No Flutter/Dart app or supabase_flutter dependency exists anywhere in the deployment.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal Next.js web tool behind a Cognito ALB; the roadmap (competitor-intel pgvector/RAG, queues/cron overlap, console parity, platform hardening) is entirely server/web-side with no mobile client planned, so a Flutter SDK has no application.
+
+**Caveats.** Adding the package itself is trivial, but our deployment is architecturally hostile to a direct mobile client: there is no anon key, RLS is bypassed via service_role, and all access is gated by the Cognito ALB — a Flutter client would require issuing an anon key + enforcing RLS or standing up GoTrue, hence effort M rather than S. Version note: supabase_flutter versions independently of our server bundle (pinned supabase/supabase v1.26.05, cloned 2026-07); current 2.17.x defaults to the new publishableKey API-key scheme and features like analytics buckets/Web3 auth/passkeys, which may require newer GoTrue/storage/platform components than our unverified pinned bundle provides — legacy anon-key initialization still works. Exact minimum server versions per SDK feature were not confirmed.
+
+Docs: <https://supabase.com/docs/reference/dart/introduction> · <https://supabase.com/features/client-library-flutter> · <https://github.com/supabase/supabase-flutter> · <https://pub.dev/packages/supabase_flutter>
+
+### Client Library - Swift
+
+`GA` · self-hosted: **yes** · ours: **absent** · value **0/3** · effort **S** · verified
+
+**What it is.** supabase-swift is Supabase's official native Swift SDK for iOS, macOS, tvOS, watchOS, and visionOS apps. It gives Swift code typed access to the full Supabase stack: Postgres CRUD via PostgREST, auth/user management, Realtime subscriptions, Storage file operations, and Edge Function invocation. It is the Swift equivalent of supabase-js, installed via Swift Package Manager.
+
+**How it works.** It is purely client-side code — no server component of its own. You initialize `SupabaseClient(supabaseURL:supabaseKey:)` with a project (or self-hosted Kong gateway) URL and an API key; the SDK then speaks the standard HTTP/WebSocket protocols of the backing services: PostgREST for database queries/RPC, GoTrue for auth (password, OTP, OAuth, passkeys, MFA, session management), the Realtime server for change subscriptions over WebSocket, storage-api for buckets/uploads/signed URLs, and the Deno edge-runtime for function invocation. The package ships as one umbrella `Supabase` product or as individual modules (Auth, PostgREST, Realtime, Storage, Functions) you can depend on separately. v2.x requires iOS 16+/macOS 13+, Swift 6.1+, Xcode 16.4+. Because it just targets a URL, it works identically against Supabase cloud or a self-hosted gateway.
+
+**Components:** supabase-swift SPM package (Auth, PostgREST, Realtime, Storage, Functions modules); Kong gateway as the endpoint it targets; backing services: PostgREST, GoTrue, Realtime server, storage-api, edge-runtime
+
+**Self-hosted availability.** Client library only — no cloud control plane involved. Point SupabaseClient at the self-hosted Kong gateway URL with the anon or service_role key and every module works against the docker-bundle services (PostgREST, GoTrue, Realtime, storage-api, functions).
+
+**Our stack.** Ground truth lists only the JS client: "App usage (Next.js 15, supabase-js ^2.110.0, server-only service-role client)". No Swift/iOS codebase or supabase-swift usage appears anywhere in the deployment.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal Next.js web tool behind a Cognito ALB; the roadmap (competitor-intel/pgvector, console parity, hardening) contains no native iOS/macOS app, so a Swift SDK has no current use.
+
+**Caveats.** Effort S covers only adding the SPM package to an existing Swift app and pointing it at our Kong URL; MarketingHub has no Swift codebase, so real adoption implies building a new iOS app (L) plus solving auth: our ALB is Cognito-gated and GoTrue is unused, so a native client could not use the SDK's Auth module as-is and would need a Cognito token path or network exposure changes. SDK v2.x needs iOS 16+/Swift 6.1+. Our bundle is pinned at supabase/supabase v1.26.05 (cloned 2026-07, component versions unverified); newest SDK features that assume newer PostgREST/Realtime/storage-api behavior could mismatch — unconfirmed.
+
+Docs: <https://github.com/supabase/supabase-swift> · <https://supabase.com/features/client-library-swift> · <https://supabase.com/docs/reference/swift/introduction>
+
+### Management API
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** A REST API (api.supabase.com/v1) for programmatically managing Supabase cloud organizations and projects — creating projects, changing config, managing secrets, functions, domains, backups, billing, etc. It is the automation surface for the Supabase hosted platform, targeting CI/CD, infrastructure-as-code, and platforms that resell Supabase backends.
+
+**How it works.** It is implemented entirely by the Supabase CLOUD control plane, not by any component in the open-source docker bundle. Clients call https://api.supabase.com/v1/ with a bearer token: either a long-lived Personal Access Token (generated in the cloud dashboard, full user privileges) or a short-lived scoped OAuth2 token for third-party apps acting on behalf of a user. Endpoints cover projects/organizations, database operations (migrations, backups, config), auth settings (SSO providers, signing keys), Edge Functions, storage, secrets, custom domains, billing, and analytics. Rate limits are ~120 requests/min per user per project/org, with stricter 10–30 req/min limits on heavy endpoints; X-RateLimit-* response headers report usage. The Supabase CLI and cloud Studio use this same API under the hood, and a community TypeScript wrapper (supabase-management-js) exists.
+
+**Components:** Supabase cloud control plane (api.supabase.com/v1 REST API); cloud dashboard (Personal Access Token generation); OAuth2 token issuance (cloud); supabase-management-js community wrapper (client)
+
+**Self-hosted availability.** The self-hosting guide explicitly lists "the platform management API" among features unavailable when self-hosting, and the features page marks self-hosted availability as N/A. The API is served by Supabase's proprietary control plane at api.supabase.com; the docker bundle has no equivalent service — self-hosted configuration is done via environment variables/compose files. The closest self-hosted analog for database-level (not project-level) management is postgres-meta, which the bundle does include.
+
+**Our stack.** "runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05 ... No Supabase cloud account or control plane is involved anywhere." — the Management API only exists in the cloud control plane, so it is impossible in our deployment.
+
+**Value for MarketingHub (0/3).** Cannot exist in our self-hosted deployment, and nothing on the roadmap (competitor-intel/pgvector, queues/cron consolidation, console parity, platform hardening) needs cloud project management. The functional slice we'd actually want — programmatic schema/SQL access — we already have via postgres-meta /pg/* (including POST /query), which powers the in-app console; infra config is handled by our own AWS/compose tooling.
+
+**Caveats.** Version pinning (v1.26.05 bundle) is irrelevant here since no self-hosted component implements this API at any version. Docs do not state which cloud pricing tiers include Management API access. Rate-limit figures are as documented 2026-08 and may change; the supabase-management-js wrapper is community-maintained, not official.
+
+Docs: <https://supabase.com/docs/reference/api/introduction> · <https://supabase.com/features/management-api> · <https://supabase.com/docs/guides/self-hosting>
+
+### PrivateLink
+
+`Beta` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** PrivateLink gives Supabase-hosted projects a private network path from a customer's AWS VPC to their Supabase Postgres database, so database traffic never crosses the public internet. It launched in Beta on 2026-01-27 for Team and Enterprise plans, aimed at compliance-heavy customers (healthcare, finance). It covers only direct Postgres and pooler (PgBouncer) connections — not the REST API, Storage, Auth, or Realtime.
+
+**How it works.** It is implemented entirely by the Supabase CLOUD control plane plus AWS networking primitives — no Postgres extension or self-hostable component is involved. Supabase wraps the project's database endpoint in an AWS VPC Lattice Resource Configuration and shares it with the customer's AWS account via AWS Resource Access Manager (RAM), configured at the Supabase organization level. The customer accepts the RAM share, then either creates a PrivateLink/resource endpoint in their VPC or attaches the configuration to an existing VPC Lattice Service Network, opens security groups for ports 5432 (direct Postgres) and 6543 (PgBouncer), and switches connection strings to the private endpoint. The customer VPC must be in the same AWS region as the Supabase project; optionally, public database access can then be disabled. Read Replicas require contacting Supabase; other Supabase services keep their public endpoints.
+
+**Components:** Supabase cloud control plane / dashboard (org-level PrivateLink config); AWS VPC Lattice Resource Configuration (Supabase-managed); AWS Resource Access Manager (RAM) share; Customer VPC endpoint or VPC Lattice Service Network association
+
+**Self-hosted availability.** Not part of the open-source docker bundle and cannot be: the feature is Supabase's cloud control plane sharing VPC Lattice Resource Configurations from Supabase's AWS account into yours via RAM. The features page explicitly lists it as not available self-hosted. A self-hoster who wants private connectivity simply deploys the bundle inside their own VPC (which is exactly our setup), or builds their own AWS PrivateLink/Lattice service — that is plain AWS work, not a Supabase component.
+
+**Our stack.** Ground truth: "runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle... on one EC2 instance (Postgres 17) in AWS us-east-1 private subnets. No Supabase cloud account or control plane is involved anywhere." PrivateLink requires the Supabase cloud control plane to share VPC Lattice resources, so it cannot exist in our deployment.
+
+**Value for MarketingHub (0/3).** The problem PrivateLink solves — keeping database traffic off the public internet for compliance — is already fully solved architecturally in MarketingHub: the entire Supabase stack lives on an EC2 instance in private subnets behind a Cognito-authenticated ALB, so there is no public database exposure to eliminate. Nothing on the roadmap (pgvector competitor-intel, console parity, hardening) would be advanced by it.
+
+**Caveats.** Feature is Beta (launched 2026-01-27) and Supabase notes capabilities "may evolve"; it postdates our v1.26.05 bundle pin, but that is irrelevant since no bundle component implements it. Beta limits on the hosted side: AWS-only, same-region VPC requirement, database/PgBouncer connections only (no API/Storage/Auth/Realtime), Team/Enterprise plans, Read Replica support only via account rep. Could not confirm any roadmap for self-hosted parity (none is plausible given the architecture).
+
+Docs: <https://supabase.com/docs/guides/platform/privatelink> · <https://supabase.com/features/privatelink> · <https://supabase.com/blog/supabase-privatelink-available>
+
+### SOC 2 Compliance
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** SOC 2 Type 2 is an independent annual audit attestation that Supabase-the-company's controls for security, availability, processing integrity, confidentiality, and privacy meet the AICPA Trust Services Criteria. It covers the hosted Supabase cloud platform (Postgres, Storage, Auth, Realtime, Edge Functions, Data API) plus Supabase's corporate/customer-relationship systems. It is a compliance artifact about Supabase's operations, not a software capability you enable.
+
+**How it works.** No component in the software stack implements it; it is an attribute of the Supabase CLOUD control plane and the infrastructure Supabase operates. An independent third-party auditor assesses Supabase's controls over a rolling 12-month audit period (March 1 to February 28) each year, producing a SOC 2 Type 2 report. The report is distributed only to Team and Enterprise plan customers via the Legal Documents section of the cloud organization dashboard. Supabase docs frame a shared-responsibility model: customers needing their own SOC 2 must implement and audit their own application-level controls (e.g., enabling Postgres connection logging where required). The docs state explicitly that Supabase's SOC 2 compliance does not transfer to environments outside Supabase's control, and that SOC 2 is not a substitute for HIPAA compliance (that is a separate cloud add-on).
+
+**Components:** Supabase cloud control plane (managed platform under audit scope); cloud dashboard Legal Documents section (report download, Team/Enterprise plans)
+
+**Self-hosted availability.** Cannot exist in self-hosting: an SOC 2 attestation covers only infrastructure and processes Supabase operates. The feature page marks it not available on self-hosted, and the docs guide states compliance "does not transfer to environments outside of the Supabase product or Supabase's control." A self-hoster inherits nothing; they would need their own SOC 2 audit of their own environment (in our case, compliance posture derives from AWS controls, not Supabase).
+
+**Our stack.** "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05 ... No Supabase cloud account or control plane is involved anywhere." With no cloud org, there is no audited Supabase-operated infrastructure in scope and no dashboard from which to obtain a report.
+
+**Value for MarketingHub (0/3).** Supabase's attestation covers only their hosted platform, so it contributes nothing to MarketingHub's HIPAA-adjacent posture. Our equivalent assurance comes from our own AWS-side controls already in place (Cognito/ALB authz, pgaudit, KMS-encrypted S3, Object-Lock backups); the roadmap's platform-hardening interest is served by those, not by Supabase's SOC 2 report.
+
+**Caveats.** Not version-dependent — this is an organizational attestation, so our v1.26.05 bundle pin is irrelevant. Report access is gated to Team/Enterprise cloud plans; audit window runs Mar 1-Feb 28 annually. Supabase docs note SOC 2 does not cover and is not a substitute for HIPAA (relevant given MarketingHub's healthcare-adjacent posture); Supabase cloud offers HIPAA/BAA as a separate paid add-on, equally inapplicable to self-hosting. Could not confirm the exact date of the original Type 2 attainment beyond the blog posts (SOC 2 announced ~2022, Type 2 + HIPAA announced later); did not fetch the blog posts directly.
+
+Docs: <https://supabase.com/docs/guides/security/soc-2-compliance> · <https://supabase.com/features/soc-2-compliance> · <https://supabase.com/security>
+
+## Realtime features
+
+All seven entries share one posture: the realtime container is up and nothing touches it. Broadcast, Presence, and Postgres-changes could add live UI updates (blast-send progress, schedule refresh, console co-editing awareness), but MarketingHub has no browser Supabase client and no anon key, so any adoption is an M-effort architectural change for things polling already covers. The authorization and replay sub-features are doubly gated — they only matter after adopting Realtime at all.
+
+### Realtime - Broadcast
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Broadcast is the pub/sub messaging primitive of Supabase Realtime: clients (or servers, or the database) publish ephemeral low-latency messages to a named channel, and every other client subscribed to that channel receives them over WebSockets. Typical uses are cursor tracking, chat, live notifications, and game/collaboration events. Delivery is best-effort (the server does not guarantee every message arrives).
+
+**How it works.** It is implemented entirely by the Realtime server, an Elixir/Phoenix WebSocket service that ships as the `realtime` container in the docker bundle, routed through Kong at /realtime/v1. Clients call supabase.channel(name), send with channel.send({type:'broadcast', event, payload}) and subscribe with channel.on('broadcast', {event}, cb). Three message paths exist: (1) client WebSocket -> server -> other subscribers; (2) REST: POST /realtime/v1/api/broadcast (supabase-js httpSend, >=2.107.0) with no persistent socket; (3) from Postgres: realtime.send()/realtime.broadcast_changes() insert into the realtime.messages table and logical replication pushes the message out. Channels can be private (private: true), authorized via RLS policies on realtime.messages; other knobs are self (receive your own sends), ack (server receipt confirmation), and replay of DB-originated messages (persisted ~72h in daily partitions). Connecting requires a Supabase JWT (normally the anon key or a GoTrue token).
+
+**Components:** realtime server container (Elixir/Phoenix WebSocket service); Kong gateway route /realtime/v1; supabase-js Realtime client; realtime.messages table + realtime.send()/broadcast_changes() SQL functions (DB-originated broadcast + private-channel RLS auth)
+
+**Self-hosted availability.** Fully available self-hosted: the open-source realtime container in the supabase/supabase docker bundle implements Broadcast end-to-end (WebSocket, REST endpoint, and DB-triggered paths); no cloud control plane involved. The GitHub repo documents Docker self-hosting against Postgres 14-17.
+
+**Our stack.** Ground truth lists realtime among "Containers RUNNING: db ... imgproxy, realtime, functions ..." but states the app does not touch it: "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings."
+
+**Value for MarketingHub (1/3).** Could give live UI updates (SMS-blast send progress from the outbox, schedule-view refresh, multi-user console awareness), which is mildly nice for an internal team tool, but polling covers these; nothing on the roadmap (competitor-intel/pgvector, console parity, hardening) needs pub/sub, and the server-only service_role architecture (no browser Supabase client, no anon key) actively conflicts with browser WebSocket usage.
+
+**Caveats.** Core Broadcast is long-GA and certainly present in our v1.26.05 bundle (realtime container already runs), but newer sub-features have version floors I could not verify against the pinned realtime image: binary payloads (supabase-js >=2.91.0 + recent server), REST httpSend (>=2.107.0), DB replay (realtime.send_binary / message replay need a recent server). Our supabase-js ^2.110.0 satisfies the client side. Adoption friction is architectural, not availability: browser clients would need a JWT to open the WebSocket (we issue no anon key and bypass GoTrue), the Cognito ALB/Kong path must pass WebSocket upgrades, and private channels require RLS policies on realtime.messages. Could not confirm the exact realtime container version in the pinned bundle.
+
+Docs: <https://supabase.com/docs/guides/realtime/broadcast> · <https://github.com/supabase/realtime>
+
+### Realtime - Broadcast from the Database
+
+`Public Beta` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Lets you trigger Realtime Broadcast messages directly from Postgres, typically via triggers, instead of (or in addition to) the older Postgres Changes feed. You call SQL helper functions (realtime.send or realtime.broadcast_changes) inside trigger functions, and connected websocket clients subscribed to the matching topic receive the message. It scales database-change fan-out to tens of thousands of clients and lets you sanitize/shape payloads in SQL.
+
+**How it works.** Implemented by the open-source Realtime server (the `realtime` container) plus schema objects it migrates into the database: a partitioned realtime.messages table (daily partitions, dropped after 3 days) and the SQL functions realtime.send(payload, event, topic, is_private) and realtime.broadcast_changes(topic, event, operation, table, schema, new_record, old_record). The Realtime server creates a publication and logical-replication slot against realtime.messages and tails the WAL; every insert into that table is broadcast over websockets to clients subscribed to the row's topic. You wire it up by writing a trigger function that calls one of the helper functions and attaching AFTER INSERT/UPDATE/DELETE triggers to your tables. Authorization uses private channels: Realtime connects as an admin role and validates the subscribing client's JWT against RLS policies on realtime.messages before delivering. Client side, supabase-js subscribes with channel(topic, { config: { private: true } }) and listens for broadcast events; broadcast replay needs supabase-js >= 2.74.0.
+
+**Components:** realtime server container (supabase/realtime); realtime schema in Postgres (realtime.messages partitioned table, realtime.send + realtime.broadcast_changes functions, RLS policies); logical replication slot + publication on realtime.messages (WAL tailing); user-authored Postgres trigger functions; supabase-js Realtime websocket client
+
+**Self-hosted availability.** Fully open source: the Realtime server ships in the self-hosted docker bundle as the `realtime` container and creates the realtime schema/functions itself via its migrations; no cloud control plane involved. The supabase.com feature page explicitly lists self-hosted availability. Requires wal_level=logical (default in the supabase/postgres image) and JWTs signed with the stack's JWT secret for private-channel authorization.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... realtime ..." but "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." No repo SQL creates broadcast triggers, and the app has no browser Supabase client (server-only service_role), so nothing subscribes or publishes.
+
+**Value for MarketingHub (1/3).** Marginal for the roadmap: could push live SMS-outbox/blast-send status into the schedule view or in-app console instead of polling, but MarketingHub deliberately has no browser Supabase client, no anon key, and authz lives in Cognito — adopting private-channel Realtime means minting Supabase JWTs and writing RLS on realtime.messages, a lot of plumbing for a nice-to-have. No bearing on the competitor-intel/pgvector priority.
+
+**Caveats.** Feature launched April 2025 and is Public Beta; our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) almost certainly includes a new-enough realtime image, but the exact realtime container version and presence of realtime.send/broadcast_changes in our DB are unverified. Broadcast replay needs supabase-js >= 2.74.0 (we pin ^2.110.0, fine). Private channels require Realtime Authorization with client JWTs signed by the stack JWT secret — we issue none today (Cognito-only auth, no anon key). Kong must route the websocket path (/realtime/v1) through our Cognito ALB, unverified. realtime.messages retains only ~3 days of messages (daily partitions dropped).
+
+Docs: <https://supabase.com/docs/guides/realtime/broadcast> · <https://supabase.com/blog/realtime-broadcast-from-database> · <https://supabase.com/features/realtime-broadcast-from-database>
+
+### Realtime - Postgres changes
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Postgres Changes is one of the three Supabase Realtime features (alongside Broadcast and Presence). It streams your database's INSERT/UPDATE/DELETE events to subscribed clients over WebSockets in near real time. Clients subscribe to a schema, table, or filtered row set and receive each committed change as a JSON payload.
+
+**How it works.** The Realtime server (an Elixir/Phoenix service, Apache 2.0, the `realtime` container in the docker bundle) consumes Postgres's write-ahead log via logical replication: tables are added to the `supabase_realtime` publication, the server reads the replication slot, decodes WAL records to JSON, and pushes them over Phoenix WebSocket channels (routed through Kong at /realtime/v1). Clients subscribe with supabase-js: `.channel(...).on('postgres_changes', { event, schema, table, filter }, cb)`, with server-side filters (eq, gt, in, like, etc.) and column selection. Every event is authorized per subscriber against RLS policies, so throughput scales with subscriber count, not write rate, and processing is single-threaded to preserve ordering (docs suggest Broadcast instead beyond ~3,000 subscribers). Getting old row values or filtering DELETE events requires `REPLICA IDENTITY FULL` on the table. Enabling a table is done via SQL (ALTER PUBLICATION) or the Studio dashboard's replication toggle.
+
+**Components:** realtime server container (Elixir/Phoenix, supabase/realtime); Postgres logical replication (WAL, supabase_realtime publication, replication slot); Kong gateway route /realtime/v1; supabase-js realtime client; Studio UI table-replication toggle (optional)
+
+**Self-hosted availability.** Fully available self-hosted: the Apache-2.0 `realtime` container ships in the standard supabase/supabase docker-compose bundle and talks directly to the bundled Postgres via logical replication — no cloud control plane involved. Self-hosting docs cover its env vars (e.g., RLIMIT_NOFILE ulimits) and note db log_min_messages is set to fatal in docker-compose.yml to suppress Realtime's redundant log noise.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... realtime ..." but "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." The container is up in our bundle; the app never opens a Realtime websocket.
+
+**Value for MarketingHub (1/3).** Nothing on the roadmap (competitor-intel/pgvector, console parity, hardening) needs change feeds. The one plausible use is live UI updates for the SMS blast schedule/outbox view, but our architecture works against it: no browser Supabase client, no anon key, RLS deliberately bypassed via server-only service_role, and Cognito is the real authz boundary — browser websocket subscriptions would require introducing an anon key + real RLS or a server-side relay. Marginal nice-to-have; polling covers it today.
+
+**Caveats.** Long-GA feature, so our v1.26.05 bundle (cloned 2026-07) certainly includes it; exact realtime image version unverified. The supabase/realtime README states Realtime v2 requires Postgres 15.x/16.x with supautils — we run PG17; the bundle presumably ships a PG17-compatible realtime build but I could not confirm the pinned image's PG17 support from docs. Adoption caveats: per-subscriber RLS authorization limits throughput and our RLS policies are untested for this (app bypasses them today); service_role keys must never reach a browser, so client subscriptions need an anon-key+RLS model or a server relay; websocket path would also need to pass the Cognito ALB; DELETE filtering/old-record payloads require REPLICA IDENTITY FULL; filters AND-only (no OR).
+
+Docs: <https://supabase.com/docs/guides/realtime/postgres-changes> · <https://github.com/supabase/realtime> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Realtime - Presence
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Presence lets connected clients share and synchronize ephemeral per-user state (e.g. "who is online", "who is viewing this record", cursor/typing indicators) over websockets. Each client publishes a small state payload to a channel; the Realtime server maintains and distributes the merged view to all subscribers, automatically removing a client's state when it disconnects. It is intended for slow-changing shared state, not high-frequency data.
+
+**How it works.** It is implemented entirely by the standalone Realtime server (supabase/realtime), an Elixir/Phoenix application; Presence rides on Phoenix's channel/Presence machinery (an in-memory conflict-resolving state model), not on Postgres. Clients connect over a websocket (routed through Kong in the self-hosted bundle), join a channel via supabase.channel(name), and publish state with track(payload); untrack() removes it, and presenceState() returns the merged view. Clients subscribe to three presence events: sync (full state refreshed), join (client added state), and leave (client removed state or disconnected). Each client's state is stored under a presence key — a server-generated UUID by default, overridable at channel creation (typically set to a user ID). Auth is a JWT (anon/publishable or custom-signed with the project JWT secret); private channels can additionally be authorized via RLS on realtime.messages. Delivery is best-effort: the server does not guarantee every message reaches every client.
+
+**Components:** realtime server container (supabase/realtime, Elixir/Phoenix — Phoenix Presence); kong gateway (websocket routing to /realtime); supabase-js RealtimeChannel client (track/untrack/presenceState, sync/join/leave events)
+
+**Self-hosted availability.** The realtime container ships in the open-source docker bundle (docker image supabase/realtime) and Presence is a core in-process feature of that server — no cloud control plane involved. State lives in the Realtime server's memory, so it works fully independent of Supabase cloud.
+
+**Our stack.** Ground truth lists the container as up — "Containers RUNNING: ... realtime ..." — but the app does not use it: "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings."
+
+**Value for MarketingHub (1/3).** Nothing on the roadmap (competitor-intel/pgvector, SMS outbox, console parity, hardening) needs shared-presence state. The only plausible use is a nice-to-have: showing concurrent editors in the in-app console (Table/SQL editor) to avoid conflicting edits by the small marketing team. The server-only service_role architecture (no browser Supabase client, no anon key) makes any client-side realtime use a deliberate architectural addition, not an incremental win.
+
+**Caveats.** Presence is long-GA (well before our v1.26.05 pin, cloned 2026-07), so version risk is low, though the exact supabase/realtime container version in our pin is unverified. Adopting it would cut against our current posture: the app has no anon key and no browser Supabase client, so we would need a client-side JWT strategy (mint tokens signed with the Supabase JWT secret, ideally carrying Cognito identity) plus websocket passthrough verified end-to-end through the Cognito ALB and Kong, including ALB websocket idle-timeout settings. Private-channel authorization uses RLS on realtime.messages, which the app otherwise bypasses via service_role. Delivery is best-effort (no guaranteed message delivery), and presence state is in-memory only (fine on our single instance; no persistence). Could not confirm from docs whether current Presence still uses Phoenix.Presence CRDT internals — inferred from the server's Phoenix framework basis.
+
+Docs: <https://supabase.com/docs/guides/realtime/presence> · <https://supabase.com/docs/guides/realtime> · <https://github.com/supabase/realtime>
+
+### Realtime - Presence Authorization
+
+`Public Beta` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Lets you restrict who can publish and who can see Presence (online-status / shared-state) information on Supabase Realtime channels. Instead of any client with the anon key being able to track or read presence on any channel, you write Row Level Security policies that decide, per user and per channel topic, whether presence updates can be sent or received. It is the Presence-specific slice of the broader Realtime Authorization feature (Public Beta, launched Aug 13, 2024).
+
+**How it works.** Implemented by the Realtime server (the open-source Elixir supabase/realtime service), not by GoTrue or Kong. A `realtime.messages` table (RLS enabled by default) exists in the database's `realtime` schema purely as a policy anchor: when a client joins a channel created with `config: { private: true }`, the Realtime server runs SELECT and INSERT probe queries against that table (rolled back, nothing is stored) under the user's JWT claims to compute what they may do. For Presence specifically, policies filter on `realtime.messages.extension = 'presence'` — a SELECT policy gates receiving presence updates, an INSERT policy gates publishing presence state. The resulting permission map is cached in memory for the connection's lifetime and only re-evaluated on reconnect or when a refreshed JWT arrives via the `access_token` message, so the database is not queried per message. A "Allow public access" Realtime setting (dashboard) can force all channels private; otherwise privacy is opt-in per channel via the client SDK config in supabase-js/Dart/Swift/Kotlin/Python.
+
+**Components:** Realtime server (supabase/realtime, Elixir container); Postgres RLS policies on the realtime.messages table (realtime schema); Client SDK channel config { private: true } (supabase-js et al.); JWT claims (typically GoTrue-issued) evaluated by the policies
+
+**Self-hosted availability.** Provided by the realtime container in the open-source docker bundle plus RLS policies in your own Postgres; no cloud control plane is involved in the authorization path, and the supabase.com feature page explicitly lists it as available self-hosted. Requires a Realtime server build from Aug 2024 or later (when authorization shipped); the dashboard "Allow public access" force-private toggle is a Studio/cloud settings surface — self-hosted enforcement is per-channel via private: true (global-toggle equivalent config knob not confirmed).
+
+**Our stack.** "Containers RUNNING: ... realtime ..." but "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings" — the realtime service is up, yet the app opens no Realtime channels, so neither Presence nor its authorization layer is exercised. Additionally the app has "no anon key, no browser Supabase client" and talks only via service_role, so there are no end-user JWTs for these RLS policies to evaluate.
+
+**Value for MarketingHub (1/3).** Nothing on the roadmap (competitor-intel/pgvector, SMS outbox, console parity, audit hardening) needs Presence. The only plausible use is "who else is viewing/editing" awareness in the in-app console, and even then authorization matters only marginally since all users are already inside the Cognito boundary; adopting it would also force a browser Supabase client + per-user JWT minting, contradicting the current service_role-only architecture.
+
+**Caveats.** Public Beta. Feature shipped Aug 13, 2024; our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) postdates that, so the bundled realtime image almost certainly supports it, but the exact realtime container version is unverified. The global "Allow public access" force-private toggle is documented as a dashboard Realtime Setting; the equivalent self-hosted env/config knob was not confirmed (per-channel private: true works regardless). Effort M reflects that adoption in MarketingHub requires introducing browser-side Supabase clients and per-user JWTs (RLS policies need real user claims), not just writing the policies.
+
+Docs: <https://supabase.com/docs/guides/realtime/authorization> · <https://supabase.com/blog/supabase-realtime-broadcast-and-presence-authorization> · <https://supabase.com/features/realtime-presence-authorization>
+
+### Realtime - Broadcast Authorization
+
+`Public Beta` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Access control for Supabase Realtime Broadcast channels: instead of any client being able to join and send/receive on any channel topic, you can mark channels "private" and gate who may listen and who may publish. Authorization rules are expressed as ordinary Postgres Row Level Security policies, so channel access can be tied to user roles, JWT claims, or rows in your own tables. It launched in Public Beta August 2024 alongside the equivalent Presence Authorization.
+
+**How it works.** The open-source Realtime server (supabase/realtime, Elixir) implements it together with Postgres. Realtime creates and manages a `realtime.messages` table (RLS enabled by default); you write SELECT policies on that table to authorize receiving broadcasts and INSERT policies to authorize sending, typically using `realtime.topic()` to match the channel name and `current_setting('request.jwt.claims')` / auth helpers to inspect the caller's JWT. The client opts in by subscribing with `config: { private: true }` (supported in JS, Dart, Swift, Kotlin, Python SDKs). At subscribe time the Realtime server runs test queries against the database as the client's JWT role, rolls them back, and caches the resulting permission map in memory for the connection's lifetime (refreshed when the client sends a new JWT or reconnects). Unauthorized subscribers get an explicit permission error. On the hosted platform there is also a dashboard "Allow public access" Realtime setting; the enforcement itself is entirely server+RLS, not control-plane.
+
+**Components:** Realtime server (supabase/realtime container); Postgres RLS policies on the realtime.messages table (realtime schema, managed by Realtime migrations); realtime.topic() SQL helper; client SDKs (supabase-js et al., private: true channel config)
+
+**Self-hosted availability.** Implemented entirely by the open-source Realtime container plus RLS policies in your own Postgres — no cloud control plane involved; the supabase.com feature page explicitly lists self-hosted availability. The realtime container in the docker bundle runs the migrations that create realtime.messages; channel privacy/authz behavior is configured via the Realtime service's env/tenant settings rather than the cloud dashboard toggle.
+
+**Our stack.** Ground truth lists the realtime container among "Containers RUNNING: db ... realtime, functions ...", but the app does not use it: "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." The Realtime service is up, so the feature's implementing component runs, but no channels (private or otherwise) are used and no RLS policies on realtime.messages exist in our SQL.
+
+**Value for MarketingHub (0/3).** MarketingHub has no Realtime usage and no browser Supabase client at all — the app talks to PostgREST/Storage server-side with the service_role key (which bypasses RLS), and authz is enforced by Cognito at the ALB. Broadcast Authorization presupposes browser clients holding Supabase-signed JWTs evaluated via RLS, a token path that does not exist here. Nothing on the roadmap (competitor-intel/pgvector, console parity, hardening) needs authorized realtime channels.
+
+**Caveats.** Public Beta (launched 2024-08-13); behavior may still change. Requires a Realtime server release from mid-2024 or later — our bundle (supabase/supabase tag v1.26.05, cloned 2026-07) almost certainly ships a new-enough realtime image, but the exact realtime container version is unverified. Adopting it in MarketingHub would first require introducing client-side Realtime connections with Supabase-signed JWTs (GoTrue or custom-minted), since service_role connections bypass RLS and defeat the feature; that token plumbing is the M-sized part, not the RLS policies. Self-hosted equivalent of the cloud dashboard "Allow public access" toggle (Realtime tenant/env config) was not verified against our compose files. Policy results are cached per connection until a new JWT is sent, so revocation is not instant.
+
+Docs: <https://supabase.com/docs/guides/realtime/authorization> · <https://supabase.com/blog/supabase-realtime-broadcast-and-presence-authorization> · <https://supabase.com/features/realtime-broadcast-authorization>
+
+### Realtime - Broadcast Replay
+
+`Public Alpha` · self-hosted: **yes** · ours: **running-unused** · value **0/3** · effort **M** · verified
+
+**What it is.** Broadcast Replay lets clients joining a private Realtime channel fetch messages that were sent before they connected — e.g. to backfill recent chat history or catch up after a network drop. It only replays messages that were published via "Broadcast from the Database" (realtime.send()), and it is in Public Alpha (announced 2025-12-05).
+
+**How it works.** Implemented by the Realtime server (the Elixir supabase/realtime service) together with the project's own Postgres: messages sent with the realtime.send() SQL function are persisted in the partitioned realtime.messages table, and replay reads back from those partitions. Clients opt in at channel creation with config { private: true, broadcast: { replay: { since: <epoch ms, required>, limit: <1-25, optional> } } }; replayed events carry payload.meta.replayed = true so they can be distinguished from live messages. It works only on private channels (Realtime Authorization / RLS policies on realtime.messages) and only for database-published broadcasts — client-side broadcast sends are not replayable. Retention is governed by daily partitions dropped after 72 hours, so a message is available for at least 72 hours and at most ~4 days. Requires recent client SDKs: supabase-js >= 2.74.0 (docs; the features page says 2.37.0), Dart >= 2.10.0, Swift >= 2.34.0, Python >= 2.22.0; Kotlin unsupported.
+
+**Components:** Realtime server (supabase/realtime Elixir service); realtime.messages partitioned table in project Postgres (populated by realtime.send()); client SDK (supabase-js >= 2.74.0 or equivalent)
+
+**Self-hosted availability.** The replay logic lives entirely in the open-source Realtime container plus the realtime.messages table in your own Postgres — no cloud control plane involved — and the supabase.com feature page explicitly lists self-hosted availability. The only requirement is a Realtime server image new enough to include the feature (shipped around Dec 2025).
+
+**Our stack.** Ground truth: "Containers RUNNING: ... realtime ..." but "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings" — the Realtime service is up but the app never opens a Realtime channel, so Broadcast Replay is a capability of a running-but-unused service.
+
+**Value for MarketingHub (0/3).** Nothing on the roadmap (competitor-intel pgvector/RAG, SMS outbox/scheduler, console parity, audit hardening) needs message replay, and MarketingHub has no browser Supabase client or Realtime usage at all; adopting it would also require standing up private-channel auth that our service_role/Cognito model deliberately avoids.
+
+**Caveats.** Version risk: our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07) and exact component versions are unverified; the feature shipped ~Dec 2025, so a July-2026 clone likely pins a new-enough supabase/realtime image, but confirm the image tag before relying on it (GitHub release notes do not name the introducing version). Our supabase-js ^2.110.0 satisfies the >= 2.74.0 client requirement (official pages disagree on the minimum: features page says 2.37.0, docs/blog say 2.74.0). Functional limits: private channels only (needs Realtime Authorization JWTs + RLS on realtime.messages — our app has no browser client and bypasses RLS via service_role), only realtime.send()/Broadcast-from-Database messages are replayable, max 25 messages per replay, retention 72h to ~4 days via daily partition drops, Kotlin SDK unsupported, Public Alpha maturity.
+
+Docs: <https://supabase.com/blog/realtime-broadcast-replay> · <https://supabase.com/docs/guides/realtime/broadcast> · <https://supabase.com/features/realtime-broadcast-replay> · <https://github.com/supabase/realtime/releases>
+
+## Storage features
+
+File storage is live and core: private buckets, signed URLs, the in-app Storage browser, all backed by our KMS-encrypted S3 bucket. The adjacent conveniences — image transformations (imgproxy already runs), resumable TUS uploads, the S3 wire protocol — are present-but-unused polish worth at most a value of 1. The two CDN tiers are cloud-only and irrelevant to an internal private-subnet tool, and the new Vector/Analytics bucket types are Public Alpha with no roadmap pull since pgvector covers the RAG plan.
+
+### File storage
+
+`GA` · self-hosted: **yes** · ours: **live** · value **3/3** · effort **S** · verified
+
+**What it is.** Supabase Storage is an object/file storage service for storing and serving files of any size (images, videos, documents) organized into buckets. It offers fine-grained access control via Postgres RLS policies, signed URLs for private content, and on-the-fly image transformations. On the Supabase cloud platform it is fronted by a global CDN; self-hosted deployments get the same core API without the CDN layer.
+
+**How it works.** The feature is implemented by the standalone storage-api server (Node.js/TypeScript, github.com/supabase/storage), which exposes a REST API at /storage/v1/ through the Kong gateway. File object metadata, bucket definitions, and access policies live in Postgres (the storage schema); actual file bytes go to a pluggable backend — local filesystem (default self-hosted) or any S3-compatible store (AWS S3, MinIO, R2), selected via STORAGE_BACKEND. Authorization uses JWTs plus Postgres RLS policies written against storage.objects; service_role bypasses RLS. It supports plain HTTP uploads, the TUS resumable-upload protocol for large files, and an S3-compatible protocol. Image resizing/compression is delegated to a companion imgproxy container; client access is via supabase-js storage methods (upload, list, createSignedUrl, move, remove) or direct REST/S3 calls.
+
+**Components:** storage-api container; Postgres storage schema (metadata + RLS policies); imgproxy container (image transformations); Kong gateway route /storage/v1/; S3 or local-file backend; supabase-js storage client; Studio storage browser UI
+
+**Self-hosted availability.** The storage container ships in the open-source docker bundle behind Kong, with imgproxy included for transformations; backends are local filesystem (default) or any S3-compatible store via config. Cloud-only extras not present self-hosted: the 285-city global CDN / Smart CDN cache invalidation, and the newer Analytics (Iceberg) and Vector bucket types which are cloud-platform features.
+
+**Our stack.** "storage (storage-api, STORAGE_BACKEND=s3 to a real KMS-encrypted S3 bucket), imgproxy" listed under containers RUNNING, and app usage includes "Storage API (list/upload/signedUrl/move/remove on private buckets)" plus an in-app "Storage browser (read-write)".
+
+**Value for MarketingHub (3/3).** Core, in-production dependency: MarketingHub's file handling (private buckets, signed URLs, the in-app Storage browser) runs entirely on storage-api backed by the KMS-encrypted S3 bucket, and the recent storage-bucket SSE infra fix shows it is load-bearing. Not net-new roadmap value, but essential to current operation.
+
+**Caveats.** Already fully adopted (effort S reflects only incremental work such as enabling TUS resumable uploads or imgproxy transformations if needed). Bundle pinned at supabase/supabase tag v1.26.05 (cloned 2026-07); exact storage-api and imgproxy image versions unverified, so recent additions (S3-compatible protocol endpoint, Iceberg/Analytics buckets, Vector buckets) may not exist in our pinned images — Analytics/Vector buckets are cloud-platform features regardless. No CDN self-hosted (we serve via signed URLs behind the ALB, which fits the private-bucket posture). Storage RLS policies are moot in our deployment: the app uses the service_role key, so Cognito is the real authz boundary. Could not confirm from docs which storage features, if any, are gated to newer self-hosted releases.
+
+Docs: <https://supabase.com/docs/guides/storage> · <https://github.com/supabase/storage> · <https://supabase.com/docs/guides/self-hosting/docker>
+
+### Analytics Buckets (with Iceberg)
+
+`Public Alpha` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** A new storage bucket type optimized for large-scale analytics, storing data in the Apache Iceberg open table format (Parquet data files plus versioned metadata) instead of raw objects. It gives object storage database-like table semantics — schema evolution, snapshots/time travel, big scans — so heavy analytical queries run off the primary Postgres. Launched July 2025 in alpha; buckets are created via Studio or the SDK and queried with Iceberg clients (PyIceberg, Spark) or from Postgres via an Iceberg foreign data wrapper.
+
+**How it works.** storage-api implements the feature: it exposes a standard Iceberg REST Catalog endpoint at /storage/v1/iceberg/* (behind Kong) that authenticates callers (service key bearer token) and proxies/multiplexes to a backing Iceberg REST catalog — it does not implement the catalog itself. The backing catalog defaults to AWS S3 Tables (ICEBERG_CATALOG_URL defaults to an s3tables.amazonaws.com endpoint with ICEBERG_CATALOG_AUTH_TYPE=sigv4); any other REST catalog works via token auth (the storage repo's own compose uses a generic rest-catalog container with ICEBERG_CATALOG_AUTH_TYPE=token). The catalog stores only table metadata (schema, partitioning, snapshots); actual Parquet data is read/written through an S3-compatible endpoint using S3 access keys. The whole feature is gated by ICEBERG_ENABLED=true, with knobs for warehouse, shards, bucket-detection mode, and limits (ICEBERG_MAX_CATALOGS default 2, ICEBERG_MAX_NAMESPACES 25, ICEBERG_MAX_TABLES 10). Ingestion goes through Iceberg clients (PyIceberg/Spark/iceberg-js); querying from Postgres uses the Wrappers extension's Iceberg FDW (recommended with Vault for credentials), and Studio adds a bucket-creation flow and a table explorer on top of the wrapper.
+
+**Components:** storage-api container (Iceberg REST-catalog auth proxy at /storage/v1/iceberg, ICEBERG_* env config, iceberg routes); external Iceberg REST catalog backend (AWS S3 Tables by default via sigv4, or any token-auth REST catalog); S3-compatible object storage endpoint for Parquet data (S3-protocol access keys); wrappers Postgres extension — Iceberg FDW (query from SQL); Studio UI (analytics bucket creation + table explorer); supabase-js / iceberg-js / PyIceberg / Spark clients
+
+**Self-hosted availability.** The open-source storage-api container ships the feature (verified present in v1.48.26: iceberg routes + full ICEBERG_* config), so no cloud control plane is strictly required — but it is disabled by default (ICEBERG_ENABLED=false), the stock supabase/supabase docker-compose sets none of the ICEBERG_* variables, and the self-hosting docs do not cover it. Critically, storage-api only proxies a REST catalog: self-hosting it requires you to supply a real Iceberg REST catalog backend yourself (an AWS S3 Tables table bucket via sigv4, or a self-run catalog like Lakekeeper/Polaris via token auth) plus S3-protocol credentials, and Postgres-side querying needs the wrappers extension with Iceberg FDW support. Supabase's turnkey experience (managed S3 Tables catalog, Studio flow, waitlist) is cloud; self-hosted is a DIY-wiring exercise on shipped-but-unwired OSS code.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... storage (storage-api, STORAGE_BACKEND=s3 to a real KMS-encrypted S3 bucket)" and the bundle is "pinned at git tag v1.26.05". Reviewer concern resolved: v1.26.05's docker-compose pins "image: supabase/storage-api:v1.48.26", and that exact tag of supabase/storage contains the Iceberg implementation (src/http/routes/iceberg + ICEBERG_* config in src/config.ts), gated behind ICEBERG_ENABLED which defaults to false and is not set by the stock compose. So the capability is present in our running image but not enabled — available-unused, the same in-image rule that classifies Vector Buckets (same container, same v1.48.26 pin, which also carries the vector routes).
+
+**Value for MarketingHub (1/3).** MarketingHub's roadmap (competitor-intel via pgvector/RAG, console parity, hardening) has no large-scale-analytics item, and an internal marketing tool's data volumes fit comfortably in PG17. At most a future nice-to-have for offloading long-horizon campaign/SMS-engagement history from the primary DB — nothing current justifies an alpha lakehouse stack.
+
+**Caveats.** Public Alpha — Supabase warns of rapid/breaking changes; platform alpha limits were 2 buckets, 5 namespaces/bucket, 10 tables/namespace (storage-api config defaults: 2 catalogs / 25 namespaces / 10 tables). Our pinned storage-api v1.48.26 verifiably contains the code, but enabling it needs unshipped wiring: ICEBERG_ENABLED + a backing REST catalog (default URL points at ap-southeast-1 S3 Tables and must be overridden; an S3 Tables table bucket in us-east-1 plus IAM sigv4 would be the natural fit) and S3-protocol access keys on storage-api, which our deployment has not configured. Unverified: whether the wrappers extension build in our pinned supabase/postgres PG17 image includes the Iceberg FDW (the wrapper is newer than many bundled wrappers versions), and whether our pinned Studio (2026.04.27) surfaces analytics buckets self-hosted. Self-host path is undocumented officially. HIPAA-adjacent note: data written via S3 Tables lands in an AWS-managed table bucket — KMS/encryption posture would need review against our KMS-encrypted-bucket standard.
+
+Docs: <https://supabase.com/docs/guides/storage/analytics/introduction> · <https://supabase.com/docs/guides/storage/analytics/connecting-to-analytics-bucket> · <https://supabase.com/blog/analytics-buckets> · <https://raw.githubusercontent.com/supabase/supabase/v1.26.05/docker/docker-compose.yml> · <https://github.com/supabase/storage/blob/v1.48.26/src/config.ts> · <https://github.com/supabase/storage/blob/v1.48.26/docker-compose.yml> · <https://supabase.github.io/wrappers/catalog/iceberg/>
+
+### Image transformations
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** On-the-fly resizing and optimization of images stored in Supabase Storage buckets, requested via URL/SDK parameters instead of pre-generating variants. You can ask for a given width/height, resize mode, quality, and format, and the transformed image is rendered at serve time from the original object.
+
+**How it works.** The storage-api container implements it: transform requests hit special /render/image endpoints, and storage-api proxies the actual processing to a separate imgproxy container (which must stay network-internal, never publicly exposed). Client SDKs expose a `transform` option on `getPublicUrl()`, `createSignedUrl()`, and `download()`; for signed URLs the transform params are embedded in the signed token and immutable afterward. Options: width/height (1-2500 px), resize modes cover (default)/contain/fill, quality 20-100 (default 80), and `format: 'origin'` to disable the automatic WebP conversion done for supporting browsers. Limits: 25MB source image, 50MP resolution; source formats include PNG/JPEG/WebP/AVIF/GIF/SVG/BMP/TIFF. Self-hosted enablement is two env knobs on storage-api (ENABLE_IMAGE_TRANSFORMATION=true, IMGPROXY_URL=<internal imgproxy>) plus imgproxy tuning vars (e.g. IMGPROXY_ENABLE_WEBP_DETECTION=true, IMGPROXY_JPEG_PROGRESSIVE=true). On Supabase Cloud it is gated to Pro plan and above and billed per 1,000 origin images; that gating does not exist self-hosted. Official docs also show a custom Next.js image loader pattern that builds transformation URLs.
+
+**Components:** storage-api container (render endpoints, ENABLE_IMAGE_TRANSFORMATION + IMGPROXY_URL); imgproxy container (actual image processing, internal-only); supabase-js storage client (`transform` option on getPublicUrl/createSignedUrl/download)
+
+**Self-hosted availability.** Fully available self-hosted with no cloud account: the open-source docker bundle ships an imgproxy container, and storage-api enables the feature via ENABLE_IMAGE_TRANSFORMATION=true and IMGPROXY_URL pointing at the internal imgproxy. The Pro-plan requirement and per-1,000-image billing apply only to Supabase Cloud.
+
+**Our stack.** Ground truth lists the implementing service among "Containers RUNNING: ... storage (storage-api, STORAGE_BACKEND=s3 ...), imgproxy, ...", but app usage is "Storage API (list/upload/signedUrl/move/remove on private buckets)" — no transform option is used anywhere, so the imgproxy service is up while the feature goes unused.
+
+**Value for MarketingHub (1/3).** Marginal: MarketingHub stores marketing assets in private buckets, so thumbnails in the in-app Storage browser and resized/optimized images for blasts would be a nice polish, but nothing on the roadmap (competitor-intel/pgvector, queues/cron consolidation, console parity, hardening) needs image resizing.
+
+**Caveats.** Unverified in our repo: whether our storage container sets ENABLE_IMAGE_TRANSFORMATION=true and IMGPROXY_URL (imgproxy running strongly suggests the stock compose wiring, but the env was not repo-verified; if unset, adoption is still S — two env vars + restart). Version risk is low: the feature is long-GA and predates our v1.26.05 bundle pin; `format: 'origin'` needs supabase-js >= 2.2.0 and we run ^2.110.0. Transforms on signed URLs work on private buckets (params baked into the token), which matches our private-bucket + signedUrl usage. Not confirmed: exact imgproxy/storage-api component versions in our pinned bundle, and whether AVIF output or newer options require a newer storage-api than v1.26.05 ships.
+
+Docs: <https://supabase.com/docs/guides/storage/serving/image-transformations> · <https://github.com/supabase/supabase/blob/master/apps/docs/content/guides/storage/serving/image-transformations.mdx> · <https://supabase.com/features/image-transformations>
+
+### Resumable uploads
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Lets clients upload large files to Supabase Storage in chunks that can be paused and resumed after network interruptions, with progress events. Recommended for files over 6MB; on the cloud Pro plan it supports files up to 50GB. It is an implementation of the open TUS resumable-upload protocol, so any TUS client (tus-js-client, Uppy, tus-py-client, etc.) works against it.
+
+**How it works.** The storage-api service embeds tus-node-server and exposes a TUS endpoint at /storage/v1/upload/resumable (reachable through Kong in self-hosted, or the dedicated storage hostname on cloud). Clients send the file in fixed 6MB chunks ("do not change it") with Authorization: Bearer <token>; TUS metadata carries bucketName, objectName, contentType, cacheControl, and optional custom metadata. An x-upsert:true header allows overwrite (otherwise concurrent uploads to the same path get 409 Conflict), and x-signature supports time-limited signed upload tokens from createSignedUploadUrl. Each upload URL is valid for up to 24 hours. Internally storage-api takes Postgres advisory locks per object so multiple storage instances can process chunks without corrupting the S3 object, then assembles the file on the S3 backend. No Postgres extension, GoTrue, or cloud control plane involvement — it is entirely a storage-api feature.
+
+**Components:** storage-api container (embedded tus-node-server); Kong gateway route /storage/v1/upload/resumable; Postgres (advisory locks + upload bookkeeping); S3 storage backend; TUS client library (tus-js-client / Uppy) on the caller side
+
+**Self-hosted availability.** The supabase.com/features/resumable-uploads page lists self-hosted availability as "Yes". The TUS server ships inside the open-source storage-api container in the docker bundle; the /storage/v1/upload/resumable path is served behind Kong with no cloud control-plane dependency. The 50GB figure is a cloud Pro-plan quota; self-hosted limits are governed by your own storage-api file-size config.
+
+**Our stack.** Ground truth: containers RUNNING include "storage (storage-api, STORAGE_BACKEND=s3 to a real KMS-encrypted S3 bucket)", so the TUS endpoint is up as part of storage-api; but app usage is only "Storage API (list/upload/signedUrl/move/remove on private buckets)" via supabase-js standard uploads — no TUS client anywhere, so resumable uploads are never invoked.
+
+**Value for MarketingHub (1/3).** MarketingHub's uploads are server-side (Next.js service-role client) marketing assets on private buckets; nothing in the roadmap (competitor-intel/pgvector, SMS outbox, console parity, hardening) needs large-file resilience. Only becomes useful if large media (e.g. video creative) uploads start failing over the current single-shot path.
+
+**Caveats.** Exact storage-api version inside our supabase/supabase v1.26.05 bundle is unverified, though the feature GA'd in Storage v3 (2023) so it is almost certainly present; the TUS route's reachability through our Kong config has not been tested in-deployment. Chunk size is fixed at 6MB and upload URLs expire after 24h; concurrent uploads to one path 409 unless x-upsert. supabase-js does not speak TUS itself — adopting this means adding tus-js-client/Uppy; server-side adoption is trivial (S), but browser-direct uploads would need signed upload tokens plus exposing the Kong storage path through the Cognito ALB (closer to M). Self-hosted max file size is set by our storage-api config, not the cloud 50GB quota.
+
+Docs: <https://supabase.com/docs/guides/storage/uploads/resumable-uploads> · <https://supabase.com/blog/storage-v3-resumable-uploads> · <https://supabase.com/features/resumable-uploads>
+
+### S3 compatibility
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** Supabase Storage speaks a subset of the AWS S3 wire protocol, so standard S3 tooling (AWS CLI, rclone, Cyberduck, boto3, ETL tools) can list/upload/download/copy/delete buckets and objects in Supabase Storage. It is interoperable with the regular Storage REST API and resumable (TUS) uploads — a file uploaded via S3 can be listed via REST and vice versa. Launched public alpha April 2024, now GA.
+
+**How it works.** Implemented entirely by the storage-api container (github.com/supabase/storage), which exposes an S3-protocol listener at /storage/v1/s3, routed through Kong like the rest of the Storage API. Requests use AWS Signature v4 with two auth modes: (1) provisioned S3 access keys — full access to all buckets, bypasses RLS, server-side only (generated in the cloud dashboard on the platform; on self-hosted, set via S3_PROTOCOL_ACCESS_KEY_ID / S3_PROTOCOL_ACCESS_KEY_SECRET plus REGION env vars on the storage service, with STORAGE_TENANT_ID used as the access-key ID for session-token mode); (2) an S3 session token carrying a user JWT, which scopes operations through RLS policies. The protocol endpoint is independent of the storage backend — it works whether storage-api persists to local files or to a real S3 bucket (STORAGE_BACKEND=s3). Object metadata still lives in the Postgres storage schema, so S3-protocol writes stay consistent with REST-API views. Most common bucket/object/multipart operations are implemented; versioning, ACLs, tagging, object lock, lifecycle rules, CORS config, and SSE settings are not.
+
+**Components:** storage-api container (S3 listener at /storage/v1/s3); Kong gateway route; Postgres storage schema (object metadata); cloud dashboard S3-keys page (cloud) / S3_PROTOCOL_* env vars (self-hosted)
+
+**Self-hosted availability.** Fully available in the open-source docker bundle with no cloud account: the storage container serves /storage/v1/s3 once REGION, S3_PROTOCOL_ACCESS_KEY_ID and S3_PROTOCOL_ACCESS_KEY_SECRET are set (stock docker-compose wires these from .env). Works with any storage backend, including default file storage. Only the dashboard-based access-key management is cloud; self-hosted keys are static env-var credentials.
+
+**Our stack.** Ground truth: containers RUNNING include "storage (storage-api, STORAGE_BACKEND=s3 to a real KMS-encrypted S3 bucket)" — the container that implements the S3 protocol endpoint is up. But app usage is "Storage API (list/upload/signedUrl/move/remove on private buckets)" via supabase-js, i.e. the REST API only; no S3-protocol client appears anywhere in the app usage list.
+
+**Value for MarketingHub (1/3).** Marginal: the app's Storage needs are fully covered by supabase-js REST calls, and for raw bulk access we already own the backing KMS-encrypted S3 bucket directly. The one real use is metadata-consistent bulk ingest/sync (rclone/AWS CLI) — e.g. seeding documents for the planned competitor-intel RAG module — since writing to the backing bucket directly would desync storage-api's Postgres metadata.
+
+**Caveats.** Feature shipped public alpha April 2024, so any 2025+ storage-api image has it — our bundle (tag v1.26.05, cloned 2026-07) is comfortably newer, though the exact storage image version is unverified. Unverified whether S3_PROTOCOL_ACCESS_KEY_ID/SECRET are actually set in our .env; if the stock compose defaults are absent the endpoint is effectively unconfigured (status would be closer to available-unused). Security notes for our HIPAA-adjacent posture: self-hosted S3 access keys are static full-access credentials that bypass RLS (moot for us — the app already uses service_role — but it is another secret to rotate), and JWT session-token auth is unusable for us since GoTrue is unused and no user JWTs exist. Protocol gaps: no versioning, ACLs, tagging, object lock, lifecycle, CORS, or SSE configuration through the S3 endpoint.
+
+Docs: <https://supabase.com/docs/guides/storage/s3/compatibility> · <https://supabase.com/docs/guides/self-hosting/self-hosted-s3> · <https://supabase.com/docs/guides/storage/s3/authentication> · <https://supabase.com/blog/s3-compatible-storage>
+
+### Vector Buckets
+
+`Public Alpha` · self-hosted: **partial** · ours: **available-unused** · value **1/3** · effort **M** · verified
+
+**What it is.** Vector Buckets are a new bucket type in Supabase Storage for holding vector embeddings, with built-in k-NN similarity search. Instead of keeping embeddings in Postgres (pgvector), they live in S3-backed object storage that can hold tens of millions of vectors per index with cosine/euclidean distance and metadata filtering. Launched Public Alpha on 2025-12-01 as a complement to pgvector for large-scale or cold-tier embedding workloads.
+
+**How it works.** Implemented in the storage-api service: it exposes vector routes (src/http/routes/vector) for creating vector buckets, defining named indexes (dimension + distance metric), putting vectors in batches of up to 500, and running similarity queries with metadata filters. storage-api does not index vectors itself — it fronts Amazon S3 Vectors buckets, which provide the actual indexed storage and k-NN search; on the hosted platform Supabase provisions these (5 AWS regions at launch). It is feature-flagged via env: VECTOR_ENABLED (default off), VECTOR_S3_BUCKETS (comma list of pre-provisioned S3 vector bucket names), VECTOR_BUCKET_REGION, VECTOR_MAX_BUCKETS (10), VECTOR_MAX_INDEXES (20). Clients use supabase-js supabase.storage.vectors.* or the REST API; SQL access from Postgres is possible via the separate s3_vectors foreign data wrapper in the Wrappers extension. Support first shipped in storage-api v1.29.0 (2025-11-06); a backend-independent "local vector buckets" mode only arrived in v1.59.0 (2026-05-26).
+
+**Components:** storage-api (vector routes, VECTOR_* env flags); Amazon S3 Vectors bucket (backing index/search engine); supabase-js storage.vectors client; s3_vectors FDW in Wrappers extension (optional SQL access); cloud control plane (hosted provisioning/dashboard only)
+
+**Self-hosted availability.** The vector API ships in the open-source storage-api image (since v1.29.0) gated behind VECTOR_ENABLED, so no Supabase cloud account is technically required — but Supabase's official feature page marks Vector Buckets self-hosted "N/A" (undocumented/unsupported), and at storage-api versions before v1.59.0 the only backend is a real AWS S3 Vectors bucket you provision yourself (it cannot use MinIO/file backends). Self-host works only off-matrix: enable the env flags and point at your own S3 Vectors bucket, or upgrade storage-api to >=v1.59.0 for local vector buckets.
+
+**Our stack.** Ground truth: "storage (storage-api, STORAGE_BACKEND=s3 to a real KMS-encrypted S3 bucket)" is RUNNING, and "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." Our bundle is "pinned at git tag v1.26.05"; that tag's compose pins supabase/storage-api:v1.48.26 (verified from the tag, resolving the reviewer concern), which contains the vector routes (landed v1.29.0) but ships them disabled — the compose sets no VECTOR_* env vars, and our deployment enables nothing vector-related. Code present in the bundled image, feature-flag off, app doesn't use it = available-unused, not cloud-only-na (no Supabase control plane needed) and not absent (it is in the image).
+
+**Value for MarketingHub (1/3).** The roadmap's competitor-intel RAG module is explicitly planned on pgvector, which is already pre-baked in our Postgres image and fits an internal tool's small-to-medium embedding volume. Vector Buckets only pay off at tens-of-millions-of-vectors scale or as a cold tier, and the feature is Public Alpha, officially unsupported self-hosted, and adds an AWS S3 Vectors dependency. At most a future overflow tier if competitor-intel embeddings grow unexpectedly.
+
+**Caveats.** Reviewer concern resolved: the v1.26.05 bundle's compose verifiably pins storage-api v1.48.26 (tag contents checked 2026-08-07), vindicating the prior draft's version claim; sibling entries calling the version "unverified" can be updated. Unverified: whether the container actually running on our EC2 matches the compose pin (bundle cloned at first boot, not inspected on-box). Our v1.48.26 predates "local vector buckets" (v1.59.0) and later vector fixes (e.g. env-parsing fix v1.67.12), so enabling it at our pin requires provisioning a real AWS S3 Vectors bucket + IAM in us-east-1 and setting VECTOR_ENABLED/VECTOR_S3_BUCKETS/VECTOR_BUCKET_REGION. Official availability matrix marks self-hosted N/A — no docs or support for this path, and Public Alpha means breaking-change risk. Also unverified: whether our Kong config at v1.26.05 routes the /vector paths, whether supabase-js ^2.110.0 includes storage.vectors, and whether our supabase/postgres image's Wrappers version includes the s3_vectors FDW.
+
+Docs: <https://supabase.com/blog/vector-buckets> · <https://supabase.com/docs/guides/storage/vector/introduction> · <https://supabase.com/features/vector-buckets> · <https://raw.githubusercontent.com/supabase/supabase/v1.26.05/docker/docker-compose.yml> · <https://github.com/supabase/storage/releases> · <https://raw.githubusercontent.com/supabase/storage/v1.48.26/src/config.ts>
+
+### Content Delivery Network
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** A global edge-caching layer that Supabase places in front of Storage on its hosted platform, so files uploaded to Storage are cached on geographically distributed nodes near users instead of always being served from the project's origin region. It reduces latency for large/static assets and shields the origin storage server. A "Smart CDN" tier (Pro plan+) adds automatic cache invalidation when objects change.
+
+**How it works.** It is implemented by Supabase's cloud infrastructure — specifically Cloudflare's network fronting each hosted project — not by any container in the open-source stack. Requests for Storage objects route to the nearest CDN node; on a miss the node fetches from the origin storage-api in the project's region and caches it (status visible in the cf-cache-status header: HIT/MISS). Public-bucket objects cache best because no per-user authorization is needed; private buckets check permissions per user, hurting hit rates, and each unique signed-URL token is a distinct cache entry. The main app-side knob is the cacheControl option on upload, which storage-api stores and emits as the Cache-Control header (default browser TTL ~1 hour). Smart CDN (Pro plan and above) syncs asset metadata to the edge and auto-invalidates cache within ~60s of updates/deletes, including transformed images.
+
+**Components:** Cloudflare edge network (Supabase cloud infrastructure); storage-api (origin; stores/serves cacheControl metadata); Supabase cloud control plane (Smart CDN metadata sync/invalidation)
+
+**Self-hosted availability.** The docker bundle contains no CDN component; the CDN is Cloudflare fronting Supabase-hosted projects, and the feature page notes it "Requires Cloudflare." Self-hosters can approximate it by putting their own CDN (CloudFront/Cloudflare) in front of Kong — storage-api does emit Cache-Control headers from the upload cacheControl option — but Supabase's CDN and Smart CDN invalidation logic cannot exist in a self-hosted deployment.
+
+**Our stack.** "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle ... No Supabase cloud account or control plane is involved anywhere." Storage is served directly by the storage container (STORAGE_BACKEND=s3) behind Kong in private subnets; no CDN exists or can exist here without Supabase cloud.
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal single-region tool behind a Cognito ALB in private subnets, using private buckets with signed URLs (worst-case CDN cacheability); no global audience exists and nothing on the roadmap (competitor-intel/pgvector, queues/cron overlap, console parity, hardening) needs edge caching.
+
+**Caveats.** Bundle version (v1.26.05) is irrelevant since the CDN is not shippable in the self-hosted stack; only the origin-side cacheControl/Cache-Control behavior of storage-api applies locally and its exact version in our bundle is unverified. Smart CDN specifics (Pro-plan gating, ~60s invalidation) apply to the hosted platform only. Could not confirm any official self-hosted CDN recipe in supabase.com/docs/guides/self-hosting — none appears to exist.
+
+Docs: <https://supabase.com/docs/guides/storage/cdn/fundamentals> · <https://supabase.com/features/cdn> · <https://supabase.com/docs/guides/storage/cdn/smart-cdn>
+
+### Smart Content Delivery Network
+
+`GA` · self-hosted: **cloud-only** · ours: **cloud-only-na** · value **0/3** · effort **N/A** · verified
+
+**What it is.** Supabase's smarter edge-caching tier for Storage on the hosted platform: files served from Storage are cached on Supabase's global (Cloudflare-based) CDN, and when a file is updated or deleted the cached copies are automatically invalidated and revalidated worldwide within about 60 seconds. It lets assets sit in edge caches long-term without ever serving stale content, cutting origin load and egress.
+
+**How it works.** On the hosted platform every project's Storage endpoint sits behind Supabase's Cloudflare edge. The storage-api server emits webhook events on object changes (ObjectCreated:Put, ObjectRemoved:Delete, etc.); a Supabase-cloud cache-manager service consumes these and syncs asset metadata/ETags to a global key-value store that the edge workers consult on each request, so stale cache entries are revalidated globally within ~60s. Cache keys for public URLs are normalized (query strings ignored except cacheNonce), while each signed-URL token gets its own cache entry. Browser-side TTL is set via the cacheControl option at upload; a cacheNonce query param forces a cache bypass. There is no user-facing config: it is enabled automatically for Pro Plan projects and above. The edge workers, KV metadata store, and cache-manager are proprietary cloud components; only the webhook emission side (storage-api WEBHOOK_URL/PG_QUEUE_* config) is open source.
+
+**Components:** Supabase cloud edge network (Cloudflare workers + global KV metadata store); Supabase cloud cache-manager service (consumes storage webhook events); storage-api (emits object-change webhook events; open-source side only)
+
+**Self-hosted availability.** No CDN, edge worker, KV store, or cache-manager component ships in the docker bundle at any version; the Smart CDN is Supabase-cloud data-plane infrastructure auto-enabled on Pro plan+. The official features page does mark it availableOnSelfHosted:true, but with selfHostedTooling 'Cloudflare' — i.e., put your own Cloudflare in front and build your own invalidation against storage-api's WEBHOOK_URL events; that is a DIY re-implementation, not the feature. This resolves the reviewer's flag: the correct classification is cloud-only (matching the sibling 'Content Delivery Network' entry, which carries the identical status block in features.tsx), and the previous 'partial' was based on misreading that marketing flag.
+
+**Our stack.** Ground truth: "MarketingHub ... runs SELF-HOSTED Supabase: the open-source supabase/supabase docker bundle pinned at git tag v1.26.05 ... No Supabase cloud account or control plane is involved anywhere." The Smart CDN requires Supabase's cloud edge/data plane, so it cannot exist in our deployment; nothing CDN-shaped runs in front of our stack (single EC2 in private subnets behind a Cognito ALB).
+
+**Value for MarketingHub (0/3).** MarketingHub is an internal tool in private subnets serving a small Cognito-gated user base via signed URLs on private buckets; there is no global asset-delivery or edge-caching need, and no roadmap item (competitor-intel/pgvector, queues/cron overlap, console parity, hardening) touches CDN. If edge caching were ever needed, CloudFront in front of the ALB would be the AWS-native path, not Supabase's CDN.
+
+**Caveats.** Bundle version (v1.26.05) is irrelevant to availability: no version of the docker bundle ships any Smart CDN component, so this is not a version gap. The official features page's 'available on self-hosted (tooling: Cloudflare)' flag is misleading — verified in features.tsx that it means bring-your-own-Cloudflare DIY, identical to the plain CDN entry. If we ever wanted equivalent behavior, self-hosted storage-api does expose WEBHOOK_URL/PG_QUEUE_* object-change events that a custom invalidator could consume (unverified whether our pinned storage-api version has this enabled; PG_QUEUE_ENABLE defaults to false). Cloud-side the feature is Pro-plan-and-above only.
+
+Docs: <https://supabase.com/docs/guides/storage/cdn/smart-cdn> · <https://supabase.com/docs/guides/storage/cdn/fundamentals> · <https://supabase.com/blog/storage-image-resizing-smart-cdn> · <https://raw.githubusercontent.com/supabase/supabase/master/apps/www/data/features.tsx> · <https://supabase.com/docs/guides/self-hosting> · <https://raw.githubusercontent.com/supabase/storage/master/.env.sample>
+
+## Studio features
+
+Stock Studio runs behind the Cognito ALB, but the team's day-to-day admin surface is the homegrown, audited in-app console — the SQL Editor path (postgres-meta /query) is live, and most Studio conveniences (FK selector, Policy Templates, Visual Schema Designer, User Impersonation) sit on the console-parity not-built list at value 1 or below. The standout is the Security & Performance Advisor: value-2, effort-S database lints that would mechanically back up the RLS deploy gate and the platform-hardening interest.
+
+### Security & Performance Advisor
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **2/3** · effort **S** · verified
+
+**What it is.** A pair of dashboard tools (Security Advisor and Performance Advisor, under Database/Advisors in Studio) that scan a project's Postgres database for security misconfigurations and performance problems — e.g. tables without RLS, views exposing auth.users, unindexed foreign keys, duplicate indexes, inefficient RLS policies. Each finding comes with a severity level, rationale, and remediation steps. Launched GA April 2024.
+
+**How it works.** The advisors are a Studio UI feature, not a control-plane service: Studio runs a set of open-source SQL lint queries against the project database and renders the results. The rules live in supabase/splinter ("Supabase Postgres linter") — pure SQL views/queries (29 lints, 0001–0028, severity ERROR/WARN/INFO, categories SECURITY/PERFORMANCE) that inspect pg_catalog, schema definitions, grants, and RLS policies; a single consolidated splinter.sql at the repo root runs standalone on any Postgres 15+. API-exposure lints read the pgrst.db_schemas setting to know which schemas PostgREST exposes (defaulting to public). Index recommendations are powered by the separate open-source index_advisor Postgres extension, which is pre-baked in the supabase/postgres image. Lints run automatically when the Advisors page is opened, with manual re-run; rules can be disabled/customized per project; remediation is manual SQL. Because the lints are plain SQL, Supabase also documents running them in CI/CD pipelines.
+
+**Components:** Studio dashboard (Database → Advisors UI); splinter SQL lint suite (github.com/supabase/splinter, plain SQL, PG15+); index_advisor Postgres extension (index recommendations); postgres-meta query path (Studio's SQL execution route)
+
+**Self-hosted availability.** The official feature page states "Available on self-hosted: Yes." The self-hosted Studio container ships the Advisors pages, and the underlying splinter lints are open-source SQL you can run against any Postgres 15+ database (or in CI) with no cloud account. index_advisor is bundled in the supabase/postgres image. Only the hosted-platform niceties (e.g. advisor email notifications) don't exist self-hosted.
+
+**Our stack.** The stock Studio container — which carries the Advisors UI — is running: "Containers RUNNING: ... studio (behind the Cognito ALB)". But nothing uses it and our own console explicitly lacks the feature: "NOT built: Policy Templates, Visual Schema Designer, User Impersonation, Security/Performance Advisor, FK-selector UI. (The stock Studio container also runs, separately, behind the Cognito ALB.)"
+
+**Value for MarketingHub (2/3).** Cheap wins for a HIPAA-adjacent posture with stated "platform hardening interest": performance lints (unindexed FKs, duplicate indexes) and the rls_disabled lint mechanically back up the existing RLS deploy gate, and splinter.sql could run in CI. Value is capped because the app is service_role-only behind Cognito — many security lints (auth.users exposure, RLS policy quality, anon-role checks) target a PostgREST/anon exposure model we don't have, so findings need triage as advisory, not authoritative.
+
+**Caveats.** Feature GA'd April 2024, well before our v1.26.05 bundle (cloned 2026-07), so the Advisors pages should be present in our Studio — but the exact Studio version and which splinter lint revision it embeds are unverified; newer lints (e.g. 0023 sensitive_columns_exposed) may need a newer Studio image. splinter requires Postgres 15+ (we run PG17, fine). index_advisor is pre-baked in the supabase/postgres image but is not in our enabled-extensions list; the Performance Advisor's index recommendations may require enabling it (unverified). Hosted-platform advisor email notifications are cloud-only. Not confirmed hands-on that every lint renders correctly in self-hosted Studio (community reports and the official "self-hosted: Yes" line are the basis).
+
+Docs: <https://supabase.com/docs/guides/database/database-advisors> · <https://supabase.com/features/security-and-performance-advisor> · <https://supabase.com/blog/security-performance-advisor> · <https://github.com/supabase/splinter>
+
+### SQL Editor
+
+`GA` · self-hosted: **yes** · ours: **live** · value **2/3** · effort **S** · verified
+
+**What it is.** A browser-based interface in Supabase Studio for writing and running arbitrary SQL against your Postgres database. It provides syntax highlighting, autocomplete, saved/shareable query snippets, CSV export of results, and (in newer versions) an AI assistant that generates and explains SQL.
+
+**How it works.** The editor is implemented in the Studio UI (Monaco-based editor in the dashboard's Next.js app). When you run a query, Studio sends the raw SQL to postgres-meta — a RESTful service for managing Postgres that exposes a POST /query endpoint (plus /format and /parse) — which executes it against the database as a privileged role. In self-hosted deployments this path is routed through Kong at /pg/*. Query snippets are persisted so they can be re-run and shared; cloud adds team/project snippet sharing via the control plane, which is limited when self-hosting. The AI-assistant layer is optional and, in self-hosted Studio, requires supplying an OPENAI_API_KEY. postgres-meta itself has no built-in auth ("Please don't use this as a standalone server"), so access control relies on the gateway/dashboard in front of it.
+
+**Components:** Studio UI (dashboard SQL Editor); postgres-meta service (POST /query, /format, /parse); Kong gateway route /pg/* (self-hosted)
+
+**Self-hosted availability.** The docker bundle ships both the studio and meta (postgres-meta) containers, so the SQL Editor works fully offline from Supabase cloud. Minor gaps: cross-project/team snippet sharing is cloud-account-bound ("Shared SQL Snippets may not be fully supported in self-hosted environments"), and the AI assistant needs your own OpenAI key.
+
+**Our stack.** Ground truth: containers running include "studio (behind the Cognito ALB)" and "meta (postgres-meta, reachable via Kong /pg/*)"; app usage includes "postgres-meta /pg/* including POST /query = arbitrary SQL (powers our in-app console)"; and the in-app console has a Studio-parity "SQL Editor (read-write; write-confirm handshake + query audit)". Unlike GoTrue, Studio is not flagged unused.
+
+**Value for MarketingHub (2/3).** Core operational tool already in active use: the postgres-meta /query path powers the audited in-app SQL console, and stock Studio provides a fallback admin surface. Valuable for ongoing console-parity work and for setting up pgvector for the competitor-intel module, but it is table-stakes admin tooling, not a roadmap differentiator.
+
+**Caveats.** SQL Editor is long-standing GA and present in our v1.26.05 pin, but the exact studio/postgres-meta container versions in our clone are unverified; newer Studio features (AI assistant, result charts) may postdate our pin, and the AI assistant additionally requires an OPENAI_API_KEY we have no evidence of configuring. Shared/team snippets are cloud-limited when self-hosting. postgres-meta's /query runs arbitrary SQL with no per-statement authz (upstream README warns against standalone exposure) — in our deployment that risk is mitigated only by Kong admin ports being loopback-only and the Cognito ALB plus the in-app console's write-confirm + query audit. Studio's Logs/Reports tabs are inert in our deployment (no analytics/vector), but that does not affect the SQL Editor.
+
+Docs: <https://supabase.com/features/sql-editor> · <https://supabase.com/docs/guides/database/overview> · <https://supabase.com/docs/guides/self-hosting/docker> · <https://github.com/supabase/postgres-meta>
+
+### Foreign Key Selector
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** A Supabase Studio (dashboard) convenience for working with foreign keys visually. In the Table Editor's row editor you can pick the referenced row from the target table via a selector panel instead of typing the key value by hand, and jump to the referenced record from the grid ("View referencing record"). Studio's table/column side panel also lets you create and edit FK constraints (including composite FKs and cascade actions) without writing SQL.
+
+**How it works.** Implemented entirely in the Studio UI (the Next.js dashboard) — no Postgres extension, GoTrue, or cloud control plane involved. When a column has a FK constraint, the row insert/edit panel renders a record picker that queries the referenced table so you select a row rather than enter its key manually (shipped in Studio 2.0, Dec 2022). FK constraint management lives in the table side panel, covering all columns' FKs in one place; composite-FK support was added later (supabase/supabase PR #21078). Under the hood Studio reads constraint/schema metadata and executes the resulting DDL through postgres-meta (the same /pg/* API exposed via Kong) and reads candidate rows for the picker from the database. There are no config knobs; it works against any standard Postgres foreign key.
+
+**Components:** Studio dashboard UI (Table Editor row editor + table side panel); postgres-meta service (schema/DDL backend for Studio)
+
+**Self-hosted availability.** Studio and postgres-meta both ship in the open-source docker bundle; the feature is pure Studio-UI-over-postgres-meta with no cloud dependency, and the official feature page explicitly lists self-hosted support.
+
+**Our stack.** Ground truth: "Containers RUNNING: ... studio (behind the Cognito ALB)" — so the FK selector is up and reachable in stock Studio — but our actual daily tool is the in-app console, where it is explicitly a gap: "NOT built: Policy Templates, Visual Schema Designer, User Impersonation, Security/Performance Advisor, FK-selector UI. (The stock Studio container also runs, separately, behind the Cognito ALB.)" The app itself talks to PostgREST/Storage with service_role and never uses Studio.
+
+**Value for MarketingHub (1/3).** Minor admin convenience only. Schema/FK changes for MarketingHub happen via SQL/migrations, and the app does not need it. Its only roadmap relevance is "Console parity work ongoing" — FK-selector UI is on the explicit not-built list for the in-app console, so this catalogs a known parity gap rather than a new capability; no bearing on the competitor-intel/pgvector priority.
+
+**Caveats.** Feature is long-standing (row picker since Studio 2.0, Dec 2022; composite-FK editing ~2024), so our bundle at git tag v1.26.05 (cloned 2026-07) certainly includes it, though the exact Studio container version is unverified. The effort=S reflects it already working in our running stock Studio (zero work); replicating an FK-selector in the homegrown in-app console for parity would be closer to M. The main docs guide (database/tables) documents FKs only via SQL and does not describe the selector; the feature page is marketing-level, so mechanics above are partly inferred from the Studio 2.0 blog and Studio's known postgres-meta architecture.
+
+Docs: <https://supabase.com/features/foreign-key-selector> · <https://supabase.com/blog/supabase-studio-2.0> · <https://supabase.com/docs/guides/database/tables> · <https://github.com/supabase/supabase/pull/21078>
+
+### Policy Templates
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** A Studio (dashboard) convenience feature: a searchable library of pre-written Row Level Security policy snippets (e.g. "users can only view their own rows", public read, authenticated-only insert) that you can pick when creating a policy, instead of writing CREATE POLICY SQL from scratch. It covers general table RLS policies plus specialized template sets for Storage buckets, Realtime, and pgmq queues.
+
+**How it works.** Implemented entirely in the Studio UI — templates are hardcoded TypeScript constants in the Studio codebase (apps/studio/components/interfaces/Database/Policies/Policies.constants.ts, rendered by PolicyEditorPanel/PolicyTemplates.tsx; a parallel set exists for Storage under StoragePolicies/PolicyTemplates). On the Database > Policies page (or Storage policies editor), choosing a template pre-fills a parameterized CREATE POLICY statement with the selected schema/table substituted in; the schema determines which template set is offered (general vs realtime vs pgmq queues). The user edits the SQL, then Studio executes it against Postgres via postgres-meta, producing an ordinary pg_policy row. There is no server-side service, API, or config knob — no state beyond the resulting Postgres policy. Most general templates assume Supabase Auth conventions (auth.uid()/auth.jwt() from GoTrue-issued JWTs).
+
+**Components:** Studio UI (Database > Policies policy editor, template constants in apps/studio); Studio Storage policies editor (separate template set); postgres-meta (executes the generated CREATE POLICY SQL against Postgres)
+
+**Self-hosted availability.** Templates are client-side constants baked into the studio container shipped in the open-source docker bundle; the feature page explicitly states it is available on self-hosted. Requires only Studio + postgres-meta + Postgres, all present in the bundle — no cloud control plane involved.
+
+**Our stack.** "NOT built: Policy Templates, Visual Schema Designer... (The stock Studio container also runs, separately, behind the Cognito ALB.)" — the feature is up and reachable in the running stock Studio, but our in-app console deliberately omits it and "the app bypasses [RLS] via service_role; the Cognito group marketing is the real authz boundary."
+
+**Value for MarketingHub (1/3).** RLS is required by our deploy gate but functionally bypassed (service_role only, Cognito is the real boundary), so templates only speed up writing gate-satisfying boilerplate policies. Marginal convenience; it is on the console-parity "NOT built" list but nothing on the roadmap (competitor-intel/pgvector, queues, hardening) depends on it. Also most templates assume auth.uid() JWT claims we never issue (GoTrue unused).
+
+**Caveats.** Core general/storage templates have shipped in Studio for years and should exist at our v1.26.05 pin, but the exact template set at that tag is unverified; the pgmq-queue and Realtime template variants are newer and may be absent or differ in our pinned Studio. Queue templates additionally require pgmq (not enabled in our SQL). Most general templates reference auth.uid()/auth.jwt(), which are meaningless in our deployment since the app authenticates via Cognito and hits PostgREST with service_role (RLS bypassed). Effort S assumes using the already-running stock Studio; replicating templates inside our in-app console would be M.
+
+Docs: <https://supabase.com/features/policy-templates> · <https://supabase.com/docs/guides/database/postgres/row-level-security> · <https://github.com/supabase/supabase/blob/master/apps/studio/components/interfaces/Database/Policies/PolicyEditorPanel/PolicyTemplates.tsx> · <https://github.com/supabase/supabase/blob/master/apps/studio/components/interfaces/Database/Policies/Policies.constants.ts>
+
+### Visual Schema Designer
+
+`GA` · self-hosted: **yes** · ours: **running-unused** · value **1/3** · effort **S** · verified
+
+**What it is.** An interactive entity-relationship canvas built into Supabase Studio (Database > Schema Visualizer) that renders your Postgres tables, columns, and foreign-key relationships as a draggable diagram. Originally a read-only visualizer (Studio 3.0, Aug 2023, community-contributed and inspired by zernonia's supabase-schema tool); a June 2026 update added editing tables directly on the canvas, which is what the marketing name "Visual Schema Designer" reflects. It targets designing/understanding one schema at a time without writing SQL.
+
+**How it works.** It is implemented entirely in the Studio dashboard UI (the Next.js studio container) — no Postgres extension, no cloud control plane. Studio fetches table/column/foreign-key metadata through the postgres-meta service (the same /pg/* API exposed via Kong) and renders it as a node graph (React-Flow-style canvas), one schema at a time via a schema picker. Users drag nodes to arrange the layout; positions persist only in the browser's localStorage, and export is limited to a flat image. As of the June 2026 Studio update, tables can be created/edited directly on the canvas — those edits issue DDL through postgres-meta against the database, same as the Table Editor. There are no server-side config knobs; access control is whatever fronts Studio (in our case the Cognito ALB).
+
+**Components:** Studio dashboard UI (schema visualizer page); postgres-meta service (schema metadata reads + DDL writes via Kong /pg/*)
+
+**Self-hosted availability.** Ships inside the open-source Studio container in the docker bundle; needs only the meta (postgres-meta) container alongside it, both of which are part of the standard self-hosted compose stack. The official feature page explicitly lists self-hosted availability. No cloud account or control plane involved.
+
+**Our stack.** Ground truth: "(The stock Studio container also runs, separately, behind the Cognito ALB.)" — so the feature is deployed and reachable — but our tooling deliberately excludes it: "NOT built: Policy Templates, Visual Schema Designer, User Impersonation, Security/Performance Advisor, FK-selector UI"; the in-app console has only read-only "Schema + RLS-policies viewers". Both required services run ("meta (postgres-meta, reachable via Kong /pg/*)", "studio (behind the Cognito ALB)"), but nothing indicates the visualizer is part of any workflow.
+
+**Value for MarketingHub (1/3).** Nice-to-have dev ergonomics only: MarketingHub's schema evolves via repo SQL migrations with an RLS deploy gate, and the in-app console already has a read-only Schema viewer. No roadmap item (competitor-intel/pgvector, SMS outbox, hardening) depends on visual schema design; the stock Studio behind the ALB already covers occasional ERD needs, making console-parity work here low priority.
+
+**Caveats.** Version dependency: the read-only Schema Visualizer shipped in Studio 3.0 (Aug 2023) and is certainly in our v1.26.05 bundle, but the on-canvas table EDITING that makes it a "designer" shipped in the June 6, 2026 Studio update — our bundle was cloned 2026-07 at tag v1.26.05 with exact Studio image version unverified, so the editing capability may require a Studio image bump. Known limits: renders one schema at a time, layout saved only to browser localStorage (not shared/persisted server-side), image-only export. No dedicated supabase.com/docs guide page exists (only the feature page, blog, and changelog); the feature-page marketing (many-to-many design, "real-time collaboration") overstates what the Studio 3.0-era visualizer does. Design edits flow through postgres-meta's privileged API — in our deployment that surface is gated only by the Cognito ALB, same posture as our existing /pg/* console usage.
+
+Docs: <https://supabase.com/features/visual-schema-designer> · <https://supabase.com/blog/supabase-studio-3-0> · <https://supabase.com/changelog/46689-developer-update-june-2026>
+
+### Log Drains
+
+`GA` · self-hosted: **partial** · ours: **absent** · value **0/3** · effort **M** · verified
+
+**What it is.** Log Drains export all logs generated by the Supabase stack (Postgres, API gateway, Auth, Storage, Realtime, Edge Functions) to external observability destinations. Supported sinks include Datadog, Grafana Loki, Sentry, Axiom, Last9, AWS S3, generic HTTP endpoints, OTLP, and syslog. On the hosted platform it is a paid feature (Pro/Team/Enterprise; $60/drain/month + $0.20/M events + $0.09/GB egress) configured per project in the dashboard.
+
+**How it works.** The feature is implemented inside Logflare, Supabase's analytics/log server (the "analytics" container), not in Postgres or any data-plane service. A Vector agent collects logs from each service container and POSTs them to Logflare's ingest API (analytics:4000/api/logs). Logflare's V2 multi-backend pipeline models each drain destination as a "backend" and uses ingest-time rules to dispatch events soft-realtime as they are ingested. HTTP-based destinations receive batched POSTs (max 250 events or a 1-second flush, whichever first), with optional gzip and HTTP/1 or HTTP/2. On the hosted platform, drains are created in the cloud dashboard under Project Settings > Log Drains, where the control plane also enforces plan gating and per-drain/per-event billing; no Management API path is documented.
+
+**Components:** Logflare analytics server (V2 multi-backend pipeline + ingest-time rules); Vector log-shipping agent (container logs -> Logflare ingest API); Supabase cloud dashboard (Project Settings > Log Drains config UI, plan gating, billing)
+
+**Self-hosted availability.** The engine is the open-source Logflare server, and the launch blog states "Log Drains are fully available without restriction for local development and self-hosting." However, in the docker bundle the analytics (Logflare) + Vector services are optional and off by default, the self-hosted analytics docs document only Postgres/BigQuery storage backends with no drain destinations, and self-hosted Studio has no Project Settings > Log Drains screen. So drains are technically possible by running Logflare and hand-configuring its backends/rules, but there is no turnkey, documented self-hosted path — the polished config UI and billing/gating live in the cloud control plane.
+
+**Our stack.** "NOT RUNNING: analytics (Logflare) and the log-shipping vector agent were never enabled — Studio Logs/Reports tabs are inert; CloudWatch is the log source of truth." Log Drains are a Logflare feature, and the prerequisite Logflare/Vector services were never enabled; no drain exists anywhere in the deployment.
+
+**Value for MarketingHub (0/3).** CloudWatch is already the log source of truth and captures the stack's logs natively in AWS; a Logflare+Vector+drain pipeline would duplicate that with more moving parts. No roadmap item (competitor-intel/pgvector, queues/cron overlap, console parity, hardening) needs it — tamper-evident log archival is better served by CloudWatch export to the existing Object-Lock S3 bucket.
+
+**Caveats.** Our bundle is pinned at supabase/supabase tag v1.26.05 (cloned 2026-07) with the exact Logflare image version unverified; drain destinations expanded over 2024-2026 (Sentry, OTLP, Last9, syslog are newer additions) and the V2 multi-backend drain capability may require a newer Logflare than our pin ships. Self-hosted drain configuration is undocumented by Supabase (no Log Drains UI in self-hosted Studio; manual Logflare backend/rule config required) and I could not confirm the exact self-hosted config mechanism. Adopting it also means enabling the Logflare storage backend (self-hosted Postgres backend is explicitly "not yet optimized" for high insert volume; production guidance is BigQuery, which conflicts with our AWS-only HIPAA-adjacent posture). Pricing/plan gating applies only to the hosted platform.
+
+Docs: <https://supabase.com/docs/guides/telemetry/log-drains> · <https://supabase.com/blog/log-drains> · <https://supabase.com/blog/log-drains-now-available-on-pro> · <https://supabase.com/docs/guides/self-hosting/docker> · <https://supabase.com/docs/reference/self-hosting-analytics/introduction>
+
+## Vector features
+
+Two entries — AI Integrations and Automatic Embeddings — and both feed directly into the next major roadmap item, the competitor-intel pgvector/RAG module. Automatic Embeddings is the official pattern for keeping embeddings in sync with table content (built on pgmq/pg_cron/pg_net — note our deliberate pg_net lockdown), while AI Integrations covers wiring external embedding providers, which triggers the HIPAA-adjacent egress/BAA review before any data leaves for OpenAI or Hugging Face. The pgvector engine itself is cataloged under Database (Vector database), and the object-storage variant under Storage (Vector Buckets).
+
+### AI Integrations
+
+`GA` · self-hosted: **yes** · ours: **absent** · value **2/3** · effort **S** · verified
+
+**What it is.** "AI Integrations" is Supabase's umbrella feature for connecting apps to external AI providers, chiefly OpenAI and Hugging Face, for tasks like embeddings, completions, chat, and image generation. It is not a distinct service: it is a documented pattern of calling provider APIs from Supabase Edge Functions (or your own server code) and storing/querying the resulting embeddings in Postgres with pgvector. The docs also cover adjacent integrations (Amazon Bedrock, LangChain, LlamaIndex, vecs Python client).
+
+**How it works.** The primary conduit is the Edge Functions runtime (Deno edge-runtime container): you write a server-side TypeScript function that imports the provider SDK (e.g. openai, or HfInference from @huggingface/inference via esm.sh), reads a provider API key from function secrets/env (e.g. .env.local locally, secrets in deployment), calls the hosted inference API remotely, and returns results to the client. The AI computation happens on OpenAI/Hugging Face servers; Supabase just provides the secure serverless execution layer. For vector use cases, embeddings returned by these APIs are stored and similarity-searched in Postgres via the pgvector extension, managed with normal migrations or the vecs Python client. The Supabase CLI is used to scaffold and deploy functions on the hosted platform; on self-host, functions are volume-mounted into the functions container instead. No dedicated config knobs exist beyond function secrets (provider tokens) and CREATE EXTENSION vector.
+
+**Components:** functions container (Deno edge-runtime) making outbound OpenAI/Hugging Face API calls; pgvector Postgres extension (embedding storage + similarity search); provider SDKs (openai, @huggingface/inference) imported in function code; Supabase CLI (scaffold/deploy; self-hosted = volume-mounted functions dir); vecs Python client (optional embedding management)
+
+**Self-hosted availability.** Fully available self-hosted (the feature page explicitly lists self-hosted availability): the edge-runtime functions container ships in the docker bundle and pgvector is pre-baked in the supabase/postgres image; the integration is just outbound HTTPS calls using your own OpenAI/HF API keys, no Supabase cloud control plane involved. Caveat: on self-host, edge functions are deployed by placing files in ./volumes/functions and restarting the container (no `supabase functions deploy` against the docker bundle), and there is no dashboard secrets manager — keys go in the container env. Nothing about the pattern requires Supabase at all; any server code can call the same APIs.
+
+**Our stack.** No AI integration exists in our deployment though the substrate is present: "functions (Deno edge-runtime; zero functions deployed/invoked)", "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector", and "NOT used: GoTrue, Realtime websockets, Edge Functions, GraphQL, vectors/embeddings." The enabling containers/extensions are running-unused or available-unused, but no OpenAI/Hugging Face integration code is deployed anywhere.
+
+**Value for MarketingHub (2/3).** Directly relevant to the roadmap's "next major feature = competitor-intel module using pgvector/RAG" — that module needs an embedding-generation pipeline exactly like these integration guides describe. Value is 2 not 3 because the feature is mostly guide-ware: MarketingHub's server-only Next.js backend can call OpenAI/Bedrock and write to pgvector directly, without adopting the Edge Functions conduit (our functions container has zero functions and no deploy workflow); the load-bearing piece for us is pgvector, not the integration wrapper.
+
+**Caveats.** 1) Compliance: MarketingHub has a HIPAA-adjacent posture; sending data to OpenAI/Hugging Face hosted inference APIs is an external-egress/BAA question that must be reviewed before adoption (Bedrock via the existing PHI-gated path may fit better). 2) Version pin: bundle is supabase/supabase v1.26.05 (cloned 2026-07); the integration pattern is version-insensitive (plain outbound API calls + CREATE EXTENSION vector, both long predating our pin), but exact edge-runtime and pgvector versions in our image are unverified. 3) The docs' newer built-in edge-runtime inference API (Supabase.ai / gte-small local embeddings) was not confirmed on the pages fetched, so it is excluded from components. 4) Self-hosted edge functions lack the cloud deploy/secrets UX — adoption effort S assumes calling providers from the Next.js server instead; using the functions container would be M (mount + env + ops workflow).
+
+Docs: <https://supabase.com/features/ai-integrations> · <https://supabase.com/docs/guides/ai> · <https://supabase.com/docs/guides/ai/hugging-face>
+
+### Automatic Embeddings
+
+`GA` · self-hosted: **yes** · ours: **available-unused** · value **2/3** · effort **M** · verified
+
+**What it is.** A GA pattern (launched April 1, 2025) for automatically generating and keeping vector embeddings in sync with table content, so you never manually manage embedding columns. When rows are inserted or updated, embedding jobs are queued and processed asynchronously with built-in retry, calling any inference API (OpenAI text-embedding-3-small in the docs, but provider-agnostic). It targets semantic search, RAG, and recommendation use cases.
+
+**How it works.** This is not a single service but a documented SQL recipe composed from in-database pieces: pgvector stores the embedding column; a Postgres trigger on INSERT/UPDATE enqueues a job into a pgmq queue (default name embedding_jobs); pg_cron runs periodically (feature page cites regular/~5-min processing) to drain the queue; pg_net makes async HTTP calls from Postgres to a Supabase Edge Function; the Edge Function (docs' `embed` function) batches jobs, calls the embedding provider's API, and writes vectors back to the rows, with failed jobs retried via the queue. Setup = enable extensions (vector, pgmq, pg_net, pg_cron, hstore), create utility/trigger functions and per-table triggers plus a content-input function, deploy the Edge Function, and set the provider API key as a function secret. No control-plane component: everything is SQL objects plus one deployed function; the docs show local/self-hosted wiring via supabase/seed.sql and the internal API URL (http://api.supabase.internal:8000).
+
+**Components:** pgvector extension; pgmq extension; pg_net extension; pg_cron extension; Postgres triggers + SQL utility functions (from the docs guide); Edge Functions runtime (Deno edge-runtime) running the docs' `embed` function
+
+**Self-hosted availability.** Official feature page states stage "General Availability" and "Available on self-hosted: Yes." All pieces exist in the OSS bundle: the four extensions ship in the supabase/postgres image and the functions (edge-runtime) container hosts the embed function; the docs guide includes a local seed.sql setup using the internal API endpoint, no cloud account needed. Only nuance: on cloud the Edge Function URL/secrets are managed by the dashboard; self-hosted you wire the function URL and API-key secret yourself.
+
+**Our stack.** Ground truth: "Pre-baked in the supabase/postgres image but NOT enabled/used: pgvector..."; "pg_cron / pgmq: not enabled by any repo SQL; if docs say they ship in the image, mark available-unused with that caveat" (docs confirm they ship in supabase/postgres); "functions (Deno edge-runtime; zero functions deployed/invoked)"; "LOCKED DOWN: pg_net (EXECUTE revoked from app roles; candidate for DROP)"; "NOT used: ... vectors/embeddings." Every building block is present in the image/bundle but none is enabled or wired.
+
+**Value for MarketingHub (2/3).** Direct roadmap fit: "next major feature = competitor-intel module using pgvector/RAG" — this is the official pattern for keeping RAG embeddings fresh without app code. Docked from 3 because MarketingHub could achieve the same with its existing homegrown outbox + app-level scheduler (already proven for SMS) from the server-only Next.js service-role client, avoiding two posture conflicts: pg_net is deliberately locked down (DROP candidate) and zero Edge Functions are deployed today.
+
+**Caveats.** Feature shipped April 2025, well before our v1.26.05 bundle clone (2026-07), so guide SQL should apply; however exact versions of pgmq/pg_cron/pg_net/pgvector in our PG17 image are unverified — confirm pgmq and pg_cron binaries are actually present before planning (ground truth says no repo SQL enables them). Adoption conflicts with current hardening: pg_net EXECUTE is revoked from app roles and the extension is a DROP candidate, yet the pattern requires it; keeping it means re-scoping that lockdown. Requires deploying our first-ever Edge Function plus outbound egress from private subnets to an embedding provider (HIPAA-adjacent posture: verify competitor-intel content is non-PHI or provider is under BAA). The DB must reach the functions endpoint (Kong/internal URL wiring is manual on self-hosted). Cron cadence (docs example ~every 10s–5min) is a latency/eventual-consistency tradeoff to tune.
+
+Docs: <https://supabase.com/docs/guides/ai/automatic-embeddings> · <https://supabase.com/blog/automatic-embeddings> · <https://supabase.com/features/automatic-embeddings>
+
+## Methodology
+
+Produced 2026-08-07 by a multi-agent research workflow:
+
+- **Baseline**: the deployment ground truth was established from this repo (`cdk/assets/bootstrap.sh`, `docker-compose.override.yml`, `render-env.sh`, `cdk/sql/*.sql`, `web/src/lib/**`, design spec `docs/superpowers/specs/2026-06-29-supabase-self-hosted-aws-design.md`) before any web research.
+- **Research**: one agent per feature (79) worked from official Supabase docs/feature pages/blog/GitHub and recorded the URLs used (listed per entry).
+- **Verification**: one adversarial fact-checker per feature attempted to refute the two decision-critical claims — self-hosted availability (against sources independent of the researcher's citations) and our-stack status (against the repo ground truth only). 78/79 entries came back double-confirmed; 1 (Logs & Analytics) was corrected then re-confirmed.
+- **Consistency**: two critic rounds swept all 79 entries for contradictions with the ground truth and with each other; 8 entries were re-researched and re-verified (notably Dedicated Poolers → cloud-only-na, and the Vector/Analytics Buckets pair reconciled against the actual storage-api pin `v1.48.26` in bundle tag `v1.26.05`).
+
+Known limits: exact on-box container versions were not inspected (the bundle is cloned at first boot; versions are inferred from the pinned tag's compose file); cloud pricing/plan details are as-of-fetch-date; `available-unused` claims for image-baked extensions (pg_cron, pgmq, pgvector) should be confirmed with `SELECT * FROM pg_available_extensions` before building on them.
