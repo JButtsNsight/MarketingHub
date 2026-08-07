@@ -18,6 +18,9 @@ export type IconKey =
   | "suppressions"
   | "auth"
   | "api"
+  | "advisors"
+  | "cron"
+  | "queues"
   | "infra"
   | "admin"
   | "settings";
@@ -66,6 +69,16 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/auth", label: "Authentication", icon: "auth" },
       { href: "/storage", label: "Storage", icon: "storage" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
+      { href: "/advisors", label: "Advisors", icon: "advisors" },
+    ],
+  },
+  {
+    // Studio's "Integrations" — postgres extensions surfaced as their own
+    // operational screens (pg_cron, pgmq).
+    label: "Integrations",
+    items: [
+      { href: "/integrations/cron", label: "Cron", icon: "cron" },
+      { href: "/integrations/queues", label: "Queues", icon: "queues" },
     ],
   },
   {
@@ -182,6 +195,26 @@ const ICONS: Record<IconKey, ReactNode> = {
     <>
       <path d="M8 6l-5 6 5 6" />
       <path d="M16 6l5 6-5 6" />
+    </>
+  ),
+  advisors: (
+    <>
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.2V16h6v-.3c0-.8.4-1.6 1-2.2A6 6 0 0 0 12 3z" />
+    </>
+  ),
+  cron: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3.5 2" />
+    </>
+  ),
+  queues: (
+    <>
+      <rect x="3" y="4" width="18" height="4" rx="1" />
+      <rect x="3" y="10" width="18" height="4" rx="1" />
+      <rect x="3" y="16" width="18" height="4" rx="1" />
     </>
   ),
   infra: (

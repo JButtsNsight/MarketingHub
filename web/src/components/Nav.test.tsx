@@ -21,6 +21,16 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Authentication",
       "Storage",
       "API Docs",
+      "Advisors",
+    ]);
+  });
+
+  it("exposes pg_cron / pgmq under an Integrations group", () => {
+    const integrations = NAV_GROUPS.find((g) => g.label === "Integrations");
+    expect(integrations).toBeDefined();
+    expect(integrations!.items.map((i) => [i.label, i.href])).toEqual([
+      ["Cron", "/integrations/cron"],
+      ["Queues", "/integrations/queues"],
     ]);
   });
 

@@ -9,4 +9,11 @@ import type { TabItem } from "@/components/ui/Tabs";
 export const DB_TABS: TabItem[] = [
   { href: "/database/schema", label: "Schema" },
   { href: "/database/rls", label: "Policies" },
+  { href: "/database/functions", label: "Functions" },
+  { href: "/database/triggers", label: "Triggers" },
+  { href: "/database/indexes", label: "Indexes" },
+  { href: "/database/types", label: "Types" },
+  { href: "/database/extensions", label: "Extensions" },
+  { href: "/database/publications", label: "Publications" },
+  { href: "/database/roles", label: "Roles" },
 ];
