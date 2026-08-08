@@ -1,4 +1,13 @@
 -- cdk/sql/lockdown-pg-net.sql
+--
+-- SUPERSEDED by cdk/sql/2026-08-07-scope-pg-net.sql (2026-08-07).
+-- Kept in tree for history / rollback reference only. The blanket revoke below
+-- left NO role able to call pg_net; once Database Webhooks needed outbound HTTP,
+-- the scoping migration REPLACED this posture with a scoped grant
+-- (net.* EXECUTE -> webhooks_admin + service_role only, still revoked from
+-- anon/authenticated/PUBLIC, plus pgaudit coverage). Apply that file, not this
+-- one, on a fresh environment.
+--
 -- pg_net SSRF/exfil lockdown (spec §12). pg_net lets code inside Postgres make outbound
 -- HTTP calls; untrusted roles must NOT be able to invoke it. If pg_net is unused in v1,
 -- prefer DROP EXTENSION (uncomment below); otherwise revoke EXECUTE broadly.

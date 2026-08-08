@@ -7,6 +7,7 @@ vi.mock("./pgmeta", () => ({ runQuery: h.runQuery }));
 
 import {
   archiveMessage,
+  archivedCount,
   deleteMessage,
   listQueues,
   peekMessages,
@@ -119,5 +120,27 @@ describe("mutations via pgmq_public", () => {
     await expect(sendMessage("ghost", {})).rejects.toThrow(
       /\[console:queues\] send failed: queue not found/,
     );
+  });
+});
+
+describe("archivedCount", () => {
+  test("existence-checks then counts the archive backing table", async () => {
+    queueFound();
+    h.runQuery.mockResolvedValueOnce([{ n: 7 }]);
+    const n = await archivedCount("jobs");
+    expect(n).toBe(7);
+    expect(lastSql()).toBe('select count(*)::int8 as n from pgmq."a_jobs"');
+  });
+
+  test("rejects an unsafe queue name before any SQL runs", async () => {
+    await expect(archivedCount("a; drop table x")).rejects.toThrow(
+      /\[console:queues\] archived-count failed: invalid queue name/,
+    );
+    expect(h.runQuery).not.toHaveBeenCalled();
+  });
+
+  test("fails loud when the queue does not exist", async () => {
+    h.runQuery.mockResolvedValueOnce([{ found: false }]);
+    await expect(archivedCount("ghost")).rejects.toThrow(/queue not found/);
   });
 });

@@ -16,4 +16,6 @@ export const DB_TABS: TabItem[] = [
   { href: "/database/extensions", label: "Extensions" },
   { href: "/database/publications", label: "Publications" },
   { href: "/database/roles", label: "Roles" },
+  { href: "/database/webhooks", label: "Webhooks" },
+  { href: "/database/designer", label: "Designer" },
 ];

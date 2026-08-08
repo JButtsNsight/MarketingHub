@@ -46,6 +46,19 @@ export interface EditorColumnDto {
   comment: string | null;
 }
 
+/**
+ * A foreign key on this table, as the editor needs it: the local column and the
+ * referenced schema/table/column. Optional on the DTO — when the server page
+ * supplies it the editor uses it directly; otherwise the editor resolves the FK
+ * map from /api/console/fk-options on table select.
+ */
+export interface EditorRelationshipDto {
+  column: string;
+  targetSchema: string;
+  targetTable: string;
+  targetColumn: string;
+}
+
 export interface EditorTableDto {
   schema: string;
   name: string;
@@ -56,6 +69,13 @@ export interface EditorTableDto {
   primaryKeys: string[];
   sensitive: boolean;
   columns: EditorColumnDto[];
+  relationships?: EditorRelationshipDto[];
+}
+
+/** One selectable referenced row: `value` is stored, `label` is shown. */
+interface FkOption {
+  value: string;
+  label: string;
 }
 
 interface Filter {
@@ -105,6 +125,11 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
   const [insertOpen, setInsertOpen] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
 
+  // FK columns of the selected table (column → candidate rows), so FK cells
+  // render a row-picker instead of a free-text field. Options are fetched from
+  // /api/console/fk-options on table select — a read, no confirm.
+  const [fkOptions, setFkOptions] = useState<Record<string, FkOption[]>>({});
+
   // Draft filter row in the toolbar.
   const [draft, setDraft] = useState<Filter>({ column: "", op: "eq", value: "" });
 
@@ -113,17 +138,23 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
 
   const gridColumns: GridColumn[] = useMemo(
     () =>
-      (selected?.columns ?? []).map((c) => ({
-        name: c.name,
-        format: c.format,
-        isPrimaryKey: c.isPrimaryKey,
-        isNullable: c.isNullable,
-        // Cells are editable only when the row is addressable by a full PK.
-        isEditable:
-          c.isEditable && !c.isPrimaryKey && (selected?.primaryKeys.length ?? 0) > 0,
-        enums: c.enums,
-      })),
-    [selected],
+      (selected?.columns ?? []).map((c) => {
+        const fk = fkOptions[c.name];
+        return {
+          name: c.name,
+          format: c.format,
+          isPrimaryKey: c.isPrimaryKey,
+          isNullable: c.isNullable,
+          // Cells are editable only when the row is addressable by a full PK.
+          isEditable:
+            c.isEditable && !c.isPrimaryKey && (selected?.primaryKeys.length ?? 0) > 0,
+          // FK columns become a constrained dropdown of referenced-row values
+          // (the grid editor renders a <select> for any column with `enums`);
+          // every other column keeps its own enum set (or none).
+          enums: fk && fk.length > 0 ? fk.map((o) => o.value) : c.enums,
+        };
+      }),
+    [selected, fkOptions],
   );
 
   const pkOf = useCallback(
@@ -184,6 +215,53 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
         if (seq === fetchSeq.current) setLoading(false);
       });
   }, [selected, page, pageSize, sort, filters, refreshTick]);
+
+  // Resolve the selected table's FK columns and their candidate rows. The FK
+  // map comes from the DTO when the server supplied it, else from a one-shot
+  // /api/console/fk-options?schema&table call; either way we then fetch the
+  // referenced rows per FK column. Latest-wins by table so switching tables
+  // fast can't leave a stale picker behind.
+  const fkSeq = useRef(0);
+  useEffect(() => {
+    setFkOptions({});
+    if (!selected) return;
+    const seq = ++fkSeq.current;
+    const schema = selected.schema;
+    const table = selected.name;
+
+    const loadOptions = (rels: EditorRelationshipDto[]) => {
+      for (const rel of rels) {
+        const params = new URLSearchParams({ schema, table, column: rel.column });
+        fetch(`/api/console/fk-options?${params}`)
+          .then((res) => (res.ok ? res.json() : null))
+          .then((body: { options?: FkOption[] } | null) => {
+            if (!body || seq !== fkSeq.current) return;
+            const options = body.options ?? [];
+            if (options.length > 0) {
+              setFkOptions((prev) => ({ ...prev, [rel.column]: options }));
+            }
+          })
+          .catch(() => {
+            // A picker that can't load its rows degrades to a free-text cell.
+          });
+      }
+    };
+
+    if (selected.relationships && selected.relationships.length > 0) {
+      loadOptions(selected.relationships);
+      return;
+    }
+    const params = new URLSearchParams({ schema, table });
+    fetch(`/api/console/fk-options?${params}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { relationships?: EditorRelationshipDto[] } | null) => {
+        if (!body || seq !== fkSeq.current) return;
+        loadOptions(body.relationships ?? []);
+      })
+      .catch(() => {
+        // FK map unavailable → every cell stays a plain field; browsing is fine.
+      });
+  }, [selected]);
 
   const refresh = () => setRefreshTick((t) => t + 1);
 
@@ -478,6 +556,7 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
             {insertOpen ? (
               <InsertRowPanel
                 table={selected}
+                fkOptions={fkOptions}
                 onDone={(ok) => {
                   setInsertOpen(false);
                   if (ok) refresh();
@@ -566,9 +645,11 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
  */
 function InsertRowPanel({
   table,
+  fkOptions,
   onDone,
 }: {
   table: EditorTableDto;
+  fkOptions: Record<string, FkOption[]>;
   onDone: (inserted: boolean) => void;
 }) {
   const writable = table.columns.filter((c) => c.isEditable);
@@ -614,7 +695,22 @@ function InsertRowPanel({
               {c.name}
               <span className="teditor-test mono"> {c.format}</span>
             </label>
-            {c.enums.length > 0 ? (
+            {fkOptions[c.name] && fkOptions[c.name].length > 0 ? (
+              <select
+                id={`ins-${c.name}`}
+                className="surface control"
+                value={values[c.name] ?? ""}
+                disabled={nulls[c.name] === true}
+                onChange={(e) => setValues({ ...values, [c.name]: e.target.value })}
+              >
+                <option value="">(default)</option>
+                {fkOptions[c.name].map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            ) : c.enums.length > 0 ? (
               <select
                 id={`ins-${c.name}`}
                 className="surface control"

@@ -196,6 +196,19 @@ export async function listArchived(
 }
 
 /**
+ * Accurate row count of a queue's archive table (`pgmq.a_<queue>`). The name is
+ * validated against the regex allow-list AND existence-checked against the live
+ * queue set before it is quote_ident'd — the same gate `backingTable` applies
+ * to peek/archive reads. `pgmq.metrics(...).total_messages` counts lifetime
+ * enqueues, not the archive; this is the number the archive tab shows.
+ */
+export async function archivedCount(queueName: string): Promise<number> {
+  const table = await backingTable("archived-count", queueName, "a_");
+  const rows = await runQuery(`select count(*)::int8 as n from ${table}`);
+  return Number((rows[0] as { n?: unknown } | undefined)?.n ?? 0);
+}
+
+/**
  * Send one message via `pgmq_public.send`. The body is serialized to JSON and
  * passed as a `quote_literal` cast to `jsonb`. Returns the new message id.
  */
