@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Tables } from "../database.types";
 import { isWeekday, SEND_SLOTS, SEND_TIMEZONE_IDS } from "./schedule";
 
 // Pure module — imported by client components and the worker alike. Nothing
@@ -119,6 +120,19 @@ export interface SmsCampaign {
   created_at: string;
   updated_at: string;
 }
+
+/** Generated row type for `marketinghub.sms_campaigns` (scripts/gen-db-types.sh). */
+type GeneratedSmsCampaignRow = Tables<{ schema: "marketinghub" }, "sms_campaigns">;
+
+// Compile-time drift checks against the generated types (type-only — the
+// `satisfies` operator and both consts erase to nothing observable). If the
+// DB adds/retypes a column, the first check fails; if the interface carries a
+// column the DB no longer has, the keyof check fails. Fix = regenerate via
+// scripts/gen-db-types.sh and reconcile the interface above.
+const _smsCampaignSatisfiesGeneratedRow = {} as SmsCampaign satisfies GeneratedSmsCampaignRow;
+const _smsCampaignKeysExistInGeneratedRow = {} as keyof SmsCampaign satisfies keyof GeneratedSmsCampaignRow;
+void _smsCampaignSatisfiesGeneratedRow;
+void _smsCampaignKeysExistInGeneratedRow;
 
 /** A row of `marketinghub.sms_campaign_recipients` (the outbox). */
 export interface SmsCampaignRecipient {

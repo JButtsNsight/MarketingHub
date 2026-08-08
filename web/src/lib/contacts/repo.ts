@@ -2,6 +2,7 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import type { Tables } from "../database.types";
 import { getServiceClient } from "../supabase";
 import type { ParsedContact } from "./csv";
 import type { ContactList, ContactListMember } from "./schema";
@@ -29,6 +30,13 @@ const MEMBER_LIMIT = 2000;
 export interface ListCreator {
   email: string;
 }
+
+/**
+ * Generated row type for `marketinghub.sms_campaigns`
+ * (web/src/lib/database.types.ts, scripts/gen-db-types.sh) — types the FK
+ * probe in listIsReferenced. Type-only: zero behavior change.
+ */
+type SmsCampaignRow = Tables<{ schema: "marketinghub" }, "sms_campaigns">;
 
 function lists(db: SupabaseClient = getServiceClient()) {
   return db.schema(SCHEMA).from(LISTS);
@@ -235,7 +243,7 @@ export async function listIsReferenced(
     .eq("contact_list_id", id)
     .limit(1);
   if (error) fail("is-referenced", error.message);
-  return ((data ?? []) as Array<{ id: string }>).length > 0;
+  return ((data ?? []) as Array<Pick<SmsCampaignRow, "id">>).length > 0;
 }
 
 /**

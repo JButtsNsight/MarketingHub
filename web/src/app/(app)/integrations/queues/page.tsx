@@ -15,10 +15,11 @@ export const metadata = {
   title: "Queues · MarketingHub",
 };
 
-/** Integrations section sub-nav (pgmq lives beside pg_cron). */
+/** Integrations section sub-nav (pgmq lives beside pg_cron and vault). */
 const INTEGRATIONS_TABS: TabItem[] = [
   { href: "/integrations/cron", label: "Cron" },
   { href: "/integrations/queues", label: "Queues" },
+  { href: "/integrations/vault", label: "Vault" },
 ];
 
 /**

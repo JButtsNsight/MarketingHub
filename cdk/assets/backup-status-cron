@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+#
+# backup-status-cron — Wave-7 host reporter for the /database/backups console.
+# The app can never run host commands (network truth), so every 15 minutes
+# (cron.d written by bootstrap.sh install_backup_status_schedule) this script
+# captures `pgbackrest info --output=json` on the host and upserts the JSON
+# VERBATIM into marketinghub.backup_status (single row, id = 1) through the
+# db container — the same docker-exec psql idiom bootstrap's
+# configure_wal_archiving uses. The console derives stanza health, the backup
+# list and the PITR band from that row.
+#
+# HONESTY RULES (mirrored in the console):
+#   - `pgbackrest info` exits 0 even for a missing stanza — the health signal
+#     is the JSON's status.code, NEVER this command's exit code. The payload
+#     is stored whatever status.code says: an unhealthy stanza is pgBackRest
+#     news the console must render, not a reporter failure to hide.
+#   - Landing table absent = the W7 migration is not applied yet. That is a
+#     quiet exit 0 (the console shows its honest "host reporter not
+#     installed" empty state), never an error.
+#   - captured_at is stamped BEFORE the info call and travels with the
+#     payload — a slow capture must never stamp old JSON as fresh at commit
+#     time, or the console's staleness badge is defeated exactly when the
+#     repo is unhealthy.
+#   - A reporter failure (pgbackrest binary/repo unreachable, invalid JSON,
+#     upsert refused, any step timing out) publishes BackupStatusJobFailed=1
+#     (best-effort, no alarm wired — the PgBackRestJobFailed alarm owns
+#     paging for real backup failures) and exits non-zero for the cron
+#     journal.
+#
+# PILE-UP GUARDS (the 15-minute cadence makes hangs compound):
+#   - Non-blocking flock: a tick that finds the previous run still holding
+#     the lock logs and exits 0 — hung runs never stack processes.
+#   - `timeout` bounds every external call: pgBackRest's default
+#     protocol-timeout (~1830s) exceeds the cadence, and a docker-exec psql
+#     blocked on a table lock would otherwise wait (and accumulate
+#     connections) forever. The upsert session also sets lock_timeout /
+#     statement_timeout as the in-database bound.
+#
+set -euo pipefail
+
+readonly STANZA="supabase"              # matches pgbackrest.conf + pgbackrest-cron
+readonly DB_CONTAINER="supabase-db"     # pinned bundle's db container name
+readonly TABLE="marketinghub.backup_status"
+readonly AWS_REGION="${AWS_REGION:-us-east-1}"
+readonly METRIC_NAMESPACE="Supabase/Backup"
+readonly METRIC_NAME="BackupStatusJobFailed"
+readonly LOCK_FILE="/run/lock/backup-status-cron.lock"
+readonly INFO_TIMEOUT=300               # s — hard bound well under the 15-min cadence
+readonly PSQL_TIMEOUT=60                # s — outer bound on each docker-exec psql
+
+log() { echo "[backup-status-cron] $*" >&2; }
+
+# emit_metric <value> — 1 on failure, 0 on success. Best-effort: a
+# metric-publish problem must never mask the underlying job result.
+emit_metric() {
+  aws cloudwatch put-metric-data \
+    --namespace "$METRIC_NAMESPACE" \
+    --metric-name "$METRIC_NAME" \
+    --value "$1" \
+    --unit Count \
+    --region "$AWS_REGION" >/dev/null 2>&1 \
+    || log "WARNING: could not publish ${METRIC_NAME}=$1 to CloudWatch"
+}
+
+die() { echo "[backup-status-cron][FATAL] $*" >&2; emit_metric 1; exit 1; }
+
+main() {
+  # Overlap guard — non-blocking. A held lock means the previous tick is
+  # still running (degraded S3, blocked upsert): skip quietly with NO metric
+  # — the run holding the lock owns reporting its own outcome.
+  exec 9>"$LOCK_FILE"
+  if ! flock -n 9; then
+    log "previous run still holds ${LOCK_FILE} — skipping this tick."
+    exit 0
+  fi
+
+  # Landing table absent => W7 migration unapplied. Quiet no-op by contract:
+  # nothing is wrong on the host, and the console degrades honestly.
+  local reg
+  reg="$(timeout "$PSQL_TIMEOUT" docker exec "$DB_CONTAINER" psql -U postgres -tAc \
+    "select coalesce(to_regclass('${TABLE}')::text, 'MISSING')")" \
+    || die "could not reach postgres in ${DB_CONTAINER} to check for ${TABLE}"
+  if [ "$reg" != "$TABLE" ]; then
+    log "${TABLE} does not exist yet (W7 migration unapplied) — nothing to do."
+    emit_metric 0
+    exit 0
+  fi
+
+  # Stamp capture time BEFORE the info call: if the capture is slow, the row
+  # must say when the JSON was true, not when the upsert finally committed.
+  local captured_at
+  captured_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+  # Capture the stanza info. A non-zero exit here means the binary/repo
+  # access itself broke or timed out (info exits 0 even for a missing
+  # stanza), which IS a reporter failure. <10ms against a posix repo, a few
+  # S3 GETs here; reads only backup.info/archive.info — safe while a backup
+  # is running. The timeout keeps a degraded S3 endpoint (pgBackRest retries
+  # under its ~1830s protocol-timeout) from outliving the 15-min cadence.
+  local json
+  json="$(timeout "$INFO_TIMEOUT" pgbackrest --stanza="$STANZA" info --output=json)" \
+    || die "pgbackrest info failed to run (or timed out after ${INFO_TIMEOUT}s)"
+  [ -n "$json" ] || die "pgbackrest info produced no output"
+
+  # Log stanza health for the cron journal, but store the payload verbatim
+  # regardless — status.code is parsed for the LOG LINE only, never to gate
+  # the upsert.
+  local status_code="unknown"
+  if command -v jq >/dev/null 2>&1; then
+    jq -e . >/dev/null 2>&1 <<<"$json" || die "pgbackrest info emitted invalid JSON"
+    status_code="$(jq -r '.[0].status.code // "unknown"' <<<"$json" 2>/dev/null || echo unknown)"
+  fi
+  log "captured stanza '${STANZA}' info: status.code=${status_code}, ${#json} bytes."
+
+  # Latest-only upsert. The JSON travels as a psql variable (-v) and lands
+  # via :'payload' — psql quotes it as a literal, so arbitrary JSON needs no
+  # SQL escaping. NOTE: psql only interpolates variables in SQL read from
+  # stdin/-f, never in -c strings (verified on the pinned 15.8 image) — keep
+  # the heredoc. postgres carries BYPASSRLS in the pinned image, so the
+  # table's FORCE RLS never blocks this write. lock_timeout/statement_timeout
+  # (plus the outer `timeout`) keep a locked table — e.g. an open console
+  # SQL-editor transaction — from queueing psql connections without bound.
+  timeout "$PSQL_TIMEOUT" docker exec -i "$DB_CONTAINER" psql -U postgres -v ON_ERROR_STOP=1 \
+    -v payload="$json" -v captured_at="$captured_at" >/dev/null <<'SQL' \
+    || die "backup_status upsert failed (or timed out waiting on a lock)"
+set lock_timeout = '10s';
+set statement_timeout = '30s';
+insert into marketinghub.backup_status (id, payload, captured_at)
+values (1, :'payload'::jsonb, :'captured_at'::timestamptz)
+on conflict (id) do update
+  set payload = excluded.payload, captured_at = excluded.captured_at;
+SQL
+
+  emit_metric 0
+  log "backup_status row refreshed."
+}
+
+main "$@"

@@ -29,12 +29,24 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("exposes pg_cron / pgmq under an Integrations group", () => {
+  it("exposes pg_cron / pgmq / supabase_vault under an Integrations group", () => {
     const integrations = NAV_GROUPS.find((g) => g.label === "Integrations");
     expect(integrations).toBeDefined();
     expect(integrations!.items.map((i) => [i.label, i.href])).toEqual([
       ["Cron", "/integrations/cron"],
       ["Queues", "/integrations/queues"],
+      ["Vault", "/integrations/vault"],
+    ]);
+  });
+
+  it("slots Cloud Features under Project, right after Admin", () => {
+    const project = NAV_GROUPS.find((g) => g.label === "Project");
+    expect(project).toBeDefined();
+    expect(project!.items.map((i) => [i.label, i.href])).toEqual([
+      ["Infrastructure", "/infrastructure"],
+      ["Admin", "/admin"],
+      ["Cloud", "/admin/cloud"],
+      ["Settings", "/settings"],
     ]);
   });
 
@@ -108,5 +120,29 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/logs/drains";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Logs"]);
+  });
+
+  it("lights ONLY Database (not Table Editor) on /database/backups", () => {
+    h.pathname = "/database/backups";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Database"]);
+  });
+
+  it("lights Vault on /integrations/vault", () => {
+    h.pathname = "/integrations/vault";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Vault"]);
+  });
+
+  it("lights ONLY Admin on /admin (not the nested Cloud item)", () => {
+    h.pathname = "/admin";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Admin"]);
+  });
+
+  it("lights ONLY Cloud on /admin/cloud (the longer matching href)", () => {
+    h.pathname = "/admin/cloud";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Cloud"]);
   });
 });

@@ -174,6 +174,15 @@ export class ComputeStack extends Stack {
     stage('docker-compose.override.yml', '/opt/supabase/docker-compose.override.yml', '0644');
     stage('pgbackrest.conf', '/etc/pgbackrest/pgbackrest.conf', '0640');
     stage('pgbackrest-cron', '/usr/local/bin/pgbackrest-cron', '0750');
+    // Wave-7 backups-console reporter: every 15 min (cron.d written by bootstrap's
+    // setup_backups, so previews skip it) it dumps `pgbackrest info --output=json`
+    // VERBATIM into marketinghub.backup_status via docker-exec psql — the app can
+    // never run host commands, so that row is the console's only pgBackRest window.
+    // Staged here so a brand-new/replacement host first-boots with the reporter
+    // installed; the CURRENT host is patched by the staged
+    // /tmp/install-backup-status-cron.sh (runbook §12). Quiet no-op until the W7
+    // migration creates the landing table.
+    stage('backup-status-cron', '/usr/local/bin/backup-status-cron', '0750');
     stage('bootstrap.sh', '/opt/supabase/bootstrap.sh', '0700');
     // Wave-6 analytics route persistence: the vendored kong config (pinned bundle
     // kong.yml with ONLY the analytics-v1-api route uncommented — marker

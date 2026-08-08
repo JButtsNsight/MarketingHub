@@ -16,6 +16,9 @@ export const DB_TABS: TabItem[] = [
   { href: "/database/extensions", label: "Extensions" },
   { href: "/database/publications", label: "Publications" },
   { href: "/database/roles", label: "Roles" },
+  // Studio's Database→Platform subgroup lists Backups before Webhooks; the
+  // custom Designer stays last.
+  { href: "/database/backups", label: "Backups" },
   { href: "/database/webhooks", label: "Webhooks" },
   { href: "/database/designer", label: "Designer" },
 ];

@@ -875,3 +875,212 @@ leave the pages at the honest unavailable state.
   container health, kong 5xx on `/analytics/*`, app `[console:logs]` error
   rates); the contingency is an instance resize in
   `cdk/lib/compute-stack.ts` (future wave, NOT this one).
+
+## 12. Wave-7 Backups & Vault consoles + cloud posture (2026-08-08)
+
+Wave 7 adds the `/database/backups` console (pgBackRest-fed — the cloud
+Backups screen is dead self-hosted, so this is real parity), the
+`/integrations/vault` secrets console (metadata-first, per-secret confirmed
+reveal, metadata-only audit), the `/admin/cloud` honest-N/A panel (static,
+needs nothing), and generated DB types (`scripts/gen-db-types.sh` →
+`web/src/lib/database.types.ts` — dev-side tooling, NO operator step).
+Everything degrades honestly: until the staged steps below run, the backups
+page renders "backups status unreachable — host reporter not installed
+(runbook §12)" and the vault console lists whatever `vault.secrets` already
+holds (the `supabase_vault 0.3.1` extension has shipped in our pinned image
+since first boot). One deliberate exception to "everything works
+pre-migration": REVEALS ARE FAIL-CLOSED on the audit trail — the reveal
+route inserts its metadata audit row BEFORE decrypting and refuses the
+reveal (honest 400, "the audit log is unavailable") while
+`marketinghub.vault_console_audit` does not exist yet, because the UI's
+"the reveal is recorded in the audit log" claim must be a guarantee, not an
+aspiration. Create/update/delete work in that window with best-effort audit
+(a failed audit insert logs one constant-string warning in the app logs —
+never request data). Nothing breaks in any partial state.
+
+### 12.1 What ships in the image / repo vs. what the operator applies
+
+In the image (inert-but-honest until 12.2): `lib/console/backups.ts` (reads
+the latest `marketinghub.backup_status` row — the host cron's verbatim
+`pgbackrest info` JSON — plus `pg_stat_archiver.last_archived_time` for the
+PITR cross-check; 45-min staleness badge), `lib/console/vault.ts` (metadata
+listing from `vault.secrets` columns only; reveal = a SEPARATE deliberate
+id-filtered query against `vault.decrypted_secrets`; plaintext is never
+logged, cached, audited, or persisted past component unmount; the reveal
+route is FAIL-CLOSED on the audit insert — the metadata row lands BEFORE the
+decrypt, no audit row ⇒ no plaintext — while create/update/delete audits
+stay best-effort with a constant-string app-log line on failure), the three
+pages, and the `/api/console/vault*` routes. `vault.secrets` +
+`vault.decrypted_secrets` are in BOTH `SENSITIVE_TABLES` and
+`READ_ONLY_TABLES` — the table editor refuses writes; mutations flow only
+through the vault console's audited paths.
+
+In the repo (first-boot persistence — a REPLACEMENT host needs NO staged
+step): `cdk/assets/backup-status-cron` staged by `compute-stack.ts` to
+`/usr/local/bin` (0750), and `bootstrap.sh` writes
+`/etc/cron.d/nsight-backup-status` (`*/15min`, root) INSIDE
+`setup_backups()` — so `SKIP_BACKUPS` preview stacks skip the reporter and
+show the honest empty state, by design. The cron runs
+`pgbackrest --stanza=supabase info --output=json` and upserts the JSON
+verbatim (latest-only, id=1) via `docker exec supabase-db psql`; it parses
+`status.code`, NOT the exit code (pgbackrest `info` exits 0 even for a
+missing stanza), stores error payloads honestly for the console to render,
+exits 0 quietly if the table is absent, and best-effort publishes CloudWatch
+metric `Supabase/Backup:BackupStatusJobFailed` (no new alarm). Pile-up
+guards: a non-blocking flock (`/run/lock/backup-status-cron.lock`) makes an
+overlapping tick skip quietly, `timeout` bounds the pgbackrest call (300s)
+and each docker-exec psql (60s, plus lock/statement_timeout in the upsert
+session), and `captured_at` is stamped BEFORE the info call so a slow
+capture can never pass old JSON off as fresh.
+
+Operator artifacts: migration `cdk/sql/2026-08-08-w7-backups-vault.sql`
+(creates `marketinghub.backup_status` + `marketinghub.vault_console_audit` —
+metadata columns only, NO value column, ever; idempotent, single txn,
+`pg_notify('pgrst','reload schema')` as the final line; APPLY AS
+supabase_admin AFTER `2026-08-08-w5-realtime.sql`) and staged script
+`/tmp/install-backup-status-cron.sh` (SSM skeleton per
+`/tmp/fix-edge-functions.sh`, instance `i-06a9f48d434cbebc7`; heredocs
+byte-identical to the cdk assets; verify = run the cron once + select
+`captured_at`).
+
+### 12.2 Apply order (slotting into the §11.2 queue)
+
+The full batched queue is now: W4 SQL (§9.2-1) → W4 env (§9.2-3) → W5 SQL
+(§10.2-1) → W5 edge fix (§10.2-2) → **W7 SQL (step 1 below)** → W6 env
+(§11.2-1) → W5 infra deploy (§10.2-3) → W6 route (§11.2-2) → **W7 cron
+installer (step 2 below)**.
+
+§11.2's binding constraint is UNCHANGED: W6 env stays BEFORE the W5 infra
+deploy (the deploy's task-def references the app-config key only
+`stage-w6-env.sh` writes). The W7 insertions do not touch it:
+
+- **W7 SQL slots right after the W5 SQL/edge steps** because the dated
+  `cdk/sql` chain applies lexicographically and the w7 file's header orders
+  it AFTER `2026-08-08-w5-realtime.sql`; keeping all SQL adjacent also means
+  one psql session on the host. It has no dependency on any env/deploy/route
+  step and is safe earlier or later, as long as it follows the W5 SQL.
+- **W7 cron installer goes LAST** because its verify step selects from
+  `marketinghub.backup_status`, which needs the W7 SQL applied. (The cron
+  script itself is order-tolerant — table absent ⇒ exit 0 quietly — so a
+  mis-ordering degrades gracefully; only the installer's verification would
+  fail.) It is independent of every W5/W6 step.
+
+1. **Apply the W7 migration** — `bash /tmp/apply-w7-platform.sh`. Runs the
+   migration as supabase_admin on the host
+   (`docker exec supabase-db psql -U supabase_admin -v ON_ERROR_STOP=1 -f …`),
+   after `2026-08-08-w5-realtime.sql` in the same dated-chain pass, then an
+   inline rls-gate re-run (**must show ZERO rows** for both new tables), the
+   grant-matrix printout, and a non-clobbering writer smoke as the postgres
+   role (never overwrites a real cron payload — safe re-run; the smoke's
+   placeholder row is deleted again right after the read-back, as
+   supabase_admin, so no fake payload ever reaches the console). Safe to
+   re-run. Until step 2, the backups page shows the honest empty
+   state (table exists, no rows); vault audit rows start landing
+   immediately, and reveals — fail-closed on the audit trail — become
+   possible from this point.
+2. **Install the backup-status reporter** — `bash
+   /tmp/install-backup-status-cron.sh`. Idempotent; installs
+   `/usr/local/bin/backup-status-cron` (0750) +
+   `/etc/cron.d/nsight-backup-status` (0644) byte-identical to the cdk
+   assets, runs the reporter once, and verifies a `captured_at` row landed.
+
+Either W7 step alone is safe: SQL-without-cron ⇒ honest empty backups page;
+cron-without-SQL ⇒ the reporter no-ops quietly until the table exists.
+
+### 12.3 Verify
+
+1. Host: `docker exec supabase-db psql -U postgres -c "select captured_at
+   from marketinghub.backup_status"` returns one recent row (the installer
+   already checked this; re-check ~20 min later to see the 15-min cadence).
+2. Through the SSM tunnel (localhost:8080, logged in):
+   - `/database/backups` renders the stanza summary, the backups table
+     (labels/types/sizes matching `pgbackrest info` on the host), and the
+     PITR band with the archiver cross-check. A stored payload with
+     `status.code != 0` renders as an honest error panel — that is correct
+     behavior, not a page bug. The freshness badge must NOT show stale
+     (>45 min) while the cron is healthy.
+   - `/integrations/vault` lists secret metadata (or an honest empty list);
+     a create → reveal (warn-confirm) → delete (typed-name confirm)
+     round-trip works; then `select secret_name, actor, action from
+     marketinghub.vault_console_audit order by id desc limit 5` shows the
+     metadata rows — **values must appear nowhere**, including this audit.
+   - `/admin/cloud` renders the static N/A panel (no fetch — by design).
+3. CloudWatch: `Supabase/Backup:BackupStatusJobFailed` publishing 0s.
+
+### 12.4 Rollback / failure posture
+
+- **Reporter:** `rm -f /etc/cron.d/nsight-backup-status
+  /usr/local/bin/backup-status-cron`. The console degrades to the staleness
+  badge and then an aging-snapshot display; the table keeps its last row and
+  is inert. NOTE (§11.4 lesson): a replacement host re-installs from the cdk
+  assets — permanent rollback means reverting the Wave-7
+  `cdk/assets`/`bootstrap.sh`/`compute-stack.ts` changes too.
+- **Tables:** both are inert if unused — no app write path depends on them.
+  `backup_status` may be truncated/dropped freely (page → honest empty
+  state). Do NOT casually drop `vault_console_audit`: it is the only audit
+  trail of console secret operations.
+- **Vault console:** metadata-only by construction; turning it off is a code
+  deploy (previous image), and the `vault` schema itself predates Wave 7 —
+  no rollback here touches stored secrets.
+
+### 12.5 Component-upgrade policy (standing)
+
+The deployment is a PINNED COMBINATION, not a set of independently-updatable
+parts. Source of truth: `SUPABASE_REF="v1.26.05"` in
+`cdk/assets/bootstrap.sh`; that tag's `docker-compose.yml` fixes every
+service image (studio `2026.04.27-sha-5f60601`, kong `3.9.1`, gotrue
+`v2.186.0`, postgrest `v14.8`, realtime `v2.76.5`, storage-api `v1.48.26`,
+postgres-meta `v0.96.3`, edge-runtime `v1.71.2`, logflare `1.36.1`,
+supabase/postgres `15.8.1.085`, vector `0.53.0-alpine`, supavisor `2.7.4`).
+
+1. **Never upgrade one container ad-hoc.** Upgrades move the whole bundle
+   pin to a newer tag — one tested combination — through a preview stack
+   first.
+2. **Verify version-sensitive claims against the pinned images directly**
+   (`docker run` the exact image, as the parity research does). The CLI's
+   `supabase start` stack tracks the CLI release, not our pin, and is never
+   evidence of behavior at v1.26.05.
+3. **Postgres image bumps are restore-drill-grade events**: extension
+   versions only change with the image; the data volume, WAL chain and
+   pgBackRest stanza must stay coherent. Minors ride a maintenance window
+   with a fresh full backup taken first; majors follow
+   `docs/runbooks/upgrade-postgres-major.md`.
+4. **On any pin bump, reconcile the derived artifacts:** re-vendor
+   `cdk/assets/kong-nsight.yml` from the new tag's pristine kong.yml,
+   re-applying ONLY our marked deltas (`# nsight-w6 analytics route`) — else
+   the W6 pin-drift gate in `/tmp/enable-analytics-route.sh` will
+   (correctly) refuse; re-run `scripts/gen-db-types.sh` and commit the
+   regenerated `database.types.ts` (the drift-guard test enforces the hash);
+   sanity-check the backup-status cron against the host's pgbackrest binary
+   (JSON format 5 is stable since ~2.38; newer versions only add fields);
+   update the feature catalog's pin/version facts.
+5. **Host-side (non-bundle) components** — pgbackrest arrives via AL2023
+   `dnf` and its binary version is not pinned by the repo (and currently
+   UNVERIFIED); record it at the next host session/drill and prefer
+   `dnf versionlock` if drift ever bites.
+6. **Dev-tooling pins:** typegen/diff use `npx supabase@2.113.0`
+   deliberately; bump it consciously and re-run typegen in the same change.
+
+### 12.6 Vault root-key durability warning (standing, UNVERIFIED)
+
+Vault plaintext depends on a ROOT KEY that lives OUTSIDE the database:
+`vault.decrypted_secrets` decrypts with key material the GUC
+`vault.getkey_script=/usr/lib/postgresql/bin/pgsodium_getkey.sh` materializes
+inside the db container at boot. **pgBackRest and pg_dumpall capture only
+ciphertext** — a restore onto a host without the same key material yields
+undecryptable secrets, silently.
+
+- **UNVERIFIED on our host** (no host access during Wave 7): where
+  `pgsodium_getkey.sh` sources its key (data-dir file vs generated) and
+  whether that location is inside the pgBackRest backup set and/or the EBS
+  AWS Backup snapshot. Until verified, treat vault secrets as NOT durably
+  restorable and keep authoritative copies of anything vault-stored in AWS
+  (Secrets Manager/SSM) territory as well.
+- **Next host session:** locate the key material, confirm backup coverage,
+  and record the finding here.
+- **Quarterly restore drill** (`docs/runbooks/restore-drill.md`) gains a
+  vault-decrypt step: after the PITR restore, as postgres/supabase_admin run
+  `select count(*) from vault.decrypted_secrets` and round-trip one known
+  TEST secret — assert success/failure ONLY; never select secret values into
+  a terminal log or drill notes. Fold this into the drill doc when the next
+  drill is scheduled.

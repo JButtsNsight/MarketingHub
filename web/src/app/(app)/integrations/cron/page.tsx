@@ -17,12 +17,13 @@ export const metadata = {
   title: "Cron · MarketingHub",
 };
 
-// The Integrations section (pg_cron / pgmq surfaced as their own screens),
-// matching the Nav group. Local to this surface — the shared tabs module owns
-// only the Database section.
+// The Integrations section (pg_cron / pgmq / supabase_vault surfaced as their
+// own screens), matching the Nav group. Local to this surface — the shared
+// tabs module owns only the Database section.
 const INTEGRATION_TABS: TabItem[] = [
   { href: "/integrations/cron", label: "Cron" },
   { href: "/integrations/queues", label: "Queues" },
+  { href: "/integrations/vault", label: "Vault" },
 ];
 
 /**

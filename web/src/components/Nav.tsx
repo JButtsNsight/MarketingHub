@@ -25,8 +25,10 @@ export type IconKey =
   | "logs"
   | "cron"
   | "queues"
+  | "vault"
   | "infra"
   | "admin"
+  | "cloud"
   | "settings";
 
 export interface NavItem {
@@ -85,11 +87,12 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     // Studio's "Integrations" — postgres extensions surfaced as their own
-    // operational screens (pg_cron, pgmq).
+    // operational screens (pg_cron, pgmq, supabase_vault).
     label: "Integrations",
     items: [
       { href: "/integrations/cron", label: "Cron", icon: "cron" },
       { href: "/integrations/queues", label: "Queues", icon: "queues" },
+      { href: "/integrations/vault", label: "Vault", icon: "vault" },
     ],
   },
   {
@@ -106,7 +109,11 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Project",
     items: [
       { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
-      { href: "/admin", label: "Admin", icon: "admin" },
+      // /admin is the ops landing page; Cloud Features (/admin/cloud) is its
+      // own nav item nested beneath it, so Admin matches exactly — same
+      // most-specific-match treatment as Table Editor vs. Database.
+      { href: "/admin", label: "Admin", icon: "admin", exact: true },
+      { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
       { href: "/settings", label: "Settings", icon: "settings" },
     ],
   },
@@ -252,6 +259,13 @@ const ICONS: Record<IconKey, ReactNode> = {
       <rect x="3" y="16" width="18" height="4" rx="1" />
     </>
   ),
+  vault: (
+    <>
+      <rect x="4" y="10" width="16" height="10" rx="1.5" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+      <path d="M12 14v2.5" />
+    </>
+  ),
   infra: (
     <>
       <rect x="3" y="4" width="18" height="6" rx="1.5" />
@@ -266,6 +280,9 @@ const ICONS: Record<IconKey, ReactNode> = {
       <circle cx="15" cy="12" r="2" />
       <circle cx="7" cy="18" r="2" />
     </>
+  ),
+  cloud: (
+    <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
   ),
   settings: (
     <>

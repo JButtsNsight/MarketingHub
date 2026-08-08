@@ -37,6 +37,10 @@ export const SENSITIVE_TABLES = new Set([
   "marketinghub.console_query_history",
   "storage.buckets",
   "storage.objects",
+  // Vault holds encrypted secrets; selecting the decrypted view decrypts
+  // EVERY row. All access goes through the Vault console (lib/console/vault).
+  "vault.secrets",
+  "vault.decrypted_secrets",
 ]);
 
 /**
@@ -51,6 +55,13 @@ export const SENSITIVE_TABLES = new Set([
  */
 export const READ_ONLY_TABLES = new Set([
   "marketinghub.console_query_history",
+  // Vault mutations happen ONLY through the Vault console page, which routes
+  // create/update through vault.create_secret/update_secret (so values are
+  // encrypted) and audits every action. Grid edits would write plaintext into
+  // the ciphertext column. (The vault schema is not in EDITOR_SCHEMAS either;
+  // this is the defense-in-depth layer should that ever change.)
+  "vault.secrets",
+  "vault.decrypted_secrets",
 ]);
 
 export function isReadOnlyTable(schema: string, table: string): boolean {

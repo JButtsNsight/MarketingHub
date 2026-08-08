@@ -257,10 +257,28 @@ CRON
   systemctl enable --now crond || die "crond could not be started — backups not scheduled"
 }
 
+install_backup_status_schedule() {
+  # Wave-7: the /database/backups console reads marketinghub.backup_status,
+  # refreshed every 15 min by backup-status-cron (staged to /usr/local/bin by
+  # compute-stack user-data). The reporter is a quiet no-op until the W7
+  # migration creates the landing table, so first-boot ordering is a non-issue.
+  install -d -m 0755 /etc/cron.d
+  cat >/etc/cron.d/nsight-backup-status <<CRON
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+AWS_REGION=${AWS_REGION}
+*/15 * * * * root /usr/local/bin/backup-status-cron
+CRON
+  chmod 0644 /etc/cron.d/nsight-backup-status
+}
+
 setup_backups() {
   # Preview profile: SKIP_BACKUPS is exported from user-data (rendered by CDK). When set
   # (non-empty) we skip ALL pgBackRest/WAL/cron wiring — it is the riskiest first-boot
   # step and the backup vault does not exist in a preview stack. Fail-loud otherwise.
+  # The Wave-7 status reporter is skipped too, on purpose: a preview host has no
+  # pgBackRest, and the backups console shows its honest "host reporter not installed"
+  # empty state instead of a broken cron.
   if [ -n "${SKIP_BACKUPS:-}" ]; then
     log "skipping backups (preview)"
     return 0
@@ -272,7 +290,9 @@ setup_backups() {
   # Initialize + verify the pgBackRest S3 stanza (host process, instance-role creds).
   /usr/local/bin/pgbackrest-cron stanza || die "pgBackRest stanza init/check failed"
   install_backup_schedule
-  log "Backups active: WAL archiving + full/diff base backups + nightly pg_dump scheduled."
+  # Wave-7: 15-min pgbackrest-info status reporter for the backups console.
+  install_backup_status_schedule
+  log "Backups active: WAL archiving + full/diff base backups + nightly pg_dump + 15-min status reporter scheduled."
 }
 
 main() {

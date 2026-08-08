@@ -1,0 +1,9 @@
+{
+  "//": "Self-hosted Supabase MCP — INERT until Kong's /mcp route is enabled (it answers 403 at our pin by default). See docs/reference/mcp-self-hosted.md for the verdict, the enablement recipe, and why it stays off. Assumes an SSM tunnel forwarding local 54321 -> Supabase host Kong :8000. read_only=true on purpose; the route has NO auth beyond Kong ip-restriction, so it must never leave the tunnel.",
+  "mcpServers": {
+    "supabase-selfhosted": {
+      "type": "http",
+      "url": "http://127.0.0.1:54321/mcp?features=docs,database,development,debugging&read_only=true"
+    }
+  }
+}
