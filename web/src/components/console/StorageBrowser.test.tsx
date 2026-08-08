@@ -1,16 +1,59 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import {
   StorageBrowser,
-  type BucketDto,
+  type BucketRow,
   type EntryDto,
 } from "./StorageBrowser";
 
-const BUCKETS: BucketDto[] = [
-  { id: "a", name: "campaign-templates", public: false },
-  { id: "b", name: "contact-lists", public: false },
+// The browser imports ResumableUploader, which pulls in uppy — stub the uppy
+// modules so tests exercise our UI, not the upload engine (which has its own
+// suite in components/storage/ResumableUploader.test.tsx).
+const h = vi.hoisted(() => {
+  class MockTus {}
+  class MockUppy {
+    use() {
+      return this;
+    }
+    on() {
+      return this;
+    }
+    getFiles() {
+      return [];
+    }
+    addFile() {}
+    removeFile() {}
+    setFileMeta() {}
+    pauseResume() {}
+    retryUpload() {
+      return Promise.resolve();
+    }
+    destroy() {}
+  }
+  return { MockTus, MockUppy };
+});
+vi.mock("@uppy/core", () => ({ default: h.MockUppy }));
+vi.mock("@uppy/tus", () => ({ default: h.MockTus }));
+
+const BUCKETS: BucketRow[] = [
+  {
+    id: "a",
+    name: "campaign-templates",
+    public: false,
+    createdAt: null,
+    fileSizeLimit: null,
+    allowedMimeTypes: null,
+  },
+  {
+    id: "b",
+    name: "contact-lists",
+    public: false,
+    createdAt: null,
+    fileSizeLimit: null,
+    allowedMimeTypes: null,
+  },
 ];
 
 const ROOT: EntryDto[] = [
@@ -42,6 +85,19 @@ function mockFetchRoutes() {
     calls.push({ url, init });
     const method = init?.method ?? "GET";
     if (method === "GET") {
+      if (url.includes("/render")) {
+        return Promise.resolve(
+          new Response("png-bytes", {
+            status: 200,
+            headers: { "content-type": "image/png" },
+          }),
+        );
+      }
+      if (url.includes("/buckets")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ buckets: BUCKETS }), { status: 200 }),
+        );
+      }
       const entries = url.includes("prefix=folder-1") ? NESTED : ROOT;
       return Promise.resolve(
         new Response(JSON.stringify({ buckets: BUCKETS, entries }), { status: 200 }),
@@ -179,14 +235,90 @@ describe("StorageBrowser", () => {
     });
   });
 
-  test("image preview renders through the inline proxy", async () => {
-    mockFetchRoutes();
+  test("image preview mounts the transform preview against the render proxy", async () => {
+    const { calls } = mockFetchRoutes();
+    // jsdom has no object-URL support — TransformPreview blobs the response.
+    const createObjectURL = vi.fn(() => "blob:preview-1");
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
     const user = userEvent.setup();
     renderBrowser();
 
     await user.click(screen.getByRole("button", { name: "Preview" }));
 
-    const img = screen.getByRole("img", { name: "logo.png" });
-    expect(img).toHaveAttribute("src", expect.stringContaining("inline=1"));
+    await waitFor(() =>
+      expect(screen.getByRole("img", { name: "logo.png" })).toHaveAttribute(
+        "src",
+        "blob:preview-1",
+      ),
+    );
+    expect(
+      calls.some(
+        (c) =>
+          c.url.includes("/api/console/storage/render?") &&
+          c.url.includes("path=logo.png"),
+      ),
+    ).toBe(true);
+  });
+
+  test("bucket management panel lists per-bucket edit/empty/delete affordances", () => {
+    mockFetchRoutes();
+    renderBrowser();
+
+    expect(screen.getByRole("heading", { name: "Buckets" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Empty" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Delete…" })).toHaveLength(2);
+  });
+
+  test("emptying the current bucket reloads its listing at the root", async () => {
+    const { calls } = mockFetchRoutes();
+    const user = userEvent.setup();
+    renderBrowser();
+
+    // Drill into a folder first so the reload provably lands back at the root.
+    await user.click(screen.getByRole("button", { name: "folder-1/" }));
+    await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+    const before = calls.filter((c) => c.url.includes("/objects")).length;
+
+    // campaign-templates (the selected bucket) is the first manager row.
+    await user.click(screen.getAllByRole("button", { name: "Empty" })[0]);
+    const modal = screen.getByRole("alertdialog");
+    await user.type(
+      within(modal).getByLabelText(/to confirm/),
+      "campaign-templates",
+    );
+    await user.click(within(modal).getByRole("button", { name: "Empty bucket" }));
+
+    await waitFor(() => {
+      const objectLoads = calls.filter((c) => c.url.includes("/objects"));
+      expect(objectLoads.length).toBeGreaterThan(before);
+      expect(objectLoads[objectLoads.length - 1].url).not.toContain("prefix=");
+    });
+  });
+
+  test("the rail's New bucket chip opens the create dialog", async () => {
+    mockFetchRoutes();
+    const user = userEvent.setup();
+    renderBrowser();
+
+    // First match is the toolbar chip (the manager section repeats the action).
+    const [railCreate] = screen.getAllByRole("button", { name: "New bucket" });
+    await user.click(railCreate);
+
+    expect(screen.getByRole("dialog", { name: "New bucket" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  test("Large files toggles the resumable uploader without losing the classic path", async () => {
+    mockFetchRoutes();
+    const user = userEvent.setup();
+    renderBrowser();
+
+    expect(screen.queryByRole("button", { name: "Add files" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Large files" }));
+
+    expect(screen.getByRole("button", { name: "Add files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload file" })).toBeInTheDocument();
   });
 });

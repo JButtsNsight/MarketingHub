@@ -359,7 +359,9 @@ not reach the suppression list.
 
 ## 7. Notes / gotchas
 
-- **Never** mark the `campaign-templates` bucket public.
+- **Never** mark the `campaign-templates` bucket public. As of Wave 2 this is
+  enforced, not just policy: `/api/console/storage/buckets` answers 403 to any
+  attempt to make that bucket public, empty it, or delete it (see §8).
 - The service-role key is server-only. It reaches the container solely as a Secrets
   Manager–sourced env at task start; it is never in the image, the task-def
   plaintext env, or the browser bundle.
@@ -403,3 +405,69 @@ not reach the suppression list.
   (and flagged `failed_ambiguous`), never double-sent — a missed send is the
   accepted failure mode. Resist any "just auto-retry ambiguous rows" change: a
   duplicate patient text is worse than a missed one.
+
+---
+
+## 8. Wave-2 Storage parity (2026-08-08)
+
+What shipped on `/storage` — all of it behind the marketing-group gate and
+proxied through Next API routes (the browser still never reaches Supabase):
+
+- **Bucket management** (`/api/console/storage/buckets`): create / edit
+  (public flag, per-bucket size limit, MIME allow-list) / empty / delete.
+  Delete AND empty are type-the-bucket-name confirmed in the modal AND
+  server-side (the route requires a `confirm: <name>` echo before anything
+  destructive runs). The Storage API refuses to delete a non-empty bucket —
+  empty it first. `campaign-templates` stays private, always — the route
+  itself 403s public/empty/delete for it (§7 rule, now server-enforced).
+- **Resumable (TUS) uploads** (`/api/console/storage/tus`): the browser
+  toolbar's **Large files** toggle mounts an Uppy/TUS uploader with per-file
+  pause/resume/retry. The classic ≤25MB multipart upload path is unchanged
+  and remains the default.
+- **Image transform previews** (`/api/console/storage/render`): Preview now
+  renders through the storage-api `/render/image` + imgproxy pipeline with
+  width/height/resize/quality/format controls and a copyable render URL.
+  Covers png/jpeg/gif/webp plus avif and (sanitized) svg sources.
+- **S3 protocol panel** (read-only, on `/storage`): shows the endpoint
+  *shape* only — a literal `<SUPABASE_URL>/storage/v1/s3` placeholder. The
+  real internal origin (and the region env) is deliberately never rendered
+  into browser-served HTML: this runbook and the host config are the source
+  for the literal value. SigV4 credentials (`S3_PROTOCOL_ACCESS_KEY_ID` /
+  `S3_PROTOCOL_ACCESS_KEY_SECRET`) live on the Supabase host only and are
+  never surfaced through the console.
+
+### 8.1 TUS proxy notes
+
+- The proxy injects the service-role key upstream; client cookies and
+  `Authorization` never cross in either direction, and only the TUS
+  allow-listed headers are forwarded. The upstream `Location` header is
+  rewritten to `/api/console/storage/tus/{id}` so the internal host never
+  leaks to the browser.
+- `Upload-Length` is required on create and capped at **1 GiB** (413 above
+  it). **But the storage host's global `FILE_SIZE_LIMIT` still wins** — the
+  pinned compose (v1.26.05) sets it to `52428800` (50MB), so resumable
+  uploads larger than 50MB are refused upstream until that env (and any
+  bucket-level `file_size_limit`) is raised on the Supabase host.
+- Client chunk size is fixed at **6MB** (Supabase requirement — do not
+  change). Upload URLs expire after ~1h (self-hosted default): an upload
+  paused much longer than that restarts from zero on resume.
+- Creation parses `Upload-Metadata` and holds `bucketName`/`objectName` to
+  the console's `isSafeBucketName`/`isSafePath` rules (400 otherwise, before
+  anything reaches the upstream). The Storage API itself accepts far looser
+  keys — without this check a curl user could create objects the console can
+  list but never download/rename/delete. Other metadata keys pass through
+  untouched, and chunk PATCHes are not re-parsed.
+
+### 8.2 Transform availability caveat
+
+- `/render` only works while storage-api runs with
+  `ENABLE_IMAGE_TRANSFORMATION="true"` and its `imgproxy` container is
+  reachable. Both hold in the pinned compose (storage-api v1.48.26 +
+  imgproxy v3.30.1); our S3-backend override does not touch either setting.
+- If transformation is disabled or imgproxy is down, the route answers
+  **503** and the UI shows "Image transformations are unavailable" — browse /
+  upload / download / bucket management keep working.
+- SVG sources can pass through as `image/svg+xml`; the render route forces
+  `content-disposition: attachment` + a sandboxing CSP for anything that is
+  not a raster type (png/jpeg/gif/webp/avif) — same XSS guard as the
+  download proxy.

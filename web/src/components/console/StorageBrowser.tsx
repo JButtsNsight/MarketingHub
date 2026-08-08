@@ -3,24 +3,29 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
-import { Surface } from "../Surface";
+import { BucketManager } from "../storage/BucketManager";
+import { BucketFormDialog, type BucketRow } from "../storage/BucketFormDialog";
+import { ResumableUploader } from "../storage/ResumableUploader";
+import {
+  TransformPreview,
+  isTransformableType,
+} from "../storage/TransformPreview";
 
 /**
  * The Storage browser (Studio parity): bucket picker, breadcrumb folder tree,
- * upload, rename/move, delete (two-step), download, and inline preview for
- * images — everything through the group-gated /api/console/storage/* routes,
+ * upload, rename/move, delete (two-step), download, and transform-aware
+ * preview — everything through the group-gated /api/console/storage/* routes,
  * which proxy bytes server-side because the signed URLs point at the private
  * internal data API.
  *
- * Uploads never overwrite (the server enforces it) — replacing a file is an
- * explicit delete-then-upload.
+ * Classic uploads never overwrite (the server enforces it) — replacing a file
+ * is an explicit delete-then-upload. The "Large files" toggle mounts the
+ * resumable TUS uploader for anything past the classic 25MB cap, and the
+ * BucketManager section below the listing owns bucket create/edit/empty/
+ * delete (the rail's "New bucket" chip opens the same create dialog).
  */
 
-export interface BucketDto {
-  id: string;
-  name: string;
-  public: boolean;
-}
+export type { BucketRow } from "../storage/BucketFormDialog";
 
 export interface EntryDto {
   name: string;
@@ -44,20 +49,16 @@ function formatBytes(bytes: number | null): string {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-// Raster images only — must match the download route's INLINE_SAFE allowlist.
-// SVG is deliberately excluded: served inline it would script the app origin.
-const PREVIEWABLE = /^image\/(png|jpe?g|gif|webp)$/;
-
 export function StorageBrowser({
   initialBuckets,
   initialBucket,
   initialEntries,
 }: {
-  initialBuckets: BucketDto[];
+  initialBuckets: BucketRow[];
   initialBucket: string;
   initialEntries: EntryDto[];
 }) {
-  const [buckets] = useState(initialBuckets);
+  const [buckets, setBuckets] = useState(initialBuckets);
   const [bucket, setBucket] = useState(initialBucket);
   const [prefix, setPrefix] = useState("");
   const [entries, setEntries] = useState<EntryDto[]>(initialEntries);
@@ -68,6 +69,9 @@ export function StorageBrowser({
   const [renameTo, setRenameTo] = useState("");
   const [preview, setPreview] = useState<EntryDto | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [creatingBucket, setCreatingBucket] = useState(false);
+  const [managerEpoch, setManagerEpoch] = useState(0);
+  const [showResumable, setShowResumable] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const fetchSeq = useRef(0);
 
@@ -104,6 +108,43 @@ export function StorageBrowser({
     void load(bucket, prefix);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bucket, prefix]);
+
+  // Keeps the picker in sync after bucket CRUD; when the current bucket is
+  // gone, falls over to the first remaining one at its root.
+  const applyBuckets = (next: BucketRow[]) => {
+    setBuckets(next);
+    if (next.length > 0 && !next.some((b) => b.name === bucket)) {
+      setBucket(next[0].name);
+      setPrefix("");
+    }
+  };
+
+  // An emptied bucket still exists, so applyBuckets never moves — the current
+  // listing must reload itself or it keeps showing the just-deleted objects.
+  // The prefix's pseudo-folders are gone too, so land back at the root.
+  const onBucketEmptied = (name: string) => {
+    if (name !== bucket) return;
+    if (prefix) setPrefix("");
+    else void load(bucket, "");
+  };
+
+  // For buckets created from the rail dialog: BucketManager owns its own
+  // list state, so the fresh fetch also remounts it (key) with the new list.
+  const refreshBuckets = async () => {
+    try {
+      const res = await fetch("/api/console/storage/buckets");
+      if (!res.ok) return;
+      const body = (await res.json().catch(() => null)) as
+        | { buckets?: BucketRow[] }
+        | null;
+      if (Array.isArray(body?.buckets)) {
+        applyBuckets(body.buckets);
+        setManagerEpoch((e) => e + 1);
+      }
+    } catch {
+      // best-effort — the create dialog already reported its own result
+    }
+  };
 
   const upload = async (file: File) => {
     setUploading(true);
@@ -246,7 +287,7 @@ export function StorageBrowser({
       render: (e) =>
         e.isFolder ? null : (
           <span className="campaign-actions">
-            {e.mimetype && PREVIEWABLE.test(e.mimetype) ? (
+            {isTransformableType(e.mimetype) ? (
               <button
                 type="button"
                 className="type-chip"
@@ -321,6 +362,13 @@ export function StorageBrowser({
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          className="type-chip"
+          onClick={() => setCreatingBucket(true)}
+        >
+          New bucket
+        </button>
 
         <nav className="tabs storage-crumbs" aria-label="Breadcrumb">
           {crumbs.map((c, i) => (
@@ -348,6 +396,14 @@ export function StorageBrowser({
         />
         <button
           type="button"
+          className={showResumable ? "type-chip on" : "type-chip"}
+          aria-pressed={showResumable}
+          onClick={() => setShowResumable((v) => !v)}
+        >
+          Large files
+        </button>
+        <button
+          type="button"
           className="btn-primary"
           disabled={uploading}
           onClick={() => fileInput.current?.click()}
@@ -362,15 +418,24 @@ export function StorageBrowser({
         </p>
       ) : null}
 
+      {showResumable ? (
+        // TUS through the same-origin proxy — survives pauses/network blips
+        // and takes files past the classic route's 25MB cap (up to 1 GiB).
+        <ResumableUploader
+          bucket={bucket}
+          prefix={prefix}
+          onUploaded={() => void load(bucket, prefix)}
+        />
+      ) : null}
+
       {preview ? (
-        <Surface className="storage-preview" glint>
-          <span className="eyebrow">{preview.path}</span>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/api/console/storage/download?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(preview.path)}&inline=1`}
-            alt={preview.name}
-          />
-        </Surface>
+        // Keyed per object so the transform controls reset on selection change.
+        <TransformPreview
+          key={`${bucket}/${preview.path}`}
+          bucket={bucket}
+          path={preview.path}
+          contentType={preview.mimetype}
+        />
       ) : null}
 
       <div className={loading ? "dgrid-busy" : undefined}>
@@ -381,6 +446,24 @@ export function StorageBrowser({
           empty="This location is empty."
         />
       </div>
+
+      <BucketManager
+        key={managerEpoch}
+        initialBuckets={buckets}
+        onBucketsChanged={applyBuckets}
+        onEmptied={onBucketEmptied}
+      />
+
+      {creatingBucket ? (
+        <BucketFormDialog
+          mode="create"
+          existingNames={buckets.map((b) => b.name)}
+          onClose={(saved) => {
+            setCreatingBucket(false);
+            if (saved) void refreshBuckets();
+          }}
+        />
+      ) : null}
     </div>
   );
 }
