@@ -64,6 +64,22 @@ test('pgbackrest assets exist', () => {
   expect(files).toContain('pgbackrest-cron');
 });
 
+test('bootstrap.sh seeds edge functions from functions-seed, copy-if-absent only (Wave 5)', () => {
+  const bootstrap = fs.readFileSync(path.join(assetsDir, 'bootstrap.sh'), 'utf8');
+  // The seed mirror: user-data stages repo supabase/functions/<name>/index.ts at
+  // /opt/supabase/functions-seed; bootstrap copies them into FUNCTIONS_DIR so a
+  // brand-new host boots with a main service (edge-runtime crash-loops without one).
+  expect(bootstrap).toMatch(/\/opt\/supabase\/functions-seed/);
+  expect(bootstrap).toMatch(/seed_edge_functions/);
+  // Copy ONLY when the target is absent — host-side edits are never clobbered.
+  expect(bootstrap).toMatch(/! -f "\$\{FUNCTIONS_DIR\}\/\$\{name\}\/index\.ts"/);
+  // Seeding must run after the every-boot FUNCTIONS_DIR install -d, inside main().
+  const installIdx = bootstrap.lastIndexOf('install -d -m 0755 "$FUNCTIONS_DIR"');
+  const seedCallIdx = bootstrap.lastIndexOf('  seed_edge_functions');
+  expect(installIdx).toBeGreaterThan(-1);
+  expect(seedCallIdx).toBeGreaterThan(installIdx);
+});
+
 describe('shell assets parse and lint clean', () => {
   const files = shellAssets();
   // Guard: if discovery returns nothing the describe body is empty and the

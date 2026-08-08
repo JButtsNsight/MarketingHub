@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
+import { LiveRefresher } from "@/components/live/LiveRefresher";
 
 // Reads request-time identity + live campaign rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -80,6 +81,8 @@ export default async function SchedulePage() {
           </>
         }
       />
+
+      <LiveRefresher topic="mh:schedule" />
 
       {campaigns.length > 0 ? (
         <div className="stack">

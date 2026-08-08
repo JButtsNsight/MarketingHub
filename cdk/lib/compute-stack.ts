@@ -1,4 +1,4 @@
-import { Stack, StackProps, Tags, Duration, CfnOutput } from 'aws-cdk-lib';
+import { Stack, StackProps, Tags, Duration, CfnOutput, Annotations } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
@@ -8,6 +8,7 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 import * as s3assets from 'aws-cdk-lib/aws-s3-assets';
+import * as fs from 'fs';
 import * as path from 'path';
 
 export interface ComputeStackProps extends StackProps {
@@ -174,6 +175,42 @@ export class ComputeStack extends Stack {
     stage('pgbackrest.conf', '/etc/pgbackrest/pgbackrest.conf', '0640');
     stage('pgbackrest-cron', '/usr/local/bin/pgbackrest-cron', '0750');
     stage('bootstrap.sh', '/opt/supabase/bootstrap.sh', '0700');
+    // Wave-5 Edge Functions seed mirror: the repo-tracked sources
+    // (supabase/functions/<name>/index.ts — main router + hello + embed stub) are
+    // staged to /opt/supabase/functions-seed/<name>/index.ts; bootstrap.sh copies
+    // each into /mnt/pgdata/functions ONLY when the target is absent (a brand-new
+    // host first-boots correct — the edge-runtime container crash-loops without a
+    // main service — while host-side updates by the staged ops scripts are never
+    // clobbered). Strict when the tree exists: a PARTIAL tree is a repo bug and
+    // fails synth loud. A wholly-absent tree only warns, so pre-Wave-5 checkouts
+    // (and the parallel-agent window) still synthesize.
+    const functionsSrcDir = path.join(__dirname, '..', '..', 'supabase', 'functions');
+    if (fs.existsSync(functionsSrcDir)) {
+      for (const fn of ['main', 'hello', 'embed']) {
+        const src = path.join(functionsSrcDir, fn, 'index.ts');
+        if (!fs.existsSync(src)) {
+          throw new Error(
+            `ComputeStack: edge-function seed source missing: ${src} — ` +
+              'the Wave-5 supabase/functions tree exists but is incomplete',
+          );
+        }
+        const dest = `/opt/supabase/functions-seed/${fn}/index.ts`;
+        const asset = new s3assets.Asset(this, `AssetEdgeFn${fn}`, { path: src });
+        asset.grantRead(role);
+        userData.addS3DownloadCommand({
+          bucket: asset.bucket,
+          bucketKey: asset.s3ObjectKey,
+          localFile: dest,
+        });
+        userData.addCommands(`chmod 0644 '${dest}'`);
+      }
+    } else {
+      Annotations.of(this).addWarning(
+        `supabase/functions not found at ${functionsSrcDir} — edge-function seeds NOT staged; ` +
+          'a brand-new host would boot with an empty /mnt/pgdata/functions (edge-runtime crash-loop). ' +
+          'Deploy from a checkout that includes the Wave-5 supabase/functions tree.',
+      );
+    }
     // Substitute the pgbackrest.conf placeholders with the real bucket/region.
     userData.addCommands(
       'sed -i "s|__BACKUP_BUCKET__|${BACKUP_BUCKET}|; s|__AWS_REGION__|us-east-1|" /etc/pgbackrest/pgbackrest.conf',

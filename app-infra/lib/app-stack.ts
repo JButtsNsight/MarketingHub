@@ -3,6 +3,7 @@ import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as elbv2Targets from 'aws-cdk-lib/aws-elasticloadbalancingv2-targets';
 import * as actions from 'aws-cdk-lib/aws-elasticloadbalancingv2-actions';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -61,6 +62,17 @@ export class AppStack extends Stack {
 
     // Context required in BOTH modes.
     const appImageTag = req('appImageTag');
+    // OPTIONAL: pin the WORKER (SMS dispatcher) image independently of the
+    // app. The live app and worker task-defs have drifted apart out-of-band
+    // (runbook §9.4 / §10.2-3): deploying with only appImageTag would
+    // silently roll the single dispatcher onto the app's image — a different
+    // build, with NO deployment circuit breaker on the WorkerService to
+    // catch a bad boot. Staged deploy scripts derive this from the LIVE
+    // worker task-def at run time. Absent ⇒ the worker follows appImageTag,
+    // exactly the pre-Wave-5 behavior (default synth unchanged).
+    const workerImageTag =
+      (this.node.tryGetContext('workerImageTag') as string | undefined) ??
+      appImageTag;
     const supabaseUrl = req('supabaseUrl');
     const supabaseServiceRoleSecretArn = req('supabaseServiceRoleSecretArn');
     // The service-role secret is encrypted with its own dedicated CMK. Because we
@@ -241,6 +253,58 @@ export class AppStack extends Stack {
       }),
     );
 
+    // --- Wave-5 (context-flagged, default OFF): app-config secrets --------------
+    // Folds the Wave-4 out-of-band task-def drift into the stack. When the
+    // OPTIONAL supabaseAppConfigSecretArn context is set, the APP container gets
+    //   SUPABASE_JWT_SECRET — flips getUserClient() to per-user JWTs (RLS live,
+    //                         runbook §9) and lets /api/realtime/token mint
+    //                         browser Realtime tokens;
+    //   SUPABASE_ANON_KEY   — the browser Realtime `apikey` (Kong key-auth),
+    //                         returned to clients by /api/realtime/token.
+    // Both are JSON fields of Secrets Manager `nsight-supabase/app-config`,
+    // delivered as ECS `valueFrom` refs (never plaintext env). NEVER add these
+    // to the WORKER task-def: the dispatcher must keep service_role/BYPASSRLS
+    // semantics (runbook §9.4). Context ABSENT (default) ⇒ this block emits
+    // NOTHING and the synthesized template is unchanged.
+    const supabaseAppConfigSecretArn = this.node.tryGetContext('supabaseAppConfigSecretArn') as
+      | string
+      | undefined;
+    if (supabaseAppConfigSecretArn) {
+      // app-config sits under a DIFFERENT CMK than the service-role/sms secrets,
+      // and a by-ARN secret import cannot discover it — without kms:Decrypt on
+      // that exact key the task fails at start (ResourceInitializationError).
+      // Fail loud rather than synthesize a task-def that cannot start. The
+      // staged /tmp/deploy-w5-infra.sh resolves both ARNs live at run time.
+      const supabaseAppConfigKmsKeyArn = this.node.tryGetContext('supabaseAppConfigKmsKeyArn') as
+        | string
+        | undefined;
+      if (!supabaseAppConfigKmsKeyArn) {
+        throw new Error(
+          'AppStack: supabaseAppConfigSecretArn is set but supabaseAppConfigKmsKeyArn is not — ' +
+            'the app-config secret is encrypted with its own CMK; pass both (see /tmp/deploy-w5-infra.sh)',
+        );
+      }
+      const appConfigSecret = secretsmanager.Secret.fromSecretCompleteArn(
+        this,
+        'SupabaseAppConfigSecret',
+        supabaseAppConfigSecretArn,
+      );
+      appContainer.addSecret(
+        'SUPABASE_JWT_SECRET',
+        ecs.Secret.fromSecretsManager(appConfigSecret, 'JWT_SECRET'),
+      );
+      appContainer.addSecret(
+        'SUPABASE_ANON_KEY',
+        ecs.Secret.fromSecretsManager(appConfigSecret, 'ANON_KEY'),
+      );
+      taskDef.addToExecutionRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['kms:Decrypt'],
+          resources: [supabaseAppConfigKmsKeyArn],
+        }),
+      );
+    }
+
     const service = new ecs.FargateService(this, 'AppService', {
       cluster,
       taskDefinition: taskDef,
@@ -272,12 +336,72 @@ export class AppStack extends Stack {
       deregistrationDelay: Duration.seconds(30),
     });
 
+    // --- Wave-5 (context-flagged, default OFF): browser Realtime bypass ---------
+    // enableRealtimeAlb routes /realtime/v1/* on the front-door listener to the
+    // Supabase host's Kong (:8000), so the BROWSER — which can only reach the app
+    // ALB — can open the Realtime WebSocket at wss://<app-host>/realtime/v1/...
+    // Flag ABSENT (default) ⇒ this block synthesizes NOTHING: the template is
+    // identical to pre-Wave-5 (tests assert both states). Same construct style as
+    // the /l/* engagement-suite bypass: a priority-numbered rule, plain forward.
+    //
+    // Reachability note: ALB→Kong:8000 ALSO needs the Supabase-host SG to admit
+    // AlbSg. That SG belongs to the Supabase stacks and cannot be mutated here
+    // (internalClientSg is imported immutable, and the ALB is not a member of it
+    // anyway) — the staged /tmp/deploy-w5-infra.sh adds that ingress idempotently
+    // at run time, before the deploy.
+    const enableRealtimeAlb =
+      this.node.tryGetContext('enableRealtimeAlb') === true ||
+      this.node.tryGetContext('enableRealtimeAlb') === 'true';
+
+    let realtimeTargetGroup: elbv2.ApplicationTargetGroup | undefined;
+    if (enableRealtimeAlb) {
+      // The Supabase host comes from the supabaseUrl context (preview:
+      // http://10.60.2.224:8000). An IP-mode target group registers literal
+      // IPv4 addresses — fail loud on a hostname rather than synthesize a
+      // target group that can never register its target.
+      const supabaseHostUrl = new URL(supabaseUrl);
+      const supabaseHostIp = supabaseHostUrl.hostname;
+      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(supabaseHostIp)) {
+        throw new Error(
+          `AppStack: enableRealtimeAlb needs an IPv4 host in supabaseUrl (IP target group); ` +
+            `got "${supabaseHostIp}" — pass -c supabaseUrl=http://<host-ip>:8000`,
+        );
+      }
+      const supabaseKongPort = supabaseHostUrl.port ? Number(supabaseHostUrl.port) : 8000;
+
+      realtimeTargetGroup = new elbv2.ApplicationTargetGroup(this, 'RealtimeTargetGroup', {
+        vpc,
+        port: supabaseKongPort,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        // WebSocket upgrade requires HTTP/1.1 on the target connection — ALB
+        // does not carry WS over an HTTP/2 target protocol.
+        protocolVersion: elbv2.ApplicationProtocolVersion.HTTP1,
+        // IP target: the Supabase host is an EC2 instance addressed by its
+        // private IP (instance targets would need the instance id; IP matches
+        // how the app already reaches Kong via SUPABASE_URL).
+        targetType: elbv2.TargetType.IP,
+        targets: [new elbv2Targets.IpTarget(supabaseHostIp)],
+        healthCheck: {
+          // Kong answers 404 at / (no route matched) — that IS the "Kong is
+          // up" signal; a 200 probe would need an apikey'd tenant-health path.
+          path: '/',
+          healthyHttpCodes: '404',
+          interval: Duration.seconds(30),
+          timeout: Duration.seconds(10),
+        },
+        deregistrationDelay: Duration.seconds(30),
+      });
+      // NOTE: the ALB idle timeout stays at its 60s default — the realtime-js
+      // client heartbeats every 25s in both directions, which resets it.
+    }
+
     // --- SMS dispatcher worker (BOTH modes): a second, ALB-less Fargate service ---
-    // Same image as the app (the esbuild worker bundle ships inside it); the
-    // distroless ENTRYPOINT is `node`, so the command override is just the bundle
-    // path. ONE task polls the SMS outbox; minHealthyPercent 0 / maxHealthyPercent
-    // 100 makes a deploy STOP the old dispatcher before starting the new one, so
-    // two dispatchers never run at once.
+    // Same image FAMILY as the app (the esbuild worker bundle ships inside it),
+    // pinned independently via workerImageTag because the two have drifted
+    // out-of-band; the distroless ENTRYPOINT is `node`, so the command override
+    // is just the bundle path. ONE task polls the SMS outbox; minHealthyPercent
+    // 0 / maxHealthyPercent 100 makes a deploy STOP the old dispatcher before
+    // starting the new one, so two dispatchers never run at once.
     const workerSg = new ec2.SecurityGroup(this, 'WorkerSg', {
       vpc,
       description: 'MarketingHub SMS dispatcher worker (no ingress - serves no traffic)',
@@ -289,7 +413,9 @@ export class AppStack extends Stack {
       memoryLimitMiB: 512,
     });
     workerTaskDef.addContainer('worker', {
-      image: ecs.ContainerImage.fromRegistry(appImageTag),
+      // workerImageTag defaults to appImageTag; deploy scripts MUST pass the
+      // live worker image when the two have drifted (see context note above).
+      image: ecs.ContainerImage.fromRegistry(workerImageTag),
       command: ['worker.cjs'],
       // NO portMappings: the dispatcher accepts no traffic (poll-only).
       environment: {
@@ -375,11 +501,23 @@ export class AppStack extends Stack {
       );
 
       // Plain HTTP:80 → target group. No authenticate-cognito, no cert, no HTTPS.
-      this.alb.addListener('PreviewHttpListener', {
+      const previewListener = this.alb.addListener('PreviewHttpListener', {
         port: 80,
         protocol: elbv2.ApplicationProtocol.HTTP,
         defaultAction: elbv2.ListenerAction.forward([targetGroup]),
       });
+
+      // Wave-5 (flagged): /realtime/v1/* → the Supabase host's Kong. Covers the
+      // WebSocket upgrade (GET /realtime/v1/websocket) AND the REST fallback
+      // POST /realtime/v1/api/broadcast, so it is NOT method-scoped. With the
+      // flag absent (default) preview keeps ZERO listener rules, as always.
+      if (realtimeTargetGroup) {
+        previewListener.addAction('RealtimeUnauthenticated', {
+          priority: 25,
+          conditions: [elbv2.ListenerCondition.pathPatterns(['/realtime/v1/*'])],
+          action: elbv2.ListenerAction.forward([realtimeTargetGroup]),
+        });
+      }
 
       // The app's preview auth shim treats every request as this group. No ALB
       // identity token is issued in this mode, so ALB_ARN is intentionally NOT set
@@ -565,6 +703,23 @@ export class AppStack extends Stack {
       ],
       action: elbv2.ListenerAction.forward([targetGroup]),
     });
+
+    // Wave-5 unauthenticated exception #4 (context-flagged, default OFF): the
+    // browser Realtime path. /realtime/v1/* forwards to the Supabase host's
+    // Kong with NO authenticate-cognito — the WebSocket handshake cannot ride a
+    // Cognito redirect; Realtime authenticates itself with the `apikey` query
+    // param (Kong key-auth) plus a short-lived user JWT minted by
+    // /api/realtime/token and verified by the Realtime service. NOT
+    // method-scoped: the same rule must pass the GET websocket upgrade and the
+    // REST-fallback POST /realtime/v1/api/broadcast. Priority 25 slots between
+    // the webhook (20) and tracked-link (30) exceptions.
+    if (realtimeTargetGroup) {
+      listener.addAction('RealtimeUnauthenticated', {
+        priority: 25,
+        conditions: [elbv2.ListenerCondition.pathPatterns(['/realtime/v1/*'])],
+        action: elbv2.ListenerAction.forward([realtimeTargetGroup]),
+      });
+    }
 
     // --- WAFv2 (REGIONAL) in front of the ALB ---
     const webAcl = new wafv2.CfnWebACL(this, 'AppWebAcl', {

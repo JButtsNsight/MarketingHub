@@ -17,6 +17,8 @@ export type IconKey =
   | "review"
   | "suppressions"
   | "auth"
+  | "edgeFunctions"
+  | "realtime"
   | "api"
   | "advisors"
   | "cron"
@@ -46,9 +48,9 @@ export interface NavGroup {
 /**
  * Console information architecture. The platform group mirrors Supabase
  * Studio's nav — same item names, same order (Table Editor, SQL Editor,
- * Database, Authentication, Storage, API Docs) — so it reads 1:1 to anyone
- * who knows Studio. The marketing product and project/ops items follow in
- * their own groups (Studio has no equivalent).
+ * Database, Authentication, Storage, Edge Functions, Realtime, API Docs) —
+ * so it reads 1:1 to anyone who knows Studio. The marketing product and
+ * project/ops items follow in their own groups (Studio has no equivalent).
  */
 export const NAV_GROUPS: NavGroup[] = [
   { items: [{ href: "/overview", label: "Overview", icon: "overview" }] },
@@ -68,6 +70,9 @@ export const NAV_GROUPS: NavGroup[] = [
       },
       { href: "/auth", label: "Authentication", icon: "auth" },
       { href: "/storage", label: "Storage", icon: "storage" },
+      // Wave 5: Studio slots Edge Functions and Realtime right after Storage.
+      { href: "/functions", label: "Edge Functions", icon: "edgeFunctions" },
+      { href: "/realtime", label: "Realtime", icon: "realtime" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
       { href: "/advisors", label: "Advisors", icon: "advisors" },
     ],
@@ -189,6 +194,18 @@ const ICONS: Record<IconKey, ReactNode> = {
     <>
       <path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z" />
       <path d="M9 12l2 2 4-4" />
+    </>
+  ),
+  edgeFunctions: (
+    <>
+      <path d="M13 2 5 13.5h5.5L11 22l8-11.5h-5.5z" />
+    </>
+  ),
+  realtime: (
+    <>
+      <circle cx="12" cy="12" r="1.8" />
+      <path d="M8.5 8.5a5 5 0 0 0 0 7M15.5 8.5a5 5 0 0 1 0 7" />
+      <path d="M5.6 5.6a9 9 0 0 0 0 12.8M18.4 5.6a9 9 0 0 1 0 12.8" />
     </>
   ),
   api: (

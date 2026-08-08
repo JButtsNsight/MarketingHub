@@ -152,6 +152,32 @@ render_env() {
   log ".env rendered (600, root-owned). Contents intentionally not logged."
 }
 
+# ---- 7. Edge Functions seed mirror (Wave 5) --------------------------------------
+# The edge-runtime container's command is `start --main-service /home/deno/functions/
+# main`; with the mounted volume (/mnt/pgdata/functions) empty the main worker fails
+# to boot and the container crash-loops under restart:unless-stopped. The repo-tracked
+# sources (supabase/functions/<name>/index.ts) are staged by user-data at
+# /opt/supabase/functions-seed — copy each onto the persistent volume ONLY when the
+# target is absent: a brand-new host first-boots correct, and host-side updates
+# (the staged /tmp/fix-edge-functions.sh + future waves own those) are NEVER
+# clobbered by a reboot or instance replacement.
+seed_edge_functions() {
+  local seed_dir="/opt/supabase/functions-seed"
+  if [ ! -d "$seed_dir" ]; then
+    log "No functions-seed dir at ${seed_dir} — skipping edge-function seeding."
+    return 0
+  fi
+  local dir name
+  for dir in "$seed_dir"/*/; do
+    [ -f "${dir}index.ts" ] || continue     # unmatched glob / stray non-function dirs
+    name="$(basename "$dir")"
+    if [ ! -f "${FUNCTIONS_DIR}/${name}/index.ts" ]; then
+      install -D -m 0644 "${dir}index.ts" "${FUNCTIONS_DIR}/${name}/index.ts"
+      log "Seeded edge function '${name}' into ${FUNCTIONS_DIR}."
+    fi
+  done
+}
+
 # ---- 8. Fetch the pinned bundle, wire overrides, bring the stack up --------------
 fetch_bundle() {
   if [ ! -d "${APP_DIR}/.git" ]; then
@@ -279,6 +305,8 @@ main() {
   case "$PGWAL_DIR" in "${DATA_MOUNT}"/*) : ;; *) die "pg_wal must live on the data volume";; esac
   case "$PGDATA_DIR" in "${DATA_MOUNT}"/*) : ;; *) die "PGDATA must live on the data volume";; esac
   install -d -m 0755 "$FUNCTIONS_DIR"
+  # Wave-5: mirror the repo-tracked edge-function sources in (copy-if-absent only).
+  seed_edge_functions
 
   # fetch_bundle MUST precede render_env: render-env.sh builds the compose .env from the
   # bundle's own docker/.env.example (staged into APP_DIR by fetch_bundle) as its base.

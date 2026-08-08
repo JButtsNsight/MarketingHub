@@ -4,6 +4,7 @@ import { getUserClient } from "@/lib/supabase";
 import { countUnhandledInbound, listInboundMessages } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { InboxTable } from "@/components/campaigns/InboxTable";
+import { LiveRefresher } from "@/components/live/LiveRefresher";
 
 // Reads request-time identity + live inbox rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -62,6 +63,8 @@ export default async function InboxPage({
           </>
         }
       />
+
+      <LiveRefresher topic="mh:inbox" />
 
       <InboxTable messages={messages} />
     </>

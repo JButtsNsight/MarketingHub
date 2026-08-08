@@ -576,3 +576,141 @@ they are inert for BYPASSRLS roles — and there is no migration to unwind.
 - **`contact_list_members` has no DELETE policy by design** — member removal
   rides the `contact_lists` FK `ON DELETE CASCADE`, and FK cascades bypass
   RLS. Don't "fix" it by adding a DELETE grant.
+
+## 10. Wave-5 Realtime + Edge Functions (2026-08-08)
+
+Wave 5 adds browser Realtime (live-refreshing Inbox / Campaign detail /
+Schedule views + the `/realtime` Inspector) and the `/functions` Edge
+Functions console. Everything degrades gracefully: with **nothing** from this
+section applied, every page renders exactly as before and the two new
+consoles show an honest "Realtime unreachable" / empty-registry state. The
+browser reaches Realtime ONLY through a new ALB listener rule
+(`/realtime/v1/*` → Supabase Kong :8000) — Kong is not otherwise reachable
+from a browser.
+
+### 10.1 What ships in the image vs. what the operator applies
+
+In the image (inert until the steps below): `web/src/lib/realtime/client.ts`
+(wrapper; never exports a raw Supabase client), `GET /api/realtime/token`
+(503 until env lands), the `LiveRefresher` islands on the three live views,
+the `/realtime` + `/functions` pages (both in the Platform nav group), and
+`POST /api/console/functions/invoke`. Repo-tracked edge-function sources live
+in `supabase/functions/{main,hello,embed}/index.ts` — `main`/`hello` are
+VERBATIM from bundle v1.26.05; `embed` is the Wave-8 stub. New hosts
+self-seed them via `cdk/lib/compute-stack.ts` → `/opt/supabase/functions-seed`
+→ `bootstrap.sh` (copy-if-absent only; never clobbers host edits).
+
+### 10.2 Apply order (each step is independently safe; do them in order)
+
+1. **W5 SQL migration** — `bash /tmp/apply-w5-realtime.sh` (a
+   `/tmp/apply-w5-realtime.sql.sh` alias execs the same file). Applies
+   `cdk/sql/2026-08-08-w5-realtime.sql` as `supabase_admin`: realtime tenant
+   flipped `private_only` (guarded — a NOTICE + skip on a realtime image
+   without the column, see §10.4), `mh_recv`/`mh_send` policies on
+   `realtime.messages` (RECEIVE on private `mh:*`; SEND on `mh:inspector:*`
+   ONLY — the live-view topics `mh:inbox`/`mh:schedule`/`mh:campaigns`/
+   `mh:campaign:<id>` are written exclusively by the DB triggers, so no
+   user can forge `change` events that force everyone else's browser into
+   refresh loops), the `marketinghub.edge_functions` registry (SELECT-only
+   for `authenticated` + the restrictive anon `deny_all` backstop the
+   rls-gate requires), and the ids-only broadcast triggers (`{table, op,
+   id}` — no row data/PII; trigger body swallows all errors, DML can never
+   fail). **postgres_changes stays OFF on purpose:** no table joins the
+   `supabase_realtime` publication and no replica identity changes — with
+   W4's group-wide RLS, postgres_changes would stream full rows (phone
+   numbers, message bodies, raw webhook JSON) to any anon-key + user-JWT
+   holder over `/realtime/v1/*`; broadcast-from-DB covers every live view.
+   **Ordering:** AFTER `2026-08-08-w4-user-rls.sql` (§9.2 — the registry
+   grant assumes W4's schema-usage grant) and AFTER the realtime container
+   has booted once (its tenant migrations create `realtime.messages` /
+   `realtime.send`; the migration FAILS LOUD otherwise — single transaction,
+   nothing half-applies). The script footer prints verification selects, an
+   inline rls-gate re-run (**must show ZERO rows**), a `realtime.send` smoke
+   row (`smoke_rows = 1`, counted over the last 10s so the documented safe
+   re-run also reads 1), then restarts the realtime container so its tenant
+   cache picks up `private_only` (safe pre- and post-cutover — subscribers
+   degrade gracefully and reconnect).
+2. **Edge-functions fix** — `bash /tmp/fix-edge-functions.sh`. The
+   edge-runtime container crash-loops today because its volume
+   (`/mnt/pgdata/functions`) is empty. The script bundles the repo-tracked
+   sources, writes them to the volume via SSM, restarts the `functions`
+   service, verifies STABLE for 60s + `curl /functions/v1/hello` through
+   Kong, then upserts the registry rows (name/source/version=git-sha/
+   deployed_at). **Requires step 1** (guards on the registry table). Rerun
+   any time — idempotent; it is also the ongoing update path for
+   `supabase/functions/**` edits.
+3. **Infra deploy** — `bash /tmp/deploy-w5-infra.sh`. Drift-safe by
+   construction (§7 / §9.4): derives `appImageTag`, `workerImageTag`,
+   `supabaseUrl`, `smsLinkBaseUrl`, all secret/CMK ARNs and the
+   VPC/subnet/SG context from the LIVE services + task-defs at run time,
+   aborts on any mismatch with the Wave-5 expectations, shows the full
+   `cdk diff`, and requires typing `DEPLOY-W5`. It then adds the idempotent
+   SG ingress (Supabase-host SG ← ALB SG tcp/8000) and runs
+   `cdk deploy MarketingHubApp` with
+   `-c enableRealtimeAlb=true -c workerImageTag=… -c
+   supabaseAppConfigSecretArn=… -c supabaseAppConfigKmsKeyArn=…` — creating
+   the `/realtime/v1/*` listener rule (priority 25, no authenticate-cognito;
+   realtime auths via apikey + short-lived user JWT) and folding the W4
+   out-of-band `SUPABASE_JWT_SECRET` into cdk plus the new
+   `SUPABASE_ANON_KEY`.
+   **Hard prerequisite (machine-checked):** the script queries the DB over
+   SSM for the W4 sentinel policy (`templates_authenticated_select`) and
+   ABORTS if the W4 RLS migration is not live — with `SUPABASE_JWT_SECRET`
+   present, `getUserClient()` has no service-role fallback, so an
+   out-of-order run would be an app-wide outage. If the SSM check itself
+   cannot run, the operator must type `W4-RLS-IS-LIVE` to proceed.
+   **Worker image:** the app and worker images HAVE drifted apart
+   out-of-band (live: app `parity-…` vs worker `main-…`); `app-infra` uses
+   `appImageTag` for BOTH containers unless `workerImageTag` pins the worker
+   — the script derives the LIVE worker image and passes it, so the
+   dispatcher is never rolled onto a different build (worst case: one
+   same-image fold-in restart; min 0 / max 100 keeps dispatchers
+   non-overlapping). Keep passing `workerImageTag` on every future deploy
+   until the worker is deliberately rebuilt. The worker task-def NEVER gains
+   the JWT/anon secrets (§9.4).
+
+### 10.3 Verify
+
+1. Rollout `COMPLETED`; the new Realtime target group reports healthy
+   (health check expects Kong's **404** at `/` — 404 IS the pass).
+2. Through the SSM tunnel (localhost:8080, logged in):
+   - `GET /api/realtime/token` → 200 `{token, expiresAtMs, anonKey}`
+     (503 = env not landed; the app then just stays in fallback).
+   - **Tunnel WS check:** the `/realtime` Inspector page shows token `ok`,
+     joins its default `mh:inspector:*` topic to `live` (socket `open`,
+     heartbeats ticking) — this exercises the real WebSocket upgrade through
+     ALB → Kong → realtime. A join stuck at `unavailable` with token `ok`
+     means the ALB rule / SG ingress / migration policies, not the app.
+   - Live views: Inbox / Campaign detail / Schedule show the small "Live"
+     badge; insert or update a row (e.g. simulate an inbound webhook) and
+     the page refreshes itself within ~2–5s.
+3. `/functions` lists `main` / `hello` / `embed` with source from the
+   registry; the invoke tester runs `hello` → 200. 502 "edge runtime down" =
+   step 10.2-2 not applied; 503 = `SUPABASE_URL` missing on the task-def.
+
+### 10.4 Rollback / failure posture
+
+- **Everything is flag-gated and additive.** Redeploying without
+  `enableRealtimeAlb` removes the listener rule + target group — the synth
+  is byte-identical to pre-Wave-5 (tests assert it). Flag OFF ⇒ the rule is
+  simply absent.
+- **Realtime unreachable = automatic fallback, not an outage.** If the rule,
+  env, SG or migration is missing (or realtime later breaks), the token
+  route 503s / joins fail, the wrapper reports `unavailable`, live views
+  silently keep today's static render + existing mutation-driven refresh,
+  and the consoles show their honest unreachable states. No user-visible
+  error.
+- **Caveat (printed by the deploy script too):** redeploying without the two
+  `supabaseAppConfig*` contexts also strips `SUPABASE_JWT_SECRET` — that
+  reverts the W4 auth posture to service_role (safe but unannounced, §9.3).
+- The SQL migration needs no unwind (policies/triggers are inert without
+  consumers; triggers swallow errors). The SG ingress is inert without the
+  listener rule; a revoke command is printed by the deploy script.
+- **`private_only` guard (accepted risk when skipped):** on a realtime image
+  whose `_realtime.tenants` has no `private_only` column, the migration
+  raises a NOTICE and skips — PUBLIC realtime channels then remain joinable
+  by any anon-key holder through `/realtime/v1/*` (an unaudited pub/sub bus;
+  NO data exposure — `mh:*` broadcasts are private-channel only and
+  postgres_changes is off). Revisit when the pinned bundle is upgraded.
+- Edge functions: worst case the container keeps crash-looping exactly as it
+  does today; volume files are inert until a restart.

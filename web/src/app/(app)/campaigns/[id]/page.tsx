@@ -16,6 +16,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { CampaignActions } from "@/components/campaigns/CampaignActions";
 import { InboxTable } from "@/components/campaigns/InboxTable";
+import { LiveRefresher } from "@/components/live/LiveRefresher";
 import { RecipientsTable } from "@/components/campaigns/RecipientsTable";
 import { RescheduleControl } from "@/components/campaigns/RescheduleControl";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
@@ -111,6 +112,8 @@ export default async function CampaignDetailPage({
           </>
         }
       />
+
+      <LiveRefresher topic={[`mh:campaign:${campaign.id}`, "mh:inbox"]} />
 
       <div className="stack">
         <div className="stat-grid">

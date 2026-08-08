@@ -20,6 +20,8 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Database",
       "Authentication",
       "Storage",
+      "Edge Functions",
+      "Realtime",
       "API Docs",
       "Advisors",
     ]);
@@ -42,6 +44,15 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     expect(byLabel["Table Editor"]).toBe("/database");
     expect(byLabel["Database"]).toBe("/database/schema");
     expect(byLabel["SQL Editor"]).toBe("/sql");
+  });
+
+  it("routes the Wave-5 consoles at /functions and /realtime", () => {
+    const platform = NAV_GROUPS.find((g) => g.label === "Platform")!;
+    const byLabel = Object.fromEntries(
+      platform.items.map((i) => [i.label, i.href]),
+    );
+    expect(byLabel["Edge Functions"]).toBe("/functions");
+    expect(byLabel["Realtime"]).toBe("/realtime");
   });
 });
 
