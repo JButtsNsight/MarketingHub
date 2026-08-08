@@ -7,8 +7,13 @@ const h = vi.hoisted(() => ({
   listTemplates: vi.fn(),
   listContactLists: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/templates/repo", () => ({ listTemplates: h.listTemplates }));
 vi.mock("@/lib/contacts/repo", () => ({
   listContactLists: h.listContactLists,
@@ -80,7 +85,7 @@ describe("campaigns/new/page.tsx (server component)", () => {
     h.listContactLists.mockResolvedValue([list]);
     render(await NewCampaignPage());
 
-    expect(h.listTemplates).toHaveBeenCalledWith({ type: "text" });
+    expect(h.listTemplates).toHaveBeenCalledWith({ type: "text" }, h.userDb);
     expect(screen.getByLabelText(/campaign name/i)).toBeInTheDocument();
     expect(
       screen.getByRole("option", { name: /checkup reminder/i }),

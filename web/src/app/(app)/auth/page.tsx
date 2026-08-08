@@ -3,7 +3,9 @@ import { Section } from "@/components/ui/Section";
 import { KeyValue } from "@/components/ui/KeyValue";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
+import { Tabs } from "@/components/ui/Tabs";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { AUTH_TABS } from "@/lib/console/tabs";
 import { COGNITO, REFERENCE_DISCLAIMER } from "@/lib/console/backend-map";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +33,7 @@ export default async function AuthPage() {
         eyebrow="Authentication"
         title="Identity & access"
       />
+      <Tabs items={AUTH_TABS} />
 
       <div className="stack">
         <Section eyebrow="Session" title="Your session">

@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { MondayConfigError } from "@/lib/monday/client";
 import { fetchBoardRecipients, getBoardMeta } from "@/lib/monday/boards";
 import { getContactList, getSendableMembers } from "@/lib/contacts/repo";
@@ -54,6 +55,9 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   let payload: unknown;
   try {
@@ -73,7 +77,7 @@ export async function POST(req: Request): Promise<Response> {
 
   // The message body is snapshotted from a text template that must be fully
   // renderable — unknown merge fields would otherwise reach patients verbatim.
-  const template = await getTemplate(input.templateId);
+  const template = await getTemplate(input.templateId, db);
   if (!template) {
     return Response.json({ error: "Template not found" }, { status: 400 });
   }
@@ -105,7 +109,7 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const list = await getContactList(input.contactListId);
+  const list = await getContactList(input.contactListId, db);
   if (!list) {
     return Response.json({ error: "Contact list not found" }, { status: 400 });
   }
@@ -116,6 +120,7 @@ export async function POST(req: Request): Promise<Response> {
     input.templateId,
     input.contactListId,
     input.sendDate,
+    db,
   );
   if (duplicate) {
     return Response.json(
@@ -146,7 +151,7 @@ export async function POST(req: Request): Promise<Response> {
     }
   } else {
     // Uploaded sheet: the parsed, already-classified members ARE the audience.
-    const members = await getSendableMembers(list.id);
+    const members = await getSendableMembers(list.id, db);
     sourceRows = members.map((m) => ({
       name: m.name,
       firstName: m.first_name,
@@ -155,7 +160,10 @@ export async function POST(req: Request): Promise<Response> {
     }));
   }
 
-  const suppressed = await getSuppressedSet(sourceRows.map((r) => r.phoneE164));
+  const suppressed = await getSuppressedSet(
+    sourceRows.map((r) => r.phoneE164),
+    db,
+  );
   let prepared = prepareRecipients(sourceRows, template.body, suppressed);
 
   // Tracked short links: rewrite URLs in every pending row's rendered_text to
@@ -191,18 +199,21 @@ export async function POST(req: Request): Promise<Response> {
     template.body,
     prepared,
     { email: user.email },
+    db,
   );
 
   return Response.json({ id: campaign.id, counts }, { status: 201 });
 }
 
 export async function GET(req: Request): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
-  const campaigns = await listCampaignsWithCounts();
+  const campaigns = await listCampaignsWithCounts(db);
   return Response.json({ campaigns });
 }

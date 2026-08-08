@@ -471,3 +471,108 @@ proxied through Next API routes (the browser still never reaches Supabase):
   `content-disposition: attachment` + a sandboxing CSP for anything that is
   not a raster type (png/jpeg/gif/webp/avif) — same XSS guard as the
   download proxy.
+
+---
+
+## 9. Wave-4 per-user JWTs + real RLS (2026-08-08)
+
+Wave 4 gives the user-facing app path a per-user identity at the database:
+pages and API routes mint short-lived HS256 JWTs from the Cognito/ALB session
+(`web/src/lib/userJwt.ts`), the Supabase client sends them as `Authorization`
+(`getUserClient()` in `web/src/lib/supabase.ts`), and PostgREST enforces the
+new `authenticated` RLS policies from `cdk/sql/2026-08-08-w4-user-rls.sql`.
+Everything is behind ONE optional env var, per the §1.6b pattern.
+
+### 9.1 Flag semantics — `SUPABASE_JWT_SECRET`
+
+- **Presence of `SUPABASE_JWT_SECRET` is the ONLY switch.** Unset (the
+  default) ⇒ `getUserClient()` returns the service_role client and the app is
+  **byte-identical to today** — zero behavior change, safe to deploy the
+  Wave-4 image ahead of any env work.
+- Set ⇒ the 12 user-facing pages and 10 user-facing API routes send per-user
+  JWTs: `role=authenticated` (module-enforced literal), `sub` = deterministic
+  UUIDv5 of the lowercased email, `email`, `groups`, `app_metadata.source`
+  (`alb-cognito` in prod, `preview` under `PREVIEW_AUTH`), exp = 5 min
+  (default; 15 min hard max). The value is the platform `JWT_SECRET` — the
+  same HS256 secret PostgREST already verifies, so no Supabase-host config
+  changes at all. The `apikey` header stays the service key (Kong key-auth
+  needs a known key); PostgREST takes the role from `Authorization`.
+- **What stays service_role / supabase_admin FOREVER, flag or no flag:** the
+  SMS dispatcher worker, the SimpleTexting webhook, the public `/l/[slug]`
+  redirect, every `api/console/*` + pg-meta path, and all Storage (`.storage`)
+  calls inside the repos (no `storage.objects` policies this wave).
+  `claim_due_sms_recipients` keeps its service_role-only EXECUTE.
+
+### 9.2 Cutover order — migration first, env last
+
+1. **Apply the migration** `cdk/sql/2026-08-08-w4-user-rls.sql` (staged as
+   `/tmp/apply-w4-rls.sh`): §1.6 access path but **`psql -U supabase_admin`**
+   (the 2026-08-07+ convention — `postgres` is not superuser), applied AFTER
+   `2026-08-06-console-sql.sql` (and every earlier marketinghub migration —
+   the file also re-revokes the console tables that migration creates), then
+   the mandatory pgrst schema reload (the file ends with
+   `pg_notify('pgrst','reload schema')`; run the §1.6 reload anyway).
+   Idempotent, never destructive, and ONE transaction: re-running it after
+   the cutover (live `authenticated` traffic) is safe — the revoke-then-grant
+   convergence commits atomically, and an interrupted apply rolls back whole.
+2. **Verify the app is unchanged.** The env is still unset, and service_role
+   BYPASSRLS ignores the new policies — re-run §5 smoke items 1–3 and confirm
+   the worker heartbeat (§5.6) still ticks. Any behavior change here means
+   stop: the migration is at fault, not the flag.
+3. **Stage the env:** `bash /tmp/stage-w4-env.sh`. It delivers
+   `SUPABASE_JWT_SECRET` as an ECS `valueFrom` on a new app task-def revision,
+   sourced from the Secrets Manager secret **`nsight-supabase/app-config`**,
+   JSON key **`JWT_SECRET`** (minted by the jwt-signer custom resource; the
+   host `.env` is rendered FROM it — Secrets Manager is the single source of
+   truth, **never copy the value from the host `.env`**). The script also
+   attaches the execution-role IAM grant the task needs: app-config is a
+   different secret under a different CMK than the §1.2 service-role secret,
+   so without the grant the new revision fails task start.
+4. **Deploy:** the script's `update-service` rolls the app service. Secrets
+   inject at task start, not live — wait for rollout `COMPLETED`.
+5. **Verify RLS is live via the impersonation page** (`/auth/impersonate`):
+   impersonate a `marketing` user against `marketinghub.templates` → rows
+   return and the echoed claims show `role: "authenticated"`; against
+   `sms_webhook_events` (service-only) → a **permission-denied error**
+   (`42501 permission denied for table sms_webhook_events` — the user panel
+   shows an `error` count chip plus the message, not a row count). **The
+   error IS the pass condition**: the migration grants `authenticated`
+   nothing on service-only tables, and Postgres fails the privilege check
+   before RLS is ever consulted — deny-by-default working as built. If that
+   panel ever shows `0 rows` instead, a stray SELECT grant exists on the
+   table — that is the failure, not the error. Every run writes an
+   audit row to `marketinghub.console_impersonation_audit` — confirm it
+   landed.
+
+### 9.3 Rollback — remove the env, instant fallback
+
+Roll the app service back to the pre-Wave-4 task-def revision (the stage
+script prints the exact `update-service` command with the revision number).
+The next task start has no `SUPABASE_JWT_SECRET`, so the code path reverts to
+the byte-identical service_role behavior. The RLS policies can stay applied —
+they are inert for BYPASSRLS roles — and there is no migration to unwind.
+
+### 9.4 Gotchas
+
+- **`authenticated` carries an 8s `statement_timeout`** (Supabase image
+  default; `anon` gets 3s) while service_role is uncapped. A slow user-path
+  query that worked under service_role can newly fail with `57014` once the
+  flag is on — that is the timeout, not RLS.
+- **Never add `SUPABASE_JWT_SECRET` to the worker task-def.** The dispatcher
+  must keep BYPASSRLS semantics (claims, releases, status flips across all
+  rows) — a per-user worker silently strands recipients.
+- **Task-def drift compounds:** after staging, the live task-def differs from
+  cdk by image tag, `supabaseUrl`, AND this secret. The next `cdk deploy` of
+  `app-infra` must pass `appImageTag` + `supabaseUrl` overrides and fold the
+  secret into the stack (context key + `ecs.Secret` + CMK grant — TODO noted
+  in the stage script), or the deploy strips it and the app silently falls
+  back to service_role (safe, but it reverts the auth posture unannounced).
+- **The GoTrue custom-access-token hook is staged, NOT enabled:** a commented
+  block in `cdk/assets/render-env.sh` (`GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED`
+  / `_URI` / `_SECRETS` — plural `_SECRETS`; upstream `example.env`'s singular
+  `_SECRET` is wrong) plus an inert pass-through stub
+  `marketinghub.custom_access_token_hook` in the migration. GoTrue remains
+  outside the front door; do not uncomment without a Wave-3 decision.
+- **`contact_list_members` has no DELETE policy by design** — member removal
+  rides the `contact_lists` FK `ON DELETE CASCADE`, and FK cascades bypass
+  RLS. Don't "fix" it by adding a DELETE grant.

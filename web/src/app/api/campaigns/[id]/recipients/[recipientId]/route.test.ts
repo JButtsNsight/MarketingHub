@@ -26,11 +26,17 @@ const h = vi.hoisted(() => ({
   getCampaign: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
 vi.mock("@/lib/sms/repo", () => ({
   retryRecipient: h.retryRecipient,
   markRecipientFailed: h.markRecipientFailed,
   resolveRecipientSent: h.resolveRecipientSent,
   getCampaign: h.getCampaign,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
 }));
 
 import { PATCH } from "./route";
@@ -163,8 +169,8 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
     const json = await res.json();
     expect(json.recipient).toEqual(recipient);
     expect(json.campaignStatus).toBe("sending");
-    expect(h.retryRecipient).toHaveBeenCalledWith(RECIPIENT_ID);
-    expect(h.getCampaign).toHaveBeenCalledWith(CAMPAIGN_ID);
+    expect(h.retryRecipient).toHaveBeenCalledWith(RECIPIENT_ID, userDb);
+    expect(h.getCampaign).toHaveBeenCalledWith(CAMPAIGN_ID, userDb);
   });
 
   test("retry → 409 when the recipient is not retryable", async () => {
@@ -191,6 +197,7 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
     expect(h.markRecipientFailed).toHaveBeenCalledWith(
       RECIPIENT_ID,
       "checked portal: never sent",
+      userDb,
     );
   });
 
@@ -198,7 +205,11 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
     h.markRecipientFailed.mockResolvedValue({ id: RECIPIENT_ID });
     const res = await PATCH(patchReq({ action: "mark_failed" }), ctx());
     expect(res.status).toBe(200);
-    expect(h.markRecipientFailed).toHaveBeenCalledWith(RECIPIENT_ID, undefined);
+    expect(h.markRecipientFailed).toHaveBeenCalledWith(
+      RECIPIENT_ID,
+      undefined,
+      userDb,
+    );
   });
 
   test("mark_failed → 409 when the recipient is not failed_ambiguous", async () => {
@@ -224,6 +235,7 @@ describe("PATCH /api/campaigns/[id]/recipients/[recipientId]", () => {
     expect(h.resolveRecipientSent).toHaveBeenCalledWith(
       RECIPIENT_ID,
       "recipient replied",
+      userDb,
     );
     expect(h.markRecipientFailed).not.toHaveBeenCalled();
   });

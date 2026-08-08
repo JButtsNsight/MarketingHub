@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { getTemplate } from "@/lib/templates/repo";
 import { TemplatePreview } from "@/components/templates/TemplatePreview";
 import { TemplateEditor } from "@/components/templates/TemplateEditor";
@@ -27,10 +28,11 @@ export default async function TemplateDetailPage({
 }) {
   // Server-side group gate: mirrors the API handlers so this read page can't be
   // viewed by an authenticated employee outside the `marketing` Cognito group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const { id } = await params;
-  const template = await getTemplate(id);
+  const template = await getTemplate(id, db);
   if (!template) notFound();
 
   const chipStyle = {

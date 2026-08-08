@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import {
   getCampaign,
   markRecipientFailed,
@@ -54,11 +55,15 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string; recipientId: string }> },
 ): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const { id, recipientId } = await context.params;
   if (!isUuid(id) || !isUuid(recipientId)) {
@@ -81,7 +86,7 @@ export async function PATCH(
   }
 
   if (parsed.data.action === "retry") {
-    const recipient = await retryRecipient(recipientId);
+    const recipient = await retryRecipient(recipientId, db);
     if (!recipient) {
       return Response.json(
         { error: "Recipient is not in a retryable state" },
@@ -90,7 +95,7 @@ export async function PATCH(
     }
     // retryRecipient may have re-opened the campaign (completed → sending) —
     // report its fresh status so the UI can reflect it without a refetch.
-    const campaign = await getCampaign(recipient.campaign_id);
+    const campaign = await getCampaign(recipient.campaign_id, db);
     return Response.json({
       recipient,
       campaignStatus: campaign?.status ?? null,
@@ -98,7 +103,11 @@ export async function PATCH(
   }
 
   if (parsed.data.action === "mark_sent") {
-    const recipient = await resolveRecipientSent(recipientId, parsed.data.note);
+    const recipient = await resolveRecipientSent(
+      recipientId,
+      parsed.data.note,
+      db,
+    );
     if (!recipient) {
       return Response.json(
         { error: "Recipient is not awaiting manual review" },
@@ -108,7 +117,11 @@ export async function PATCH(
     return Response.json({ recipient });
   }
 
-  const recipient = await markRecipientFailed(recipientId, parsed.data.note);
+  const recipient = await markRecipientFailed(
+    recipientId,
+    parsed.data.note,
+    db,
+  );
   if (!recipient) {
     return Response.json(
       { error: "Recipient is not awaiting manual review" },

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { countUnhandledInbound, listInboundMessages } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { InboxTable } from "@/components/campaigns/InboxTable";
@@ -23,14 +24,15 @@ export default async function InboxPage({
 }) {
   // Server-side group gate: mirrors the API handlers so this read page can't
   // be browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const { filter } = await searchParams;
   const unhandledOnly = filter === "unhandled";
 
   const [messages, unhandled] = await Promise.all([
-    listInboundMessages({ unhandledOnly }),
-    countUnhandledInbound(),
+    listInboundMessages({ unhandledOnly }, db),
+    countUnhandledInbound(db),
   ]);
 
   return (

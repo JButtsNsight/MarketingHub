@@ -24,9 +24,15 @@ const h = vi.hoisted(() => ({
   removeManualSuppression: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
 vi.mock("@/lib/sms/repo", () => ({
   getSuppression: h.getSuppression,
   removeManualSuppression: h.removeManualSuppression,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
 }));
 
 import { DELETE } from "./route";
@@ -118,6 +124,8 @@ describe("DELETE /api/suppressions/[phone]", () => {
     expect(h.removeManualSuppression).toHaveBeenCalledWith(
       PHONE,
       "amy@nsight.example",
+      undefined,
+      userDb,
     );
   });
 

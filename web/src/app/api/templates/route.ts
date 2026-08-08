@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import {
   createTemplate,
   listTemplates,
@@ -81,21 +82,27 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
   const file = fileFrom(payload, parsed.data.body);
   const template = await createTemplate(
     parsed.data,
     { email: user.email },
     file,
+    db,
   );
   return Response.json({ id: template.id, template }, { status: 201 });
 }
 
 export async function GET(req: Request): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
@@ -105,8 +112,8 @@ export async function GET(req: Request): Promise<Response> {
   };
 
   const results = q
-    ? await searchTemplates(q, filters)
-    : await listTemplates(filters);
+    ? await searchTemplates(q, filters, db)
+    : await listTemplates(filters, db);
 
   return Response.json({ results });
 }

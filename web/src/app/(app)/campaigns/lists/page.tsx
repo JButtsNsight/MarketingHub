@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { listContactLists } from "@/lib/contacts/repo";
 import type { ContactList } from "@/lib/contacts/schema";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -68,9 +69,10 @@ const COLUMNS: Column<ContactList>[] = [
  */
 export default async function ContactListsPage() {
   // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
-  const contactLists = await listContactLists();
+  const contactLists = await listContactLists(db);
 
   return (
     <>

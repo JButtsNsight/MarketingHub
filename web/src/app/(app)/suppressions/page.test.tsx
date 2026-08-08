@@ -5,8 +5,13 @@ const h = vi.hoisted(() => ({
   listSuppressions: vi.fn(),
   countSuppressions: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/sms/repo", () => ({
   listSuppressions: h.listSuppressions,
   countSuppressions: h.countSuppressions,
@@ -47,7 +52,7 @@ describe("suppressions/page.tsx (server component)", () => {
   test("enforces the gate, shows the total, and lists entries", async () => {
     await renderPage();
     expect(h.requireMarketingUser).toHaveBeenCalled();
-    expect(h.listSuppressions).toHaveBeenCalledWith({});
+    expect(h.listSuppressions).toHaveBeenCalledWith({}, h.userDb);
     expect(
       screen.getByRole("heading", { name: "Suppressions" }),
     ).toBeInTheDocument();
@@ -57,7 +62,10 @@ describe("suppressions/page.tsx (server component)", () => {
 
   test("?q= drives the server-side digit search and pre-fills the box", async () => {
     await renderPage({ q: "555 000" });
-    expect(h.listSuppressions).toHaveBeenCalledWith({ query: "555 000" });
+    expect(h.listSuppressions).toHaveBeenCalledWith(
+      { query: "555 000" },
+      h.userDb,
+    );
     expect(screen.getByRole("searchbox")).toHaveValue("555 000");
   });
 });

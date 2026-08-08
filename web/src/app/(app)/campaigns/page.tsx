@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import {
   listCampaignsWithCounts,
   type CampaignWithCounts,
@@ -88,9 +89,10 @@ const COLUMNS: Column<CampaignWithCounts>[] = [
 export default async function CampaignsPage() {
   // Server-side group gate: mirrors the API handlers so this read page can't
   // be browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
-  const campaigns = await listCampaignsWithCounts();
+  const campaigns = await listCampaignsWithCounts(db);
 
   return (
     <>

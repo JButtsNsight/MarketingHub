@@ -34,6 +34,13 @@ const h = vi.hoisted(() => ({
   listCampaignsWithCounts: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
+}));
+
 vi.mock("@/lib/templates/repo", () => ({
   getTemplate: h.getTemplate,
 }));
@@ -299,6 +306,7 @@ describe("POST /api/campaigns", () => {
       TEMPLATE_ID,
       LIST_ID,
       "2999-01-02",
+      userDb,
     );
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
     expect(h.getSendableMembers).not.toHaveBeenCalled();
@@ -378,6 +386,7 @@ describe("POST /api/campaigns", () => {
     // the repo filters them).
     expect(h.getSuppressedSet).toHaveBeenCalledWith(
       mondayRows.map((r) => r.phoneE164),
+      userDb,
     );
     // Rows are prepared against the template body + suppression set.
     expect(h.prepareRecipients).toHaveBeenCalledWith(
@@ -439,7 +448,7 @@ describe("POST /api/campaigns", () => {
     // The whole Monday integration is bypassed for sheet lists.
     expect(h.getBoardMeta).not.toHaveBeenCalled();
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
-    expect(h.getSendableMembers).toHaveBeenCalledWith(LIST_ID);
+    expect(h.getSendableMembers).toHaveBeenCalledWith(LIST_ID, userDb);
 
     // Members map to source rows (no mondayItemId).
     expect(h.prepareRecipients).toHaveBeenCalledWith(

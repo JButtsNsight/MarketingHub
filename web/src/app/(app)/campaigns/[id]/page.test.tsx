@@ -17,6 +17,12 @@ const h = vi.hoisted(() => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
+}));
+
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
@@ -125,9 +131,9 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
   test("enforces the marketing group gate and reads by the route param", async () => {
     await renderPage("c1");
     expect(h.requireMarketingUser).toHaveBeenCalled();
-    expect(h.getCampaign).toHaveBeenCalledWith("c1");
-    expect(h.getCampaignCounts).toHaveBeenCalledWith("c1");
-    expect(h.getCampaignRecipients).toHaveBeenCalledWith("c1");
+    expect(h.getCampaign).toHaveBeenCalledWith("c1", h.userDb);
+    expect(h.getCampaignCounts).toHaveBeenCalledWith("c1", h.userDb);
+    expect(h.getCampaignRecipients).toHaveBeenCalledWith("c1", h.userDb);
   });
 
   test("renders name, status badge, the send slot, and metadata", async () => {

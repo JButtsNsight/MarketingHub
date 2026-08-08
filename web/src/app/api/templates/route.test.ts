@@ -23,12 +23,17 @@ const h = vi.hoisted(() => ({
   createTemplate: vi.fn(),
   listTemplates: vi.fn(),
   searchTemplates: vi.fn(),
+  // Sentinel client threaded by the route into every repo call (Wave 4).
+  userDb: {},
 }));
 
 vi.mock("@/lib/templates/repo", () => ({
   createTemplate: h.createTemplate,
   listTemplates: h.listTemplates,
   searchTemplates: h.searchTemplates,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
 }));
 
 import { GET, POST } from "./route";
@@ -172,10 +177,10 @@ describe("GET /api/templates", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.results).toEqual([{ id: "a" }]);
-    expect(h.listTemplates).toHaveBeenCalledWith({
-      category: "Promotion",
-      type: "email",
-    });
+    expect(h.listTemplates).toHaveBeenCalledWith(
+      { category: "Promotion", type: "email" },
+      h.userDb,
+    );
     expect(h.searchTemplates).not.toHaveBeenCalled();
   });
 
@@ -189,10 +194,11 @@ describe("GET /api/templates", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.results).toEqual([{ id: "b" }]);
-    expect(h.searchTemplates).toHaveBeenCalledWith("spring sale", {
-      category: "Promotion",
-      type: undefined,
-    });
+    expect(h.searchTemplates).toHaveBeenCalledWith(
+      "spring sale",
+      { category: "Promotion", type: undefined },
+      h.userDb,
+    );
   });
 
   test("ignores an invalid type filter value", async () => {
@@ -201,9 +207,9 @@ describe("GET /api/templates", () => {
       headers: marketingHeaders(),
     });
     await GET(req);
-    expect(h.listTemplates).toHaveBeenCalledWith({
-      category: undefined,
-      type: undefined,
-    });
+    expect(h.listTemplates).toHaveBeenCalledWith(
+      { category: undefined, type: undefined },
+      h.userDb,
+    );
   });
 });

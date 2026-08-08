@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { normalizeUsPhone } from "@/lib/sms/phone";
 import { addManualSuppression, listSuppressions } from "@/lib/sms/repo";
 
@@ -29,15 +30,20 @@ const PostBodySchema = z.object({
 });
 
 export async function GET(req: Request): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const q = new URL(req.url).searchParams.get("q");
   const suppressions = await listSuppressions(
     q === null ? {} : { query: q },
+    db,
   );
   return Response.json({ suppressions });
 }
@@ -49,6 +55,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
   let payload: unknown;
   try {
@@ -77,6 +84,7 @@ export async function POST(req: Request): Promise<Response> {
     phone,
     user.email,
     parsed.data.note,
+    db,
   );
   if (!created) {
     return Response.json(

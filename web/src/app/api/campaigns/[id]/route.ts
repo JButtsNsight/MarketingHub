@@ -1,6 +1,8 @@
 import { z } from "zod";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import {
   cancelCampaign,
   getCampaign,
@@ -51,7 +53,7 @@ const PatchBodySchema = z.discriminatedUnion("action", [
 
 const TRANSITIONS: Record<
   "pause" | "resume" | "cancel",
-  (id: string) => Promise<SmsCampaign | null>
+  (id: string, db?: SupabaseClient) => Promise<SmsCampaign | null>
 > = {
   pause: pauseCampaign,
   resume: resumeCampaign,
@@ -62,24 +64,28 @@ export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const { id } = await context.params;
   if (!isUuid(id)) {
     return Response.json({ error: "Campaign not found" }, { status: 404 });
   }
-  const campaign = await getCampaign(id);
+  const campaign = await getCampaign(id, db);
   if (!campaign) {
     return Response.json({ error: "Campaign not found" }, { status: 404 });
   }
 
   const [counts, recipients] = await Promise.all([
-    getCampaignCounts(id),
-    getCampaignRecipients(id),
+    getCampaignCounts(id, db),
+    getCampaignRecipients(id, db),
   ]);
   return Response.json({ campaign, counts, recipients });
 }
@@ -88,11 +94,13 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
   const { id } = await context.params;
   if (!isUuid(id)) {
@@ -125,11 +133,11 @@ export async function PATCH(
         { status: 400 },
       );
     }
-    const campaign = await rescheduleCampaign(id, {
-      sendDate,
-      sendTime,
-      sendTimezone,
-    });
+    const campaign = await rescheduleCampaign(
+      id,
+      { sendDate, sendTime, sendTimezone },
+      db,
+    );
     if (!campaign) {
       return Response.json(
         { error: "Campaign is not in a state that allows reschedule" },
@@ -139,7 +147,7 @@ export async function PATCH(
     return Response.json({ campaign });
   }
 
-  const campaign = await TRANSITIONS[parsed.data.action](id);
+  const campaign = await TRANSITIONS[parsed.data.action](id, db);
   if (!campaign) {
     return Response.json(
       { error: `Campaign is not in a state that allows ${parsed.data.action}` },

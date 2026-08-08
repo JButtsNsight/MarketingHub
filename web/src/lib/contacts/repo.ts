@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getServiceClient } from "../supabase";
 import type { ParsedContact } from "./csv";
 import type { ContactList, ContactListMember } from "./schema";
@@ -8,7 +10,10 @@ import type { ContactList, ContactListMember } from "./schema";
  * Data access for contact lists — the reusable recipient sources behind the
  * campaign builder. Same house rules as the other repos: `marketinghub`
  * schema via the service-role PostgREST client, fail loud on unexpected
- * PostgREST errors, app-maintained updated_at.
+ * PostgREST errors, app-maintained updated_at. Exported functions take an
+ * optional trailing `db` (a `getUserClient(user)` client) so user-facing call
+ * sites run as `authenticated` under RLS; omitted = service-role, unchanged.
+ * Storage calls stay on the service client this wave.
  */
 
 const SCHEMA = "marketinghub";
@@ -25,12 +30,12 @@ export interface ListCreator {
   email: string;
 }
 
-function lists() {
-  return getServiceClient().schema(SCHEMA).from(LISTS);
+function lists(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(LISTS);
 }
 
-function members() {
-  return getServiceClient().schema(SCHEMA).from(MEMBERS);
+function members(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(MEMBERS);
 }
 
 function fail(op: string, message: string): never {
@@ -64,11 +69,12 @@ export async function createCsvList(
   contacts: ParsedContact[],
   file: { filename: string; content: string },
   user: ListCreator,
+  db?: SupabaseClient,
 ): Promise<ContactList> {
   const counts = { ok: 0, invalid: 0, duplicate: 0 };
   for (const c of contacts) counts[c.reason] += 1;
 
-  const { data, error } = await lists()
+  const { data, error } = await lists(db)
     .insert({
       name,
       source: "csv",
@@ -88,7 +94,7 @@ export async function createCsvList(
 
   const cleanup = async () => {
     try {
-      await lists().delete().eq("id", list.id);
+      await lists(db).delete().eq("id", list.id);
     } catch {
       // the original failure is the one worth surfacing
     }
@@ -106,7 +112,7 @@ export async function createCsvList(
     fail("upload", uploadError.message);
   }
 
-  const { data: updated, error: pathError } = await lists()
+  const { data: updated, error: pathError } = await lists(db)
     .update({ storage_path: storagePath, updated_at: nowIso() })
     .eq("id", list.id)
     .select()
@@ -129,7 +135,7 @@ export async function createCsvList(
   }));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);
-    const { error: insertError } = await members().insert(chunk);
+    const { error: insertError } = await members(db).insert(chunk);
     if (insertError) {
       await cleanup();
       fail("create-members", `chunk at ${i}: ${insertError.message}`);
@@ -144,8 +150,9 @@ export async function createMondayList(
   name: string,
   board: { id: string; name: string; phoneColumnId: string },
   user: ListCreator,
+  db?: SupabaseClient,
 ): Promise<ContactList> {
-  const { data, error } = await lists()
+  const { data, error } = await lists(db)
     .insert({
       name,
       source: "monday",
@@ -161,8 +168,10 @@ export async function createMondayList(
 }
 
 /** All lists, newest first. */
-export async function listContactLists(): Promise<ContactList[]> {
-  const { data, error } = await lists()
+export async function listContactLists(
+  db?: SupabaseClient,
+): Promise<ContactList[]> {
+  const { data, error } = await lists(db)
     .select("*")
     .order("created_at", { ascending: false });
   if (error) fail("list", error.message);
@@ -170,8 +179,14 @@ export async function listContactLists(): Promise<ContactList[]> {
 }
 
 /** Fetch one list, or null if it does not exist. */
-export async function getContactList(id: string): Promise<ContactList | null> {
-  const { data, error } = await lists().select("*").eq("id", id).maybeSingle();
+export async function getContactList(
+  id: string,
+  db?: SupabaseClient,
+): Promise<ContactList | null> {
+  const { data, error } = await lists(db)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
   if (error) fail("get", error.message);
   return (data as ContactList) ?? null;
 }
@@ -179,8 +194,9 @@ export async function getContactList(id: string): Promise<ContactList | null> {
 /** Members of a CSV list in upload order, capped for the UI. */
 export async function getListMembers(
   listId: string,
+  db?: SupabaseClient,
 ): Promise<ContactListMember[]> {
-  const { data, error } = await members()
+  const { data, error } = await members(db)
     .select("*")
     .eq("list_id", listId)
     .order("created_at", { ascending: true })
@@ -192,8 +208,9 @@ export async function getListMembers(
 /** Sendable members of a CSV list (reason ok, phone present), unbounded. */
 export async function getSendableMembers(
   listId: string,
+  db?: SupabaseClient,
 ): Promise<ContactListMember[]> {
-  const { data, error } = await members()
+  const { data, error } = await members(db)
     .select("*")
     .eq("list_id", listId)
     .eq("reason", "ok")
@@ -207,8 +224,11 @@ export async function getSendableMembers(
  * `sms_campaigns.contact_list_id` has no ON DELETE clause, so deleting a
  * referenced list would fail at the FK anyway; this makes it a clean 409.
  */
-export async function listIsReferenced(id: string): Promise<boolean> {
-  const { data, error } = await getServiceClient()
+export async function listIsReferenced(
+  id: string,
+  db?: SupabaseClient,
+): Promise<boolean> {
+  const { data, error } = await (db ?? getServiceClient())
     .schema(SCHEMA)
     .from("sms_campaigns")
     .select("id")
@@ -223,11 +243,14 @@ export async function listIsReferenced(id: string): Promise<boolean> {
  * best-effort (an orphaned object is a cleanup chore, not a correctness
  * problem). Returns false when the list did not exist.
  */
-export async function deleteContactList(id: string): Promise<boolean> {
-  const existing = await getContactList(id);
+export async function deleteContactList(
+  id: string,
+  db?: SupabaseClient,
+): Promise<boolean> {
+  const existing = await getContactList(id, db);
   if (!existing) return false;
 
-  const { error } = await lists().delete().eq("id", id);
+  const { error } = await lists(db).delete().eq("id", id);
   if (error) fail("delete", error.message);
 
   if (existing.storage_path && existing.storage_path !== "pending") {

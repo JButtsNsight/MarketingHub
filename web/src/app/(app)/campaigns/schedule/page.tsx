@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import {
   listCampaignsWithCounts,
   type CampaignWithCounts,
@@ -48,9 +49,10 @@ function humanDate(sendDate: string): string {
  */
 export default async function SchedulePage() {
   // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
-  const campaigns = (await listCampaignsWithCounts())
+  const campaigns = (await listCampaignsWithCounts(db))
     .filter((c) => ON_SCHEDULE.has(c.status))
     .sort((a, b) => a.send_at.localeCompare(b.send_at));
 

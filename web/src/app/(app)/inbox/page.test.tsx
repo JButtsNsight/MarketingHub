@@ -5,8 +5,13 @@ const h = vi.hoisted(() => ({
   listInboundMessages: vi.fn(),
   countUnhandledInbound: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/sms/repo", () => ({
   listInboundMessages: h.listInboundMessages,
   countUnhandledInbound: h.countUnhandledInbound,
@@ -54,9 +59,10 @@ describe("inbox/page.tsx (server component)", () => {
   test("enforces the marketing gate and lists every reply by default", async () => {
     await renderPage();
     expect(h.requireMarketingUser).toHaveBeenCalled();
-    expect(h.listInboundMessages).toHaveBeenCalledWith({
-      unhandledOnly: false,
-    });
+    expect(h.listInboundMessages).toHaveBeenCalledWith(
+      { unhandledOnly: false },
+      h.userDb,
+    );
     expect(screen.getByRole("heading", { name: "Inbox" })).toBeInTheDocument();
     expect(screen.getByText("Yes, what time works?")).toBeInTheDocument();
     expect(screen.getByText(/1 needs a reply/)).toBeInTheDocument();
@@ -64,9 +70,10 @@ describe("inbox/page.tsx (server component)", () => {
 
   test("?filter=unhandled narrows the read", async () => {
     await renderPage({ filter: "unhandled" });
-    expect(h.listInboundMessages).toHaveBeenCalledWith({
-      unhandledOnly: true,
-    });
+    expect(h.listInboundMessages).toHaveBeenCalledWith(
+      { unhandledOnly: true },
+      h.userDb,
+    );
   });
 
   test("a clear inbox says so", async () => {

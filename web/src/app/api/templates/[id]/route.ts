@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { getTemplate, updateTemplate } from "@/lib/templates/repo";
 import { TemplateUpdateSchema } from "@/lib/templates/schema";
 
@@ -30,17 +31,21 @@ export async function GET(
   req: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const { id } = await context.params;
   if (!UuidSchema.safeParse(id).success) {
     return Response.json({ error: "Template not found" }, { status: 404 });
   }
-  const template = await getTemplate(id);
+  const template = await getTemplate(id, db);
   if (!template) {
     return Response.json({ error: "Template not found" }, { status: 404 });
   }
@@ -51,11 +56,13 @@ export async function PATCH(
   req: Request,
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
   const { id } = await context.params;
   if (!UuidSchema.safeParse(id).success) {
@@ -79,7 +86,7 @@ export async function PATCH(
 
   let template;
   try {
-    template = await updateTemplate(id, parsed.data);
+    template = await updateTemplate(id, parsed.data, db);
   } catch (err) {
     // The repo's email-subject guard is a caller mistake, not a server fault.
     if (err instanceof Error && err.message.includes("subject is required")) {

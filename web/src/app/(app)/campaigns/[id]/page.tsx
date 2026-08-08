@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import {
   getCampaign,
   getCampaignCounts,
@@ -37,20 +38,21 @@ export default async function CampaignDetailPage({
 }) {
   // Server-side group gate: mirrors the API handlers so this read page can't
   // be viewed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const { id } = await params;
-  const campaign = await getCampaign(id);
+  const campaign = await getCampaign(id, db);
   if (!campaign) notFound();
 
   const [counts, recipients, list, engagement, replies] = await Promise.all([
-    getCampaignCounts(id),
-    getCampaignRecipients(id),
+    getCampaignCounts(id, db),
+    getCampaignRecipients(id, db),
     campaign.contact_list_id
-      ? getContactList(campaign.contact_list_id)
+      ? getContactList(campaign.contact_list_id, db)
       : Promise.resolve(null),
-    getCampaignEngagement(id),
-    listInboundMessages({ campaignId: id, limit: 50 }),
+    getCampaignEngagement(id, db),
+    listInboundMessages({ campaignId: id, limit: 50 }, db),
   ]);
 
   // Click-through denominator: rows that reached a phone. `sent` rows may

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { setInboundHandled } from "@/lib/sms/repo";
 
 /**
@@ -40,6 +41,9 @@ export async function PATCH(
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const { id } = await context.params;
   if (!UuidSchema.safeParse(id).success) {
@@ -61,7 +65,12 @@ export async function PATCH(
     );
   }
 
-  const message = await setInboundHandled(id, parsed.data.handled, user.email);
+  const message = await setInboundHandled(
+    id,
+    parsed.data.handled,
+    user.email,
+    db,
+  );
   if (!message) {
     return Response.json({ error: "Message not found" }, { status: 404 });
   }

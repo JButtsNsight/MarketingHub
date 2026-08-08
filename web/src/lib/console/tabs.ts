@@ -19,3 +19,13 @@ export const DB_TABS: TabItem[] = [
   { href: "/database/webhooks", label: "Webhooks" },
   { href: "/database/designer", label: "Designer" },
 ];
+
+/**
+ * Sub-navigation for the Authentication section. `/auth` is the landing page
+ * (identity & access reference); Impersonation is the Wave-4 "what can this
+ * identity see" console.
+ */
+export const AUTH_TABS: TabItem[] = [
+  { href: "/auth", label: "Overview" },
+  { href: "/auth/impersonate", label: "Impersonation" },
+];

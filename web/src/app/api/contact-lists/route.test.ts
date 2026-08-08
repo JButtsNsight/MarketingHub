@@ -28,6 +28,13 @@ const h = vi.hoisted(() => ({
   listContactLists: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
+}));
+
 vi.mock("@/lib/monday/boards", () => ({
   getBoardMeta: h.getBoardMeta,
 }));
@@ -183,6 +190,7 @@ describe("POST /api/contact-lists (monday)", () => {
       "Patient board",
       { id: "123456", name: "Patients", phoneColumnId: "phone_col" },
       { email: "amy@nsight.example" },
+      userDb,
     );
   });
 

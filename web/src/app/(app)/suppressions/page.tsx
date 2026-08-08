@@ -1,4 +1,5 @@
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { countSuppressions, listSuppressions } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { AddSuppressionForm } from "@/components/campaigns/AddSuppressionForm";
@@ -24,12 +25,13 @@ export default async function SuppressionsPage({
 }) {
   // Server-side group gate: mirrors the API handlers so this read page can't
   // be browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const { q } = await searchParams;
   const [suppressions, total] = await Promise.all([
-    listSuppressions(q ? { query: q } : {}),
-    countSuppressions(),
+    listSuppressions(q ? { query: q } : {}, db),
+    countSuppressions(db),
   ]);
 
   return (

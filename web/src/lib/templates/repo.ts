@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getServiceClient } from "../supabase";
 import {
   TemplateInputSchema,
@@ -35,9 +37,14 @@ export interface TemplateFile {
   contentType?: string;
 }
 
-/** PostgREST query builder scoped to marketinghub.templates. */
-function templates() {
-  return getServiceClient().schema(SCHEMA).from(TABLE);
+/**
+ * PostgREST query builder scoped to marketinghub.templates. `db` defaults to
+ * the service-role client; user-facing callers thread `getUserClient(user)`
+ * through the exported functions' optional trailing `db` param so requests
+ * run as `authenticated` under RLS when SUPABASE_JWT_SECRET is set.
+ */
+function templates(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(TABLE);
 }
 
 function fail(op: string, message: string): never {
@@ -67,6 +74,7 @@ export async function createTemplate(
   input: TemplateInput,
   user: TemplateCreator,
   file?: TemplateFile,
+  db?: SupabaseClient,
 ): Promise<Template> {
   const parsed = TemplateInputSchema.parse(input);
   const row = {
@@ -79,12 +87,13 @@ export async function createTemplate(
     created_by: user.email,
   };
 
-  const { data, error } = await templates().insert(row).select().single();
+  const { data, error } = await templates(db).insert(row).select().single();
   if (error) fail("create", error.message);
   let template = data as Template;
 
   // If a raw file accompanied the template, store it under <id>/<safe-filename>
   // in the private Storage bucket and persist the resulting path on the row.
+  // Storage stays on the service client this wave (no storage.objects policies).
   if (file) {
     const storagePath = `${template.id}/${safeFilename(file.filename)}`;
     const { error: uploadError } = await getServiceClient()
@@ -95,7 +104,7 @@ export async function createTemplate(
       });
     if (uploadError) fail("upload", uploadError.message);
 
-    const { data: updated, error: updateError } = await templates()
+    const { data: updated, error: updateError } = await templates(db)
       .update({ storage_path: storagePath })
       .eq("id", template.id)
       .select()
@@ -113,8 +122,9 @@ export async function createTemplate(
  */
 export async function getTemplateFile(
   id: string,
+  db?: SupabaseClient,
 ): Promise<{ signedUrl: string } | null> {
-  const template = await getTemplate(id);
+  const template = await getTemplate(id, db);
   if (!template || !template.storage_path) return null;
 
   const { data, error } = await getServiceClient()
@@ -127,8 +137,9 @@ export async function getTemplateFile(
 /** List templates (newest first), optionally filtered by category and/or type. */
 export async function listTemplates(
   filters: ListFilters = {},
+  db?: SupabaseClient,
 ): Promise<Template[]> {
-  let query = templates()
+  let query = templates(db)
     .select("*")
     .order("created_at", { ascending: false });
   if (filters.category) query = query.eq("category", filters.category);
@@ -147,11 +158,12 @@ export async function listTemplates(
 export async function searchTemplates(
   q: string,
   filters: ListFilters = {},
+  db?: SupabaseClient,
 ): Promise<Template[]> {
   const term = q.trim();
-  if (!term) return listTemplates(filters);
+  if (!term) return listTemplates(filters, db);
 
-  let query = templates()
+  let query = templates(db)
     .select("*")
     // `config: 'english'` pins the query dictionary to the one the generated
     // `search` column uses (to_tsvector('english', ...)); without it PostgREST
@@ -176,10 +188,11 @@ export async function searchTemplates(
 export async function updateTemplate(
   id: string,
   patch: TemplateUpdate,
+  db?: SupabaseClient,
 ): Promise<Template | null> {
   const parsed = TemplateUpdateSchema.parse(patch);
 
-  const existing = await getTemplate(id);
+  const existing = await getTemplate(id, db);
   if (!existing) return null;
   if (
     existing.type === "email" &&
@@ -196,7 +209,7 @@ export async function updateTemplate(
   if (parsed.subject !== undefined) row.subject = parsed.subject || null;
   if (parsed.body !== undefined) row.body = parsed.body;
 
-  const { data, error } = await templates()
+  const { data, error } = await templates(db)
     .update(row)
     .eq("id", id)
     .select()
@@ -206,8 +219,11 @@ export async function updateTemplate(
 }
 
 /** Fetch a single template by id, or null if it does not exist. */
-export async function getTemplate(id: string): Promise<Template | null> {
-  const { data, error } = await templates()
+export async function getTemplate(
+  id: string,
+  db?: SupabaseClient,
+): Promise<Template | null> {
+  const { data, error } = await templates(db)
     .select("*")
     .eq("id", id)
     .maybeSingle();

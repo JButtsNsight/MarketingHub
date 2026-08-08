@@ -24,9 +24,15 @@ const h = vi.hoisted(() => ({
   addManualSuppression: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
 vi.mock("@/lib/sms/repo", () => ({
   listSuppressions: h.listSuppressions,
   addManualSuppression: h.addManualSuppression,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
 }));
 
 import { GET, POST } from "./route";
@@ -97,14 +103,17 @@ describe("GET /api/suppressions", () => {
     const res = await GET(getReq());
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ suppressions: [SUPPRESSION] });
-    expect(h.listSuppressions).toHaveBeenCalledWith({});
+    expect(h.listSuppressions).toHaveBeenCalledWith({}, userDb);
   });
 
   test("passes q through as the search query", async () => {
     h.listSuppressions.mockResolvedValue([]);
     const res = await GET(getReq("?q=555"));
     expect(res.status).toBe(200);
-    expect(h.listSuppressions).toHaveBeenCalledWith({ query: "555" });
+    expect(h.listSuppressions).toHaveBeenCalledWith(
+      { query: "555" },
+      userDb,
+    );
   });
 });
 
@@ -155,6 +164,7 @@ describe("POST /api/suppressions", () => {
       "+15550000006",
       "amy@nsight.example",
       "asked by phone",
+      userDb,
     );
   });
 

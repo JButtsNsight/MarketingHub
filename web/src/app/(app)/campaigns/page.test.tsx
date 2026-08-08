@@ -6,8 +6,13 @@ import { RECIPIENT_STATUSES, type CampaignStatus } from "@/lib/sms/schema";
 const h = vi.hoisted(() => ({
   listCampaignsWithCounts: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/sms/repo", () => ({
   listCampaignsWithCounts: h.listCampaignsWithCounts,
 }));

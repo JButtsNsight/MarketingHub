@@ -8,8 +8,13 @@ const h = vi.hoisted(() => ({
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/templates/repo", () => ({ getTemplate: h.getTemplate }));
 vi.mock("next/navigation", () => ({
   notFound: h.notFound,
@@ -55,7 +60,7 @@ describe("templates/[id]/page.tsx (server component)", () => {
     render(ui);
 
     expect(h.requireMarketingUser).toHaveBeenCalled();
-    expect(h.getTemplate).toHaveBeenCalledWith("t2");
+    expect(h.getTemplate).toHaveBeenCalledWith("t2", h.userDb);
     // name heading
     expect(screen.getByText("Welcome")).toBeInTheDocument();
     // metadata sidebar values

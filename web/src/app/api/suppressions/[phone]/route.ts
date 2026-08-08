@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { normalizeUsPhone } from "@/lib/sms/phone";
 import { getSuppression, removeManualSuppression } from "@/lib/sms/repo";
 
@@ -30,6 +31,9 @@ export async function DELETE(
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const { phone: rawPhone } = await context.params;
   // decodeURIComponent throws a URIError on malformed percent-encoding
@@ -45,7 +49,7 @@ export async function DELETE(
     return Response.json({ error: "Suppression not found" }, { status: 404 });
   }
 
-  const existing = await getSuppression(phone);
+  const existing = await getSuppression(phone, db);
   if (!existing) {
     return Response.json({ error: "Suppression not found" }, { status: 404 });
   }
@@ -60,7 +64,7 @@ export async function DELETE(
     );
   }
 
-  const removed = await removeManualSuppression(phone, user.email);
+  const removed = await removeManualSuppression(phone, user.email, undefined, db);
   if (!removed) {
     // Lost a race with a concurrent removal (or a reason flip) — the guard
     // owns the truth.

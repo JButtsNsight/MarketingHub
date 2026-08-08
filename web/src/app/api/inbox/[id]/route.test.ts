@@ -21,10 +21,15 @@ import {
 // Mock the server-only repo; the route is the unit under test.
 const h = vi.hoisted(() => ({
   setInboundHandled: vi.fn(),
+  // Sentinel client threaded by the route into every repo call (Wave 4).
+  userDb: {},
 }));
 
 vi.mock("@/lib/sms/repo", () => ({
   setInboundHandled: h.setInboundHandled,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
 }));
 
 import { PATCH } from "./route";
@@ -125,6 +130,7 @@ describe("PATCH /api/inbox/[id]", () => {
       MESSAGE_ID,
       true,
       "amy@nsight.example",
+      h.userDb,
     );
   });
 

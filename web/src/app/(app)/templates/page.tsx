@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { searchTemplates } from "@/lib/templates/repo";
 import { TEMPLATE_TYPES, type TemplateType } from "@/lib/templates/schema";
 import { SearchBar } from "@/components/templates/SearchBar";
@@ -38,14 +39,15 @@ export default async function TemplatesPage({
 }) {
   // Server-side group gate: mirrors the API handlers so this read page can't be
   // browsed by an authenticated employee outside the `marketing` Cognito group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const params = await searchParams;
   const q = one(params.q);
   const category = one(params.category) || undefined;
   const type = coerceType(one(params.type));
 
-  const templates = await searchTemplates(q, { category, type });
+  const templates = await searchTemplates(q, { category, type }, db);
   const filtered = Boolean(q || category || type);
 
   return (

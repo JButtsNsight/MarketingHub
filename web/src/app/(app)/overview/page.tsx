@@ -6,6 +6,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { getTemplateStats } from "@/lib/console/stats";
 import {
   countSuppressions,
@@ -91,16 +92,20 @@ const RECENT_COLUMNS: Column<CampaignRow>[] = [
 ];
 
 export default async function OverviewPage() {
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   const [stats, campaigns, unhandled, suppressed] = await Promise.all([
-    getTemplateStats(),
-    listCampaignsWithCounts(),
-    countUnhandledInbound(),
-    countSuppressions(),
+    getTemplateStats(db),
+    listCampaignsWithCounts(db),
+    countUnhandledInbound(db),
+    countSuppressions(db),
   ]);
   const engagement = await getEngagementForCampaigns(
     campaigns.map((c) => c.id),
+    db,
   );
 
   const email = stats.byType.find((t) => t.label === "email")?.count ?? 0;

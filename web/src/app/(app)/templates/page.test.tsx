@@ -5,8 +5,13 @@ import type { Template } from "@/lib/templates/schema";
 const h = vi.hoisted(() => ({
   searchTemplates: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/templates/repo", () => ({
   searchTemplates: h.searchTemplates,
 }));
@@ -70,10 +75,11 @@ describe("templates/page.tsx (server component)", () => {
     });
     render(ui);
 
-    expect(h.searchTemplates).toHaveBeenCalledWith("spring", {
-      category: "Promotion",
-      type: "email",
-    });
+    expect(h.searchTemplates).toHaveBeenCalledWith(
+      "spring",
+      { category: "Promotion", type: "email" },
+      h.userDb,
+    );
     expect(screen.getByRole("link", { name: /alpha/i })).toBeInTheDocument();
     // filtered/searched view labels the count as matches, not the library total.
     expect(screen.getByText(/1 result/i)).toBeInTheDocument();
@@ -99,9 +105,10 @@ describe("templates/page.tsx (server component)", () => {
       searchParams: Promise.resolve({ type: "bogus" }),
     });
     render(ui);
-    expect(h.searchTemplates).toHaveBeenCalledWith("", {
-      category: undefined,
-      type: undefined,
-    });
+    expect(h.searchTemplates).toHaveBeenCalledWith(
+      "",
+      { category: undefined, type: undefined },
+      h.userDb,
+    );
   });
 });

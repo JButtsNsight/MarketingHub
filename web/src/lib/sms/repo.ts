@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getServiceClient } from "../supabase";
 import {
   CampaignCreateInputSchema,
@@ -30,6 +32,13 @@ import { sendAtForZonedSlot } from "./schedule";
  * (`.eq('status', expected)` / `.in('status', [...])`). Row count = won/lost;
  * `null` return = lost the race (caller skips or routes 409). Never widen a
  * guard — the at-most-once send accounting depends on them.
+ *
+ * Client injection (Wave 4): USER-FACING exported functions take an optional
+ * trailing `db` (a `getUserClient(user)` client) so page/route call sites run
+ * as `authenticated` under RLS when SUPABASE_JWT_SECRET is set. Omitted `db`
+ * = the service-role client, byte-identical to before. The dispatcher-worker
+ * and webhook accessors deliberately have NO `db` param — those paths stay
+ * service_role forever.
  */
 
 const SCHEMA = "marketinghub";
@@ -66,44 +75,44 @@ export interface CampaignSource {
   mondayPhoneColumnId: string | null;
 }
 
-function campaigns() {
-  return getServiceClient().schema(SCHEMA).from(CAMPAIGNS);
+function campaigns(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(CAMPAIGNS);
 }
 
-function recipients() {
-  return getServiceClient().schema(SCHEMA).from(RECIPIENTS);
+function recipients(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(RECIPIENTS);
 }
 
-function suppressions() {
-  return getServiceClient().schema(SCHEMA).from(SUPPRESSIONS);
+function suppressions(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(SUPPRESSIONS);
 }
 
-function countsView() {
-  return getServiceClient().schema(SCHEMA).from(COUNTS_VIEW);
+function countsView(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(COUNTS_VIEW);
 }
 
-function webhookEvents() {
-  return getServiceClient().schema(SCHEMA).from(WEBHOOK_EVENTS);
+function webhookEvents(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(WEBHOOK_EVENTS);
 }
 
-function links() {
-  return getServiceClient().schema(SCHEMA).from(LINKS);
+function links(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(LINKS);
 }
 
-function linkClicks() {
-  return getServiceClient().schema(SCHEMA).from(LINK_CLICKS);
+function linkClicks(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(LINK_CLICKS);
 }
 
-function inbound() {
-  return getServiceClient().schema(SCHEMA).from(INBOUND);
+function inbound(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(INBOUND);
 }
 
-function suppressionAudit() {
-  return getServiceClient().schema(SCHEMA).from(SUPPRESSION_AUDIT);
+function suppressionAudit(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(SUPPRESSION_AUDIT);
 }
 
-function engagementView() {
-  return getServiceClient().schema(SCHEMA).from(ENGAGEMENT_VIEW);
+function engagementView(db: SupabaseClient = getServiceClient()) {
+  return db.schema(SCHEMA).from(ENGAGEMENT_VIEW);
 }
 
 function fail(op: string, message: string): never {
@@ -238,6 +247,7 @@ export function prepareRecipients(
  */
 export async function getSuppressedSet(
   phones: Array<string | null>,
+  db?: SupabaseClient,
 ): Promise<Set<string>> {
   const unique = Array.from(
     new Set(phones.filter((p): p is string => Boolean(p))),
@@ -246,7 +256,7 @@ export async function getSuppressedSet(
 
   for (let i = 0; i < unique.length; i += IN_CHUNK) {
     const chunk = unique.slice(i, i + IN_CHUNK);
-    const { data, error } = await suppressions()
+    const { data, error } = await suppressions(db)
       .select("phone_e164")
       .in("phone_e164", chunk);
     if (error) fail("suppressed-set", error.message);
@@ -280,6 +290,7 @@ export async function createCampaign(
   messageBody: string,
   prepared: PreparedRecipient[],
   user: CampaignCreator,
+  db?: SupabaseClient,
 ): Promise<SmsCampaign> {
   const parsed = CampaignCreateInputSchema.parse(input);
   const sendAt = sendAtForZonedSlot(
@@ -288,7 +299,7 @@ export async function createCampaign(
     parsed.sendTimezone,
   ).toISOString();
 
-  const { data, error } = await campaigns()
+  const { data, error } = await campaigns(db)
     .insert({
       name: parsed.name,
       template_id: parsed.templateId,
@@ -325,7 +336,7 @@ export async function createCampaign(
     message: string,
   ): Promise<never> => {
     try {
-      await campaigns()
+      await campaigns(db)
         .update({ status: "canceled", updated_at: nowIso() })
         .eq("id", campaign.id);
     } catch {
@@ -338,7 +349,7 @@ export async function createCampaign(
     const chunk = rows.slice(i, i + INSERT_CHUNK);
 
     if (!hasLinks) {
-      const { error: insertError } = await recipients().insert(chunk);
+      const { error: insertError } = await recipients(db).insert(chunk);
       if (insertError) {
         return cancelAndFail("create-recipients", i, insertError.message);
       }
@@ -346,7 +357,7 @@ export async function createCampaign(
     }
 
     // Link tracking needs the fresh row ids to key sms_links on.
-    const { data: inserted, error: insertError } = await recipients()
+    const { data: inserted, error: insertError } = await recipients(db)
       .insert(chunk)
       .select("id, rendered_text");
     if (insertError) {
@@ -394,7 +405,7 @@ export async function createCampaign(
     }
 
     for (let k = 0; k < linkRows.length; k += INSERT_CHUNK) {
-      const { error: linkError } = await links().insert(
+      const { error: linkError } = await links(db).insert(
         linkRows.slice(k, k + INSERT_CHUNK),
       );
       if (linkError) {
@@ -405,7 +416,7 @@ export async function createCampaign(
 
   // Go live only now that every outbox row exists. Guarded on 'paused' and
   // fail-loud when the flip loses (e.g. someone canceled it mid-create).
-  const { data: activated, error: activateError } = await campaigns()
+  const { data: activated, error: activateError } = await campaigns(db)
     .update({ status: "scheduled", updated_at: nowIso() })
     .eq("id", campaign.id)
     .eq("status", "paused")
@@ -431,8 +442,9 @@ export async function findActiveDuplicateCampaign(
   templateId: string,
   contactListId: string,
   sendDate: string,
+  db?: SupabaseClient,
 ): Promise<SmsCampaign | null> {
-  const { data, error } = await campaigns()
+  const { data, error } = await campaigns(db)
     .select("*")
     .eq("template_id", templateId)
     .eq("contact_list_id", contactListId)
@@ -471,8 +483,10 @@ function foldCounts(rows: CampaignCounts[]): Map<string, CountsByStatus> {
 }
 
 /** All campaigns (newest first) with zero-filled per-status recipient counts. */
-export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
-  const { data, error } = await campaigns()
+export async function listCampaignsWithCounts(
+  db?: SupabaseClient,
+): Promise<CampaignWithCounts[]> {
+  const { data, error } = await campaigns(db)
     .select("*")
     .order("created_at", { ascending: false });
   if (error) fail("list", error.message);
@@ -482,7 +496,7 @@ export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
   // Chunked like getSuppressedSet — PostgREST .in() filters travel in the URL.
   const countRows: CampaignCounts[] = [];
   for (const chunk of inChunks(rows.map((c) => c.id))) {
-    const { data: chunkRows, error: countsError } = await countsView()
+    const { data: chunkRows, error: countsError } = await countsView(db)
       .select("*")
       .in("campaign_id", chunk);
     if (countsError) fail("list-counts", countsError.message);
@@ -497,8 +511,11 @@ export async function listCampaignsWithCounts(): Promise<CampaignWithCounts[]> {
 }
 
 /** Fetch one campaign, or null if it does not exist. */
-export async function getCampaign(id: string): Promise<SmsCampaign | null> {
-  const { data, error } = await campaigns()
+export async function getCampaign(
+  id: string,
+  db?: SupabaseClient,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns(db)
     .select("*")
     .eq("id", id)
     .maybeSingle();
@@ -509,8 +526,9 @@ export async function getCampaign(id: string): Promise<SmsCampaign | null> {
 /** Outbox rows for a campaign in creation order, capped at 2000 for the UI. */
 export async function getCampaignRecipients(
   campaignId: string,
+  db?: SupabaseClient,
 ): Promise<SmsCampaignRecipient[]> {
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .select("*")
     .eq("campaign_id", campaignId)
     .order("created_at", { ascending: true })
@@ -522,8 +540,9 @@ export async function getCampaignRecipients(
 /** Zero-filled per-status recipient counts for one campaign (via the view). */
 export async function getCampaignCounts(
   campaignId: string,
+  db?: SupabaseClient,
 ): Promise<CountsByStatus> {
-  const { data, error } = await countsView()
+  const { data, error } = await countsView(db)
     .select("*")
     .eq("campaign_id", campaignId);
   if (error) fail("get-counts", error.message);
@@ -545,8 +564,11 @@ export async function getCampaignCounts(
  * memory are safe: its claimed → sending update is guarded on
  * `.eq('status','claimed')` and will match 0 rows after this release.
  */
-export async function pauseCampaign(id: string): Promise<SmsCampaign | null> {
-  const { data, error } = await campaigns()
+export async function pauseCampaign(
+  id: string,
+  db?: SupabaseClient,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns(db)
     .update({ status: "paused", updated_at: nowIso() })
     .eq("id", id)
     .in("status", ["scheduled", "sending"])
@@ -555,7 +577,7 @@ export async function pauseCampaign(id: string): Promise<SmsCampaign | null> {
   if (error) fail("pause", error.message);
   if (!data) return null;
 
-  const { error: releaseError } = await recipients()
+  const { error: releaseError } = await recipients(db)
     .update({
       status: "pending",
       claimed_at: null,
@@ -574,8 +596,11 @@ export async function pauseCampaign(id: string): Promise<SmsCampaign | null> {
  * is the single decision point for "actively dispatching", so resume never
  * jumps straight to `sending`.
  */
-export async function resumeCampaign(id: string): Promise<SmsCampaign | null> {
-  const { data, error } = await campaigns()
+export async function resumeCampaign(
+  id: string,
+  db?: SupabaseClient,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns(db)
     .update({ status: "scheduled", updated_at: nowIso() })
     .eq("id", id)
     .eq("status", "paused")
@@ -597,6 +622,7 @@ export async function resumeCampaign(id: string): Promise<SmsCampaign | null> {
 export async function rescheduleCampaign(
   id: string,
   input: CampaignRescheduleInput,
+  db?: SupabaseClient,
 ): Promise<SmsCampaign | null> {
   const parsed = CampaignRescheduleInputSchema.parse(input);
   const sendAt = sendAtForZonedSlot(
@@ -605,7 +631,7 @@ export async function rescheduleCampaign(
     parsed.sendTimezone,
   ).toISOString();
 
-  const { data, error } = await campaigns()
+  const { data, error } = await campaigns(db)
     .update({
       send_date: parsed.sendDate,
       send_time: parsed.sendTime,
@@ -620,7 +646,7 @@ export async function rescheduleCampaign(
   if (error) fail("reschedule", error.message);
   if (!data) return null;
 
-  const { error: sweepError } = await recipients()
+  const { error: sweepError } = await recipients(db)
     .update({ send_after: sendAt, updated_at: nowIso() })
     .eq("campaign_id", id)
     .eq("status", "pending");
@@ -634,8 +660,11 @@ export async function rescheduleCampaign(
  * (`pending`/`claimed` → `canceled`). Rows already `sending` are left alone —
  * the in-flight POST completes naturally and cannot be recalled.
  */
-export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
-  const { data, error } = await campaigns()
+export async function cancelCampaign(
+  id: string,
+  db?: SupabaseClient,
+): Promise<SmsCampaign | null> {
+  const { data, error } = await campaigns(db)
     .update({ status: "canceled", updated_at: nowIso() })
     .eq("id", id)
     .in("status", ["scheduled", "sending", "paused"])
@@ -644,7 +673,7 @@ export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
   if (error) fail("cancel", error.message);
   if (!data) return null;
 
-  const { error: sweepError } = await recipients()
+  const { error: sweepError } = await recipients(db)
     .update({
       status: "canceled",
       claimed_at: null,
@@ -672,8 +701,9 @@ export async function cancelCampaign(id: string): Promise<SmsCampaign | null> {
  */
 export async function retryRecipient(
   id: string,
+  db?: SupabaseClient,
 ): Promise<SmsCampaignRecipient | null> {
-  const { data: rowData, error: lookupError } = await recipients()
+  const { data: rowData, error: lookupError } = await recipients(db)
     .select("campaign_id")
     .eq("id", id)
     .maybeSingle();
@@ -681,7 +711,7 @@ export async function retryRecipient(
   if (!rowData) return null;
   const campaignId = (rowData as { campaign_id: string }).campaign_id;
 
-  const { data: campaignData, error: statusError } = await campaigns()
+  const { data: campaignData, error: statusError } = await campaigns(db)
     .select("status")
     .eq("id", campaignId)
     .maybeSingle();
@@ -690,7 +720,7 @@ export async function retryRecipient(
     ?.status;
   if (campaignStatus === "canceled") return null;
 
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .update({
       status: "pending",
       send_after: nowIso(),
@@ -706,7 +736,7 @@ export async function retryRecipient(
   if (!data) return null;
   const row = data as SmsCampaignRecipient;
 
-  const { error: reopenError } = await campaigns()
+  const { error: reopenError } = await campaigns(db)
     .update({ status: "sending", updated_at: nowIso() })
     .eq("id", row.campaign_id)
     .eq("status", "completed");
@@ -719,6 +749,7 @@ export async function retryRecipient(
 export async function markRecipientFailed(
   id: string,
   note?: string,
+  db?: SupabaseClient,
 ): Promise<SmsCampaignRecipient | null> {
   const patch: Record<string, unknown> = {
     status: "failed",
@@ -726,7 +757,7 @@ export async function markRecipientFailed(
   };
   if (note) patch.last_error = note;
 
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .update(patch)
     .eq("id", id)
     .eq("status", "failed_ambiguous")
@@ -1094,8 +1125,9 @@ export async function recordSuppression(
  */
 export async function suppressActiveRecipientsByPhone(
   phone: string,
+  db?: SupabaseClient,
 ): Promise<number> {
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .update({
       status: "suppressed",
       claimed_at: null,
@@ -1304,8 +1336,9 @@ export async function findRecipientForInbound(
 /** Inbox rows, newest first, with the attributed campaign embedded. */
 export async function listInboundMessages(
   opts: { unhandledOnly?: boolean; campaignId?: string; limit?: number } = {},
+  db?: SupabaseClient,
 ): Promise<InboundMessageWithCampaign[]> {
-  let query = inbound().select("*, campaign:sms_campaigns(id, name)");
+  let query = inbound(db).select("*, campaign:sms_campaigns(id, name)");
   if (opts.unhandledOnly) query = query.eq("handled", false);
   if (opts.campaignId) query = query.eq("matched_campaign_id", opts.campaignId);
   const { data, error } = await query
@@ -1324,8 +1357,9 @@ export async function setInboundHandled(
   id: string,
   handled: boolean,
   actor: string,
+  db?: SupabaseClient,
 ): Promise<SmsInboundMessage | null> {
-  const { data, error } = await inbound()
+  const { data, error } = await inbound(db)
     .update(
       handled
         ? { handled: true, handled_by: actor, handled_at: nowIso() }
@@ -1339,8 +1373,10 @@ export async function setInboundHandled(
 }
 
 /** Inbox badge count. */
-export async function countUnhandledInbound(): Promise<number> {
-  const { count, error } = await inbound()
+export async function countUnhandledInbound(
+  db?: SupabaseClient,
+): Promise<number> {
+  const { count, error } = await inbound(db)
     .select("id", { count: "exact", head: true })
     .eq("handled", false);
   if (error) fail("count-unhandled-inbound", error.message);
@@ -1357,8 +1393,9 @@ export async function countUnhandledInbound(): Promise<number> {
 /** One STOP-list row, or null. */
 export async function getSuppression(
   phone: string,
+  db?: SupabaseClient,
 ): Promise<SmsSuppression | null> {
-  const { data, error } = await suppressions()
+  const { data, error } = await suppressions(db)
     .select("*")
     .eq("phone_e164", phone)
     .maybeSingle();
@@ -1372,12 +1409,13 @@ export async function getSuppression(
  */
 export async function listSuppressions(
   opts: { query?: string; limit?: number } = {},
+  db?: SupabaseClient,
 ): Promise<SmsSuppression[]> {
   const digits =
     opts.query !== undefined ? opts.query.replace(/[^0-9+]/g, "") : null;
   if (digits !== null && digits.length === 0) return [];
 
-  let q = suppressions().select("*");
+  let q = suppressions(db).select("*");
   if (digits !== null) q = q.ilike("phone_e164", `%${digits}%`);
   const { data, error } = await q
     .order("created_at", { ascending: false })
@@ -1387,8 +1425,8 @@ export async function listSuppressions(
 }
 
 /** Total STOP-list size (stat card). */
-export async function countSuppressions(): Promise<number> {
-  const { count, error } = await suppressions().select("phone_e164", {
+export async function countSuppressions(db?: SupabaseClient): Promise<number> {
+  const { count, error } = await suppressions(db).select("phone_e164", {
     count: "exact",
     head: true,
   });
@@ -1410,8 +1448,9 @@ async function recordSuppressionAudit(
   reason: string,
   actor: string,
   note?: string,
+  db?: SupabaseClient,
 ): Promise<void> {
-  const { error } = await suppressionAudit().insert({
+  const { error } = await suppressionAudit(db).insert({
     phone_e164: phone,
     action,
     reason,
@@ -1436,11 +1475,12 @@ export async function addManualSuppression(
   phone: string,
   actor: string,
   note?: string,
+  db?: SupabaseClient,
 ): Promise<{ created: boolean; suppression: SmsSuppression }> {
-  const existing = await getSuppression(phone);
+  const existing = await getSuppression(phone, db);
   if (existing) return { created: false, suppression: existing };
 
-  const { data, error } = await suppressions()
+  const { data, error } = await suppressions(db)
     .insert({
       phone_e164: phone,
       reason: "manual",
@@ -1452,14 +1492,14 @@ export async function addManualSuppression(
     // Insert race (someone else suppressed the phone between the check and
     // the insert): read it back and report created:false; anything else is a
     // real failure.
-    const raced = await getSuppression(phone);
+    const raced = await getSuppression(phone, db);
     if (raced) return { created: false, suppression: raced };
     fail("add-suppression", error.message);
   }
 
   const suppression = data as SmsSuppression;
-  await suppressActiveRecipientsByPhone(phone);
-  await recordSuppressionAudit(phone, "added", "manual", actor, note);
+  await suppressActiveRecipientsByPhone(phone, db);
+  await recordSuppressionAudit(phone, "added", "manual", actor, note, db);
   return { created: true, suppression };
 }
 
@@ -1473,8 +1513,9 @@ export async function removeManualSuppression(
   phone: string,
   actor: string,
   note?: string,
+  db?: SupabaseClient,
 ): Promise<SmsSuppression | null> {
-  const { data, error } = await suppressions()
+  const { data, error } = await suppressions(db)
     .delete()
     .eq("phone_e164", phone)
     .eq("reason", "manual")
@@ -1483,7 +1524,7 @@ export async function removeManualSuppression(
   if (error) fail("remove-suppression", error.message);
   if (!data) return null;
 
-  await recordSuppressionAudit(phone, "removed", "manual", actor, note);
+  await recordSuppressionAudit(phone, "removed", "manual", actor, note, db);
   return data as SmsSuppression;
 }
 
@@ -1511,8 +1552,9 @@ export interface AttentionRecipient extends SmsCampaignRecipient {
 /** The review queue, newest problems first, capped for the UI. */
 export async function listAttentionRecipients(
   limit = 500,
+  db?: SupabaseClient,
 ): Promise<AttentionRecipient[]> {
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .select("*, campaign:sms_campaigns(id, name, status)")
     .in("status", ATTENTION_STATUSES)
     .order("updated_at", { ascending: false })
@@ -1530,6 +1572,7 @@ export async function listAttentionRecipients(
 export async function resolveRecipientSent(
   id: string,
   note?: string,
+  db?: SupabaseClient,
 ): Promise<SmsCampaignRecipient | null> {
   const patch: Record<string, unknown> = {
     status: "sent",
@@ -1538,7 +1581,7 @@ export async function resolveRecipientSent(
   };
   if (note) patch.last_error = note;
 
-  const { data, error } = await recipients()
+  const { data, error } = await recipients(db)
     .update(patch)
     .eq("id", id)
     .eq("status", "failed_ambiguous")
@@ -1567,8 +1610,9 @@ function zeroEngagement(campaignId: string): CampaignEngagement {
 /** One campaign's engagement aggregates (zero-filled when the view has none). */
 export async function getCampaignEngagement(
   campaignId: string,
+  db?: SupabaseClient,
 ): Promise<CampaignEngagement> {
-  const { data, error } = await engagementView()
+  const { data, error } = await engagementView(db)
     .select("*")
     .eq("campaign_id", campaignId)
     .maybeSingle();
@@ -1579,10 +1623,11 @@ export async function getCampaignEngagement(
 /** Engagement rows for many campaigns, chunked like every `.in()` here. */
 export async function getEngagementForCampaigns(
   ids: string[],
+  db?: SupabaseClient,
 ): Promise<Map<string, CampaignEngagement>> {
   const map = new Map<string, CampaignEngagement>();
   for (const chunk of inChunks(Array.from(new Set(ids)))) {
-    const { data, error } = await engagementView()
+    const { data, error } = await engagementView(db)
       .select("*")
       .in("campaign_id", chunk);
     if (error) fail("engagement-for-campaigns", error.message);

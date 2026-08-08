@@ -1,4 +1,5 @@
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { listAttentionRecipients } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
@@ -20,9 +21,10 @@ export const metadata = {
 export default async function ReviewPage() {
   // Server-side group gate: mirrors the API handlers so this read page can't
   // be browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
-  const rows = await listAttentionRecipients();
+  const rows = await listAttentionRecipients(undefined, db);
   const ambiguous = rows.filter((r) => r.status === "failed_ambiguous").length;
   const failed = rows.filter((r) => r.status === "failed").length;
   const undelivered = rows.filter((r) => r.status === "undelivered").length;

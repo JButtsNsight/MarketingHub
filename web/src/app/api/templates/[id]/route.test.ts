@@ -18,11 +18,19 @@ import {
   signAlbToken,
 } from "@/lib/__test__/albToken";
 
-const h = vi.hoisted(() => ({ getTemplate: vi.fn(), updateTemplate: vi.fn() }));
+const h = vi.hoisted(() => ({
+  getTemplate: vi.fn(),
+  updateTemplate: vi.fn(),
+  // Sentinel client threaded by the route into every repo call (Wave 4).
+  userDb: {},
+}));
 
 vi.mock("@/lib/templates/repo", () => ({
   getTemplate: h.getTemplate,
   updateTemplate: h.updateTemplate,
+}));
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
 }));
 
 import { GET, PATCH } from "./route";
@@ -75,7 +83,7 @@ describe("GET /api/templates/[id]", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.template.id).toBe(T1);
-    expect(h.getTemplate).toHaveBeenCalledWith(T1);
+    expect(h.getTemplate).toHaveBeenCalledWith(T1, h.userDb);
   });
 
   test("404 when not found", async () => {
@@ -122,7 +130,11 @@ describe("PATCH /api/templates/[id]", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.template.name).toBe("Renamed");
-    expect(h.updateTemplate).toHaveBeenCalledWith(T1, { name: "Renamed" });
+    expect(h.updateTemplate).toHaveBeenCalledWith(
+      T1,
+      { name: "Renamed" },
+      h.userDb,
+    );
   });
 
   test("400 when no editable field is present", async () => {

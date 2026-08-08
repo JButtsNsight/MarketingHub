@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { getContactList, getListMembers } from "@/lib/contacts/repo";
 import type { ContactListMember } from "@/lib/contacts/schema";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -61,13 +62,14 @@ export default async function ContactListDetailPage({
   params: Promise<{ id: string }>;
 }) {
   // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const { id } = await params;
-  const list = await getContactList(id);
+  const list = await getContactList(id, db);
   if (!list) notFound();
 
-  const members = list.source === "csv" ? await getListMembers(id) : [];
+  const members = list.source === "csv" ? await getListMembers(id, db) : [];
 
   return (
     <>

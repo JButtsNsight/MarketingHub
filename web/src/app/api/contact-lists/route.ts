@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { getUserClient } from "@/lib/supabase";
 import { MondayConfigError } from "@/lib/monday/client";
 import { getBoardMeta } from "@/lib/monday/boards";
 import { parseContactSheet, SheetParseError } from "@/lib/contacts/csv";
@@ -39,6 +40,9 @@ export async function POST(req: Request): Promise<Response> {
   } catch (err) {
     return authErrorResponse(err);
   }
+  // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
+  // set; the service-role fallback otherwise — identical to before.
+  const db = await getUserClient(user);
 
   let payload: unknown;
   try {
@@ -92,6 +96,7 @@ export async function POST(req: Request): Promise<Response> {
       sheet.contacts,
       { filename: input.filename, content: input.content },
       { email: user.email },
+      db,
     );
     return Response.json({ id: list.id, list, counts: sheet.counts }, { status: 201 });
   }
@@ -120,17 +125,20 @@ export async function POST(req: Request): Promise<Response> {
     input.name,
     { id: board.id, name: board.name, phoneColumnId: input.phoneColumnId },
     { email: user.email },
+    db,
   );
   return Response.json({ id: list.id, list }, { status: 201 });
 }
 
 export async function GET(req: Request): Promise<Response> {
+  let user;
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, MARKETING_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
+  const db = await getUserClient(user);
 
-  const lists = await listContactLists();
+  const lists = await listContactLists(db);
   return Response.json({ lists });
 }

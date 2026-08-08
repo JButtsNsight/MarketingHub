@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { getUserClient } from "@/lib/supabase";
 import { listTemplates } from "@/lib/templates/repo";
 import { listContactLists } from "@/lib/contacts/repo";
 import { NewCampaignForm } from "@/components/campaigns/NewCampaignForm";
@@ -22,11 +23,12 @@ export const metadata = {
 export default async function NewCampaignPage() {
   // Server-side group gate: mirrors the API handlers so this page can't be
   // browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  const user = await requireMarketingUser();
+  const db = await getUserClient(user);
 
   const [templates, lists] = await Promise.all([
-    listTemplates({ type: "text" }),
-    listContactLists(),
+    listTemplates({ type: "text" }, db),
+    listContactLists(db),
   ]);
 
   if (lists.length === 0) {

@@ -1,5 +1,7 @@
 import "server-only";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+
 import { getServiceClient } from "../supabase";
 
 const SCHEMA = "marketinghub";
@@ -21,10 +23,14 @@ export interface TemplateStats {
 /**
  * Live template statistics for the Overview dashboard. Reads an exact row count
  * plus the minimal columns needed to derive type/category breakdowns. Fail-loud
- * on any Supabase error (never a fabricated zero).
+ * on any Supabase error (never a fabricated zero). User-facing despite living
+ * under lib/console/ — the Overview page threads a `getUserClient(user)`
+ * client via `db`; omitted = service-role, unchanged.
  */
-export async function getTemplateStats(): Promise<TemplateStats> {
-  const { data, count, error } = await getServiceClient()
+export async function getTemplateStats(
+  db: SupabaseClient = getServiceClient(),
+): Promise<TemplateStats> {
+  const { data, count, error } = await db
     .schema(SCHEMA)
     .from(TABLE)
     .select("type,category,created_at", { count: "exact" })

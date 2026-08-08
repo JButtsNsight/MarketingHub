@@ -29,6 +29,13 @@ const h = vi.hoisted(() => ({
   rescheduleCampaign: vi.fn(),
 }));
 
+// Sentinel client threaded by the route into every repo call (Wave 4).
+const userDb = vi.hoisted(() => ({}));
+
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => userDb,
+}));
+
 vi.mock("@/lib/sms/repo", () => ({
   getCampaign: h.getCampaign,
   getCampaignCounts: h.getCampaignCounts,
@@ -132,9 +139,9 @@ describe("GET /api/campaigns/[id]", () => {
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json).toEqual({ campaign, counts, recipients });
-    expect(h.getCampaign).toHaveBeenCalledWith(ID);
-    expect(h.getCampaignCounts).toHaveBeenCalledWith(ID);
-    expect(h.getCampaignRecipients).toHaveBeenCalledWith(ID);
+    expect(h.getCampaign).toHaveBeenCalledWith(ID, userDb);
+    expect(h.getCampaignCounts).toHaveBeenCalledWith(ID, userDb);
+    expect(h.getCampaignRecipients).toHaveBeenCalledWith(ID, userDb);
   });
 });
 
@@ -183,7 +190,7 @@ describe("PATCH /api/campaigns/[id]", () => {
       expect(res.status).toBe(200);
       const json = await res.json();
       expect(json.campaign).toEqual({ id: ID, status });
-      expect(mock).toHaveBeenCalledWith(ID);
+      expect(mock).toHaveBeenCalledWith(ID, userDb);
     },
   );
 
@@ -208,11 +215,15 @@ describe("PATCH /api/campaigns/[id]", () => {
     h.rescheduleCampaign.mockResolvedValue({ id: ID, status: "scheduled" });
     const res = await PATCH(patchReq(reschedule), ctx());
     expect(res.status).toBe(200);
-    expect(h.rescheduleCampaign).toHaveBeenCalledWith(ID, {
-      sendDate: "2999-01-04",
-      sendTime: "08:30",
-      sendTimezone: "America/Los_Angeles",
-    });
+    expect(h.rescheduleCampaign).toHaveBeenCalledWith(
+      ID,
+      {
+        sendDate: "2999-01-04",
+        sendTime: "08:30",
+        sendTimezone: "America/Los_Angeles",
+      },
+      userDb,
+    );
   });
 
   test("reschedule → 409 when the campaign already started sending", async () => {

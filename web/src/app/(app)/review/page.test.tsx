@@ -4,8 +4,13 @@ import { render, screen } from "@testing-library/react";
 const h = vi.hoisted(() => ({
   listAttentionRecipients: vi.fn(),
   requireMarketingUser: vi.fn(),
+  // Sentinel client threaded by the page into every repo call (Wave 4).
+  userDb: {},
 }));
 
+vi.mock("@/lib/supabase", () => ({
+  getUserClient: async () => h.userDb,
+}));
 vi.mock("@/lib/sms/repo", () => ({
   listAttentionRecipients: h.listAttentionRecipients,
 }));

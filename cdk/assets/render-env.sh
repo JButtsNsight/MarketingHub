@@ -161,5 +161,26 @@ STORAGE_AWS_ACCESS_KEY_ID=${STORAGE_AWS_ACCESS_KEY_ID}
 STORAGE_AWS_SECRET_ACCESS_KEY=${STORAGE_AWS_SECRET_ACCESS_KEY}
 ENV
 
+# --- WAVE-3 CUTOVER, DO NOT UNCOMMENT (staged 2026-08-08 by Wave 4) -------------------
+# GoTrue custom-access-token hook wiring. The pg function stub it points at
+# (marketinghub.custom_access_token_hook — returns the event untouched) ships in
+# cdk/sql/2026-08-08-w4-user-rls.sql, EXECUTE granted to supabase_auth_admin only.
+# GoTrue is NOT the front door yet (identity is Cognito via the ALB; Wave-4 user JWTs
+# are minted by the app, not GoTrue), so enabling this hook does nothing useful today —
+# it activates only at the Wave-3 GoTrue/SAML cutover.
+# NOTE: the last var is _SECRETS (PLURAL). supabase/auth's example.env shows a singular
+# GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_SECRET at v2.186.0, which does NOT match the envconfig
+# binding — the compose and configuration.go both say _SECRETS. It is only consumed by
+# https:// hook URIs and stays empty for pg-functions://.
+#
+# cat >>"$WORK" <<'ENV'
+#
+# # --- GoTrue custom access token hook (Wave-3 cutover) ---
+# GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_ENABLED=true
+# GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_URI=pg-functions://postgres/marketinghub/custom_access_token_hook
+# GOTRUE_HOOK_CUSTOM_ACCESS_TOKEN_SECRETS=
+# ENV
+# ---------------------------------------------------------------------------------------
+
 # Emit the finished .env on stdout (bootstrap.sh redirects to a 600 root-owned file).
 cat "$WORK"

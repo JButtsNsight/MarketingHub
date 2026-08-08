@@ -17,6 +17,23 @@ test('rls-gate.sql selects offending tables from pg_tables/pg_policies', () => {
   expect(sql).toMatch(/'marketinghub'/);
 });
 
+test('rls-gate.sql (Wave 4): marketinghub arm demands FORCE RLS + a restrictive anon policy', () => {
+  const sql = read('sql/rls-gate.sql');
+  // Permissive `authenticated` policies exist now, so a bare policy count no
+  // longer proves deny-by-default for marketinghub — the gate must also flag:
+  // FORCE RLS off (owner bypass) ...
+  expect(sql).toMatch(/relforcerowsecurity/);
+  expect(sql).toMatch(/RLS_NOT_FORCED/);
+  // ... and a missing RESTRICTIVE deny-all that applies to anon (a policy
+  // TO public applies to anon too, so it also satisfies the gate).
+  expect(sql).toMatch(/permissive\s*=\s*'RESTRICTIVE'/i);
+  expect(sql).toMatch(/'anon'\s*=\s*ANY\s*\(\s*p\.roles\s*\)/i);
+  expect(sql).toMatch(/'public'\s*=\s*ANY\s*\(\s*p\.roles\s*\)/i);
+  expect(sql).toMatch(/NO_RESTRICTIVE_ANON_POLICY/);
+  // both arms feed one zero-rows-pass result set
+  expect(sql).toMatch(/UNION ALL/i);
+});
+
 test('enable-rls-template.sql shows ENABLE + FORCE + deny-by-default + REVOKE/GRANT', () => {
   const sql = read('sql/enable-rls-template.sql');
   expect(sql).toMatch(/ENABLE ROW LEVEL SECURITY/i);
