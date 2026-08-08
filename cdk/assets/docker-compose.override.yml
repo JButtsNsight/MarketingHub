@@ -19,7 +19,9 @@ services:
     ports:
       - "3000:3000"
     # If the pinned tag declares `depends_on: analytics`, null it out so the front
-    # door does not hang (analytics/vector is NOT enabled — §5).
+    # door does not hang on analytics health at boot. (W6 correction: the pinned tag
+    # runs analytics/vector by default and they ARE up on the live host — the nulled
+    # depends_on stays anyway so a wedged analytics can never hold studio/kong down.)
     depends_on: {}
 
   kong:
@@ -32,6 +34,14 @@ services:
       - "127.0.0.1:8444:8444/tcp"
       - "127.0.0.1:8002:8002/tcp"
     depends_on: {}
+    # nsight-w6 analytics route: mount the vendored kong config (bundle kong.yml with
+    # ONLY the analytics-v1-api route uncommented; staged by cdk to the non-bundle
+    # path /opt/supabase/kong-nsight.yml) over the container's template target.
+    # Compose merges volume mounts by container target — same precedent as the db
+    # data-dir bind above — so this replaces the bundle's ./volumes/api/kong.yml
+    # mount at /home/kong/temp.yml while fetch_bundle's cp -a can never clobber it.
+    volumes:
+      - /opt/supabase/kong-nsight.yml:/home/kong/temp.yml:ro,z
 
   rest:
     # PostgREST only serves schemas listed in PGRST_DB_SCHEMAS. The pinned bundle

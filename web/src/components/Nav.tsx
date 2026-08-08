@@ -21,6 +21,8 @@ export type IconKey =
   | "realtime"
   | "api"
   | "advisors"
+  | "reports"
+  | "logs"
   | "cron"
   | "queues"
   | "infra"
@@ -75,6 +77,10 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/realtime", label: "Realtime", icon: "realtime" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
       { href: "/advisors", label: "Advisors", icon: "advisors" },
+      // Wave 6: Studio's observability pair follows Advisors — Reports
+      // (canned Logflare metrics) then Logs (explorer + drains subtree).
+      { href: "/reports", label: "Reports", icon: "reports" },
+      { href: "/logs", label: "Logs", icon: "logs" },
     ],
   },
   {
@@ -219,6 +225,18 @@ const ICONS: Record<IconKey, ReactNode> = {
       <path d="M9 18h6" />
       <path d="M10 21h4" />
       <path d="M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.2V16h6v-.3c0-.8.4-1.6 1-2.2A6 6 0 0 0 12 3z" />
+    </>
+  ),
+  reports: (
+    <>
+      <path d="M4 4v15a1 1 0 0 0 1 1h15" />
+      <path d="M8 15l4-5 3 3 5-7" />
+    </>
+  ),
+  logs: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="1.5" />
+      <path d="M7 9h10M7 12.5h7M7 16h4" />
     </>
   ),
   cron: (

@@ -29,3 +29,13 @@ export const AUTH_TABS: TabItem[] = [
   { href: "/auth", label: "Overview" },
   { href: "/auth/impersonate", label: "Impersonation" },
 ];
+
+/**
+ * Sub-navigation for the Logs section (Wave 6, Studio parity): the explorer
+ * over the seven shipped Logflare sources, plus the honest static Drains
+ * capability panel. Reports is its own top-level nav item, not a tab here.
+ */
+export const LOGS_TABS: TabItem[] = [
+  { href: "/logs", label: "Explorer" },
+  { href: "/logs/drains", label: "Drains" },
+];

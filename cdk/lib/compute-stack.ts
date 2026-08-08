@@ -175,6 +175,14 @@ export class ComputeStack extends Stack {
     stage('pgbackrest.conf', '/etc/pgbackrest/pgbackrest.conf', '0640');
     stage('pgbackrest-cron', '/usr/local/bin/pgbackrest-cron', '0750');
     stage('bootstrap.sh', '/opt/supabase/bootstrap.sh', '0700');
+    // Wave-6 analytics route persistence: the vendored kong config (pinned bundle
+    // kong.yml with ONLY the analytics-v1-api route uncommented — marker
+    // "nsight-w6 analytics route") is staged at a NON-bundle path so bootstrap's
+    // fetch_bundle `cp -a` can never clobber it; the compose override mounts it
+    // over the kong container's /home/kong/temp.yml. A brand-new/replacement host
+    // therefore first-boots with the analytics route already enabled; the CURRENT
+    // host is patched by the staged /tmp/enable-analytics-route.sh (runbook §11).
+    stage('kong-nsight.yml', '/opt/supabase/kong-nsight.yml', '0644');
     // Wave-5 Edge Functions seed mirror: the repo-tracked sources
     // (supabase/functions/<name>/index.ts — main router + hello + embed stub) are
     // staged to /opt/supabase/functions-seed/<name>/index.ts; bootstrap.sh copies

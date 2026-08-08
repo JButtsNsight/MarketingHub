@@ -659,6 +659,12 @@ self-seed them via `cdk/lib/compute-stack.ts` → `/opt/supabase/functions-seed`
    present, `getUserClient()` has no service-role fallback, so an
    out-of-order run would be an app-wide outage. If the SSM check itself
    cannot run, the operator must type `W4-RLS-IS-LIVE` to proceed.
+   **Wave-6 prerequisite (also machine-checked, step 3/7):** app-config must
+   already carry the `LOGFLARE_PRIVATE_ACCESS_TOKEN` JSON key — the Wave-6
+   app-stack wires it into the same flag-ON block, so this deploy's task-def
+   references it; the script ABORTS with the seeding instruction when it is
+   missing. Seeder = `/tmp/stage-w6-env.sh`, queued BEFORE this deploy
+   (§11.2).
    **Worker image:** the app and worker images HAVE drifted apart
    out-of-band (live: app `parity-…` vs worker `main-…`); `app-infra` uses
    `appImageTag` for BOTH containers unless `workerImageTag` pins the worker
@@ -714,3 +720,158 @@ self-seed them via `cdk/lib/compute-stack.ts` → `/opt/supabase/functions-seed`
   postgres_changes is off). Revisit when the pinned bundle is upgraded.
 - Edge functions: worst case the container keeps crash-looping exactly as it
   does today; volume files are inert until a restart.
+
+## 11. Wave-6 Logs & Reports (Logflare observability, 2026-08-08)
+
+Wave 6 adds the `/logs` explorer (+ the `/logs/drains` capability panel) and
+the `/reports` charts, all read-only and behind the marketing console gate.
+The Logflare `analytics` + `vector` containers ALREADY RUN on the Supabase
+host; the ONLY missing links are (a) Kong's `analytics-v1-api` route, which
+the pinned bundle ships commented out, and (b) a Logflare token on the app
+task-def. Until BOTH staged steps below run, every Wave-6 page renders the
+honest "Analytics unavailable" state and nothing else changes — zero risk in
+shipping the image first.
+
+### 11.1 What ships in the image / repo vs. what the operator applies
+
+In the image (inert until 11.2): `web/src/lib/console/logs.ts` (server-only
+Logflare client — allowlisted per-source SQL templates only, never user SQL;
+search text is bound as a quote-escaped LIKE literal, backslashes/control
+characters rejected; `%`/`_` deliberately act as LIKE wildcards — the pinned
+BQ→PG translator consumes backslash escapes, so escaping them cannot survive
+the round-trip), the `/logs` + `/reports` pages, `/logs/drains` (an honest
+static panel: Log Drains are real in Logflare 1.36.1 but deliberately NOT
+enabled — they are a write surface on the management API our Kong route does
+not expose; log coverage = vector→Logflare in-stack for 7 services +
+CloudWatch as the infra log truth), and the `GET /api/console/logs` +
+`GET /api/console/reports` routes. Both routes map the unreachable state to
+**503 + `unavailable: true`** (never 400 — monitors see a service-side
+condition), and the lib treats 401/404/502/503/504 from the analytics path
+as unreachable: on THIS stack the pre-apply state answers **401**, not 404
+(the pinned kong.yml ends with a basic-auth dashboard catch-all on `/`), and
+502/503/504 mean Logflare itself is down/wedged/slow.
+
+In the repo (first-boot persistence — a REPLACEMENT host needs NO staged
+step): `cdk/assets/kong-nsight.yml` (vendored pin kong.yml with ONLY
+`analytics-v1-api` uncommented, pinned to the read-only
+`/api/endpoints/query/*` subpath — Logflare serves its endpoint MANAGEMENT
+resources, create/update/delete under the same private token, directly under
+`/api/endpoints`, which stays unrouted; marker `# nsight-w6 analytics
+route`), staged by `compute-stack.ts` to the non-bundle path
+`/opt/supabase/kong-nsight.yml` and mounted over the kong container's
+`/home/kong/temp.yml` template target via `docker-compose.override.yml` —
+bootstrap's `fetch_bundle` re-clone can never clobber it. Plus
+`app-infra/lib/app-stack.ts` now wires `LOGFLARE_PRIVATE_ACCESS_TOKEN` into
+the same context-flagged `supabaseAppConfigSecretArn` block as JWT/ANON, so
+future flag-ON deploys keep the W6 env instead of stripping it (§9.4's drift
+lesson). **No staged cdk deploy this wave — but the QUEUED flag-ON W5 deploy
+(§10.2-3) now references the LOGFLARE app-config key, which is why §11.2
+orders the W6 env step BEFORE it and why `/tmp/deploy-w5-infra.sh`
+machine-checks the key.**
+
+### 11.2 Apply order (relative to the W4/W5 queue)
+
+The full batched queue is now: W4 SQL (§9.2-1) → W4 env (§9.2-3) → W5 SQL
+(§10.2-1) → W5 edge fix (§10.2-2) → **W6 env (step 1 below)** → W5 infra
+deploy (§10.2-3) → **W6 route (step 2 below)**.
+
+**Why W6 env moved BEFORE the W5 deploy:** the Wave-6 `app-stack.ts` wires
+`LOGFLARE_PRIVATE_ACCESS_TOKEN` into the same flag-ON block the W5 deploy
+turns on, so the deploy's synthesized task-def references the app-config
+JSON key that ONLY `stage-w6-env.sh` writes. Deploying first would fail
+every task start (`ResourceInitializationError`) and circuit-breaker-roll-
+back the entire W5 update. Two guards enforce the order:
+`/tmp/deploy-w5-infra.sh` step 3/7 machine-checks
+`has("LOGFLARE_PRIVATE_ACCESS_TOKEN")` and ABORTS with the seeding
+instruction, and `stage-w6-env.sh`'s own prerequisite (live task-def already
+carries `SUPABASE_JWT_SECRET`) is satisfied by the earlier W4 env step.
+
+1. **Stage the env** — `bash /tmp/stage-w6-env.sh` (typed confirm
+   `STAGE-W6-ENV`). Reads the token the analytics container actually accepts
+   from the host's `/opt/supabase/.env` via SSM (never echoed), folds it into
+   `nsight-supabase/app-config`, registers a new APP task-def revision from
+   the LIVE one (never the worker) with the `valueFrom` ref, updates the
+   service and waits stable. **Hard prerequisites (machine-checked):**
+   (a) the live task-def must already carry `SUPABASE_JWT_SECRET` (§9.2-3) —
+   that proves the execution role's app-config read/decrypt grant exists;
+   (b) **default-token gate** — if the host still runs the bundle
+   `.env.example` DEFAULT Logflare token (public upstream), the script
+   HARD-FAILS with rotation instructions (a publicly-known token would make
+   the worker-exclusion boundary and Logflare's x-api-key gate cosmetic for
+   any VPC workload with SG reach to the host :8000). Risk-accepted
+   override: `W6_ALLOW_DEFAULT_LOGFLARE_TOKEN=1 bash /tmp/stage-w6-env.sh`.
+2. **Enable the Kong route** — `bash /tmp/enable-analytics-route.sh` (typed
+   confirm `ENABLE-ANALYTICS`). Safe at ANY point in the queue. Idempotent
+   (exit 0 if the file, the override marker, and the verify-curl already
+   pass). **Hard gates (machine-checked on the host before anything is
+   touched):** the same default-token gate as step 1 (same override env
+   var), and a **pin-drift gate** — the live
+   `/opt/supabase/volumes/api/kong.yml` must sha256-match the pin
+   `kong-nsight.yml` was vendored from, else the mount would silently revert
+   a post-recon hand-edit (reconcile into the cdk asset first;
+   `W6_SKIP_KONG_PIN_CHECK=1` overrides once reconciled). Then: writes a
+   PRISTINE override backup (`.bak-w6-pristine`, only while the override is
+   still marker-free — guaranteed pre-W6 across partial re-runs, never
+   overwritten later); `docker compose up -d kong` (a RECREATE — `restart`
+   won't pick up the new mount, expect a seconds-long gateway blip); 60s
+   stability watch; then an end-to-end `logs.all` query through Kong with
+   the host's own token (body must contain `"result"` and no **top-level**
+   `"error"` key — parsed as JSON, because log rows can legitimately contain
+   the substring "error"; Logflare returns errors as 200-with-`{"error"}`),
+   plus a `rest-v1` regression curl. Auto-rolls-back to the pristine backup
+   on any verification failure.
+
+Either W6 step alone is safe: route-without-env and env-without-route both
+leave the pages at the honest unavailable state.
+
+### 11.3 Verify
+
+1. Both scripts end green (each prints its own on-host verification).
+2. Through the SSM tunnel (localhost:8080, logged in):
+   - `/logs` lists live `edge_logs` rows for the 1h preset; switching
+     sources/severities/search keeps returning; Tail polls every 10s when
+     toggled.
+   - `/reports` renders API request volume / error-rate / auth / service
+     charts for the 24h preset ("No data in range" on a quiet source is
+     honest, not a failure).
+   - `/logs/drains` shows the static capability panel (no fetch — by design).
+3. Failure semantics: "Analytics unavailable" Surface = route or token not
+   landed OR Logflare degraded (`[console:logs] analytics unreachable` — the
+   lib maps missing env, network failures, timeouts, and 401/404/502/503/504
+   from the analytics path to this state; pre-apply requests answer **401**
+   on this stack, via the kong.yml basic-auth catch-all). Both API routes
+   return **503 + `unavailable: true`** for it. A 400 from
+   `/api/console/logs` or `/api/console/reports` = a bad query parameter or
+   a real Logflare query error (the lib validates before any fetch). On
+   `/reports`, a PARTIAL failure (one metric erring/timing out) keeps the
+   healthy charts and shows a per-chart error panel — the page-level
+   unavailable state needs ALL FIVE metrics unreachable (server and client
+   use the same threshold). Postgres-source charts can be near-empty
+   legitimately: the bundle db runs `log_min_messages=fatal`.
+
+### 11.4 Rollback / failure posture
+
+- **Route:** restore the PRISTINE override backup
+  (`/opt/supabase/docker-compose.override.yml.bak-w6-pristine` — written
+  only while the override was still marker-free, so it is guaranteed pre-W6
+  even after partial/interrupted runs; never restore an ad-hoc copy taken
+  later) and `cd /opt/supabase && docker compose --env-file .env up -d
+  kong`. The enable script does this automatically when its own verification
+  fails; `kong-nsight.yml` left on disk is inert without the mount. NOTE: a
+  replacement host self-enables from the cdk assets — rolling back
+  permanently means reverting the Wave-6 cdk asset commit too.
+- **Env:** roll the app service to the previous task-def revision (exact
+  command printed by the stage script). The pages degrade to the honest
+  unavailable state; the extra JSON key in app-config is inert.
+- **Deploy-strip caveat (§9.4/§10.4 extended):** an app-infra deploy without
+  the `supabaseAppConfig*` contexts now strips `SUPABASE_JWT_SECRET`,
+  `SUPABASE_ANON_KEY`, **and** `LOGFLARE_PRIVATE_ACCESS_TOKEN` together —
+  all safe fallbacks, but W4 auth posture + W5 realtime + W6 logs all revert
+  unannounced.
+- **HEADROOM WATCH (new standing duty):** the single m6i.xlarge now serves
+  interactive Logflare queries + `_analytics` Postgres load on top of
+  everything else. Watch it per
+  `docs/runbooks/w6-analytics-headroom.md` (host CPU/mem, analytics+kong
+  container health, kong 5xx on `/analytics/*`, app `[console:logs]` error
+  rates); the contingency is an instance resize in
+  `cdk/lib/compute-stack.ts` (future wave, NOT this one).

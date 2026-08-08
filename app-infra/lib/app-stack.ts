@@ -297,6 +297,29 @@ export class AppStack extends Stack {
         'SUPABASE_ANON_KEY',
         ecs.Secret.fromSecretsManager(appConfigSecret, 'ANON_KEY'),
       );
+      // Wave-6: Logflare query auth for the /logs + /reports consoles
+      // (web/src/lib/console/logs.ts sends it as x-api-key through Kong's
+      // analytics-v1-api route). Same app-config JSON secret, same rules:
+      // valueFrom only, APP container only — NEVER the worker.
+      // PREREQUISITE (enforced, not just documented): the
+      // LOGFLARE_PRIVATE_ACCESS_TOKEN key must exist in
+      // nsight-supabase/app-config before ANY flag-ON deploy — a deploy with
+      // the key absent fails task start (ResourceInitializationError) and the
+      // circuit breaker rolls the WHOLE stack update back. Two guards keep
+      // that from ever happening:
+      //   1. the batched apply order (runbook §11.2) runs the staged
+      //      /tmp/stage-w6-env.sh — the key's writer — BEFORE the flag-ON W5
+      //      infra deploy (its own JWT prerequisite is satisfied by the
+      //      earlier W4 env step);
+      //   2. /tmp/deploy-w5-infra.sh's preflight machine-checks
+      //      has("LOGFLARE_PRIVATE_ACCESS_TOKEN") on app-config and ABORTS
+      //      with the seeding instruction when it is missing.
+      // Keeping this in cdk means future flag-ON deploys no longer strip the
+      // W6 out-of-band task-def secret.
+      appContainer.addSecret(
+        'LOGFLARE_PRIVATE_ACCESS_TOKEN',
+        ecs.Secret.fromSecretsManager(appConfigSecret, 'LOGFLARE_PRIVATE_ACCESS_TOKEN'),
+      );
       taskDef.addToExecutionRolePolicy(
         new iam.PolicyStatement({
           actions: ['kms:Decrypt'],

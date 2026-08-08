@@ -24,6 +24,8 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Realtime",
       "API Docs",
       "Advisors",
+      "Reports",
+      "Logs",
     ]);
   });
 
@@ -53,6 +55,15 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     );
     expect(byLabel["Edge Functions"]).toBe("/functions");
     expect(byLabel["Realtime"]).toBe("/realtime");
+  });
+
+  it("routes the Wave-6 observability surfaces at /reports and /logs", () => {
+    const platform = NAV_GROUPS.find((g) => g.label === "Platform")!;
+    const byLabel = Object.fromEntries(
+      platform.items.map((i) => [i.label, i.href]),
+    );
+    expect(byLabel["Reports"]).toBe("/reports");
+    expect(byLabel["Logs"]).toBe("/logs");
   });
 });
 
@@ -85,5 +96,17 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/sql";
     render(<Nav />);
     expect(activeLabels()).toEqual(["SQL Editor"]);
+  });
+
+  it("lights Reports on /reports", () => {
+    h.pathname = "/reports";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Reports"]);
+  });
+
+  it("keeps Logs lit across the drains sub-route", () => {
+    h.pathname = "/logs/drains";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Logs"]);
   });
 });
