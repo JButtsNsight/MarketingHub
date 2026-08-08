@@ -1084,3 +1084,8 @@ undecryptable secrets, silently.
   TEST secret — assert success/failure ONLY; never select secret values into
   a terminal log or drill notes. Fold this into the drill doc when the next
   drill is scheduled.
+
+---
+
+**Wave 3-partial (2026-08-08) — read-only GoTrue console views, deliberately no §13:** `/auth/users` and `/auth/providers` ship in the app image with ZERO operator actions — they ride Kong's always-enabled `auth-v1` route and the already-deployed `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` env, carry no mutation affordances, and degrade to an honest "GoTrue unreachable" state on their own.
+GoTrue login integration (the SAML cutover) is Wave 3's blocked remainder, pending the external SAML/IdP deliverable — nothing here to stage or apply until it lands.

@@ -25,11 +25,16 @@ export const DB_TABS: TabItem[] = [
 
 /**
  * Sub-navigation for the Authentication section. `/auth` is the landing page
- * (identity & access reference); Impersonation is the Wave-4 "what can this
- * identity see" console.
+ * (identity & access reference); Users and Providers are the Wave-3-partial
+ * READ-ONLY GoTrue admin views (user store browser + auth configuration —
+ * zero mutation affordances by hard wave constraint, Wave-3 proper blocked
+ * on the external SAML deliverable); Impersonation is the Wave-4 "what can
+ * this identity see" console.
  */
 export const AUTH_TABS: TabItem[] = [
   { href: "/auth", label: "Overview" },
+  { href: "/auth/users", label: "Users" },
+  { href: "/auth/providers", label: "Providers" },
   { href: "/auth/impersonate", label: "Impersonation" },
 ];
 
