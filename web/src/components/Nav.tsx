@@ -16,6 +16,7 @@ export type IconKey =
   | "inbox"
   | "review"
   | "suppressions"
+  | "intel"
   | "auth"
   | "edgeFunctions"
   | "realtime"
@@ -103,6 +104,9 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/inbox", label: "Inbox", icon: "inbox" },
       { href: "/review", label: "Review queue", icon: "review" },
       { href: "/suppressions", label: "Suppressions", icon: "suppressions" },
+      // Wave 8: competitor-intel RAG module — default prefix matching keeps it
+      // lit across /intel/search, /intel/sources/*, /intel/documents/*.
+      { href: "/intel", label: "Competitor Intel", icon: "intel" },
     ],
   },
   {
@@ -201,6 +205,14 @@ const ICONS: Record<IconKey, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <path d="M5.6 5.6l12.8 12.8" />
+    </>
+  ),
+  intel: (
+    // Radar sweep — outer ring, inner arc open toward the sweep line.
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7.5a4.5 4.5 0 1 0 4.5 4.5" />
+      <path d="M12 12l6-6" />
     </>
   ),
   auth: (

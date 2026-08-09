@@ -25,7 +25,11 @@ on-disk format and require a scripted migration + planned downtime.
 6. **Reconcile extensions + UID ownership** on the new cluster: re-`CREATE EXTENSION`/`ALTER
    EXTENSION ... UPDATE` to match the target image's bundled versions; fix file/UID ownership.
 7. **Re-run the deploy gates:** `enable-pgaudit.sql`, `lockdown-pg-net.sql`, and the RLS gate
-   (`rls-gate.sh` must exit 0) against the upgraded cluster before reopening traffic.
+   (`rls-gate.sh` must exit 0) against the upgraded cluster before reopening traffic. The
+   Wave-8-scoped gate allowlists only documented bundle-managed internals (`cdk/sql/rls-gate.sql`
+   header) — after a major upgrade re-check that list against the bundle's new service
+   migrations before trusting a pass; app schemas and `storage.objects`/`buckets` are never
+   allowlisted.
 
 ## Post-upgrade / rollback
 8. **Verify:** healthchecks green, REST/Auth/Realtime/Storage/pgvector smoke pass (spec §17),

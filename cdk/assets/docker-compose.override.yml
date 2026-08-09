@@ -49,9 +49,23 @@ services:
     # app's `marketinghub` schema — so every service_role query the Next.js server
     # issues via `.schema('marketinghub')` (Accept-Profile: marketinghub) would fail
     # with PGRST106 ("The schema must be one of the following: ..."). Expose it here.
-    # Keep the bundle defaults and APPEND marketinghub (never drop public/storage).
+    # Keep the bundle defaults and APPEND app schemas (never drop public/storage).
+    # Wave 8 appends:
+    #   * competitor_intel — the intel module's tables + the match_chunks RPC
+    #     (RLS FORCE + authenticated grants; anon has no schema USAGE).
+    #   * pgmq_public — SECURITY DEFINER queue wrappers so the worker consumes
+    #     'ci_embed' via .schema('pgmq_public').rpc(...). Safe to expose: the
+    #     schema holds functions only (no tables); anon/authenticated hold no
+    #     schema USAGE, and the W8 migration revokes the Postgres-DEFAULT
+    #     PUBLIC EXECUTE that Wave 1 never removed (Wave 1 only ADDED a
+    #     service_role grant), leaving service_role the sole grantee — so
+    #     anon/authenticated get PGRST 42501 denials from two independent
+    #     layers. NEVER `grant usage on schema pgmq_public` to user roles
+    #     (upstream's client-side-queues recipe): the wrappers run SECURITY
+    #     DEFINER over EVERY pgmq queue in the database.
+    # Host apply for a RUNNING instance: /tmp/stage-w8-env.sh (recreates rest).
     environment:
-      PGRST_DB_SCHEMAS: "public, storage, graphql_public, marketinghub"
+      PGRST_DB_SCHEMAS: "public, storage, graphql_public, marketinghub, competitor_intel, pgmq_public"
 
   storage:
     # S3 backend against the dedicated, bucket-scoped bucket. Creds are injected via

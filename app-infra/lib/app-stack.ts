@@ -18,6 +18,26 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 const APP_PORT = 3000;
 
 /**
+ * Wave-8: the pinned Bedrock embedding model for competitor-intel — Titan Text
+ * Embeddings V2, 1024-dim (the dimension the `competitor_intel.chunks.embedding`
+ * vector(1024) column and HNSW index are built for). Kept in lockstep with
+ * web/src/lib/intel/providers.ts DEFAULT_BEDROCK_MODEL_ID: the flag-ON IAM
+ * statement below is scoped to EXACTLY this model's foundation-model ARN, so
+ * env and IAM can never drift apart.
+ */
+const BEDROCK_EMBED_MODEL_ID = 'amazon.titan-embed-text-v2:0';
+
+/**
+ * Wave-8: the exact foundation-model resource ARN for bedrock:InvokeModel.
+ * The account field is EMPTY by design — foundation models are AWS-owned
+ * resources (arn:aws:bedrock:<region>::foundation-model/<model-id>). The
+ * region is pinned to us-east-1 deliberately: it matches the provider's
+ * DEFAULT_BEDROCK_REGION fallback, Titan V2's verified In-Region availability,
+ * and the account's PrivateLink posture (com.amazonaws.us-east-1.bedrock-runtime).
+ */
+const BEDROCK_EMBED_MODEL_ARN = `arn:aws:bedrock:us-east-1::foundation-model/${BEDROCK_EMBED_MODEL_ID}`;
+
+/**
  * MarketingHub application front-door stack.
  *
  * TWO selectable front doors, chosen by the boolean `previewMode` context flag:
@@ -435,7 +455,7 @@ export class AppStack extends Stack {
       cpu: 256,
       memoryLimitMiB: 512,
     });
-    workerTaskDef.addContainer('worker', {
+    const workerContainer = workerTaskDef.addContainer('worker', {
       // workerImageTag defaults to appImageTag; deploy scripts MUST pass the
       // live worker image when the two have drifted (see context note above).
       image: ecs.ContainerImage.fromRegistry(workerImageTag),
@@ -485,6 +505,44 @@ export class AppStack extends Stack {
         resources: [supabaseSecretsKmsKeyArn],
       }),
     );
+
+    // --- Wave-8 (context-flagged, default OFF): Bedrock Titan embeddings --------
+    // enableBedrockEmbeddings flips the competitor-intel embedding provider from
+    // the deterministic stub (CI_EMBED_PROVIDER default 'stub' — zero AWS calls)
+    // to real Bedrock Titan V2 calls, on BOTH services:
+    //   * WORKER — the ci_embed queue consumer embeds document chunks;
+    //   * APP    — semantic search embeds the QUERY in-request (lib/intel/repo.ts
+    //              runs providerFromEnv() for /intel/search).
+    // Each container gets plaintext env CI_EMBED_PROVIDER=bedrock +
+    // CI_EMBED_MODEL_ID (read by web/src/lib/intel/providers.ts — neither value
+    // is a secret), and each TASK role (NOT the execution role — the SDK signs
+    // with task-role SigV4 creds at run time) gains bedrock:InvokeModel scoped
+    // to EXACTLY the pinned Titan model ARN. These are the FIRST task-role
+    // policies on either service — no secret is added anywhere, and the WORKER
+    // task-def stays secret-frozen (runbook §9.4: never JWT/anon/logflare).
+    // Flag ABSENT (default) ⇒ this block emits NOTHING and the synthesized
+    // template is byte-identical to Wave 7 (w8-bedrock.test.ts asserts both
+    // states). ROLLBACK = redeploy with the flag off/absent: the env reverts
+    // and providerFromEnv() falls back to the stub — see /tmp/stage-w8-bedrock.sh
+    // and runbook §13 (activation, cost, re-embed, rollback).
+    const enableBedrockEmbeddings =
+      this.node.tryGetContext('enableBedrockEmbeddings') === true ||
+      this.node.tryGetContext('enableBedrockEmbeddings') === 'true';
+    if (enableBedrockEmbeddings) {
+      // One statement INSTANCE per role — never share a mutable PolicyStatement
+      // across two policy documents.
+      const invokeTitanStatement = () =>
+        new iam.PolicyStatement({
+          actions: ['bedrock:InvokeModel'],
+          resources: [BEDROCK_EMBED_MODEL_ARN],
+        });
+      taskDef.addToTaskRolePolicy(invokeTitanStatement());
+      workerTaskDef.addToTaskRolePolicy(invokeTitanStatement());
+      for (const container of [appContainer, workerContainer]) {
+        container.addEnvironment('CI_EMBED_PROVIDER', 'bedrock');
+        container.addEnvironment('CI_EMBED_MODEL_ID', BEDROCK_EMBED_MODEL_ID);
+      }
+    }
 
     new ecs.FargateService(this, 'WorkerService', {
       cluster,

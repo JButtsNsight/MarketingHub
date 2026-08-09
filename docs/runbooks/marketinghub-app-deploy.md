@@ -625,7 +625,12 @@ self-seed them via `cdk/lib/compute-stack.ts` → `/opt/supabase/functions-seed`
    has booted once (its tenant migrations create `realtime.messages` /
    `realtime.send`; the migration FAILS LOUD otherwise — single transaction,
    nothing half-applies). The script footer prints verification selects, an
-   inline rls-gate re-run (**must show ZERO rows**), a `realtime.send` smoke
+   inline rls-gate re-run (**must show ZERO rows** — a TRUE contract since
+   the Wave-8 gate scoping: bundle-managed internals ride the documented
+   allowlist inside `cdk/sql/rls-gate.sql`, app schemas and
+   `storage.objects`/`buckets` never do; on a re-run BEFORE the W8 migration
+   applies, only the `storage.objects`/`storage.buckets` backstop rows may
+   appear), a `realtime.send` smoke
    row (`smoke_rows = 1`, counted over the last 10s so the documented safe
    re-run also reads 1), then restarts the realtime container so its tenant
    cache picks up `private_only` (safe pre- and post-cutover — subscribers
@@ -969,7 +974,10 @@ deploy (the deploy's task-def references the app-config key only
    migration as supabase_admin on the host
    (`docker exec supabase-db psql -U supabase_admin -v ON_ERROR_STOP=1 -f …`),
    after `2026-08-08-w5-realtime.sql` in the same dated-chain pass, then an
-   inline rls-gate re-run (**must show ZERO rows** for both new tables), the
+   inline rls-gate re-run (**must show ZERO rows** for both new tables — and
+   ZERO overall since the Wave-8 gate scoping, modulo the
+   `storage.objects`/`buckets` rows that persist until the W8 migration
+   lands their backstop), the
    grant-matrix printout, and a non-clobbering writer smoke as the postgres
    role (never overwrites a real cron payload — safe re-run; the smoke's
    placeholder row is deleted again right after the read-back, as
@@ -1089,3 +1097,134 @@ undecryptable secrets, silently.
 
 **Wave 3-partial (2026-08-08) — read-only GoTrue console views, deliberately no §13:** `/auth/users` and `/auth/providers` ship in the app image with ZERO operator actions — they ride Kong's always-enabled `auth-v1` route and the already-deployed `SUPABASE_URL`/`SUPABASE_SERVICE_ROLE_KEY` env, carry no mutation affordances, and degrade to an honest "GoTrue unreachable" state on their own.
 GoTrue login integration (the SAML cutover) is Wave 3's blocked remainder, pending the external SAML/IdP deliverable — nothing here to stage or apply until it lands.
+
+---
+
+## 13. Wave-8 Competitor-Intel Bedrock embeddings (2026-08-08)
+
+Wave 8 ships the competitor-intel RAG module (`/intel`, schema
+`competitor_intel`, `ci_embed` pgmq queue + worker consumer). **By default it
+makes ZERO AWS calls**: `CI_EMBED_PROVIDER` defaults to `stub` — a
+deterministic djb2 1024-dim provider — so preview search works end-to-end and
+the UI badges "stub embeddings — similarity illustrative until Bedrock
+enabled". The consumer is on by default but inert-safe (missing schema/queue
+⇒ warn-once idle; a consumer error can never touch SMS dispatch — own module,
+own interval, own error handling). Real Bedrock calls are a STAGED activation
+behind the `enableBedrockEmbeddings` infra flag (default OFF; flag-absent
+synth is byte-identical to Wave 7 — `app-infra/test/w8-bedrock.test.ts`
+asserts both states).
+
+### 13.1 Provider env vars
+
+Read by `web/src/lib/intel/providers.ts` (`providerFromEnv()`) and the worker
+consumer. Integer knobs are integer-guarded — never pass fractions (the §7
+SMS 22P02 lesson):
+
+| var | default | scope |
+| --- | --- | --- |
+| `CI_EMBED_PROVIDER` | `stub` (`stub` \| `bedrock`) | app + worker |
+| `CI_EMBED_MODEL_ID` | `amazon.titan-embed-text-v2:0` | app + worker |
+| `CI_EMBED_ENABLED` | `true` (worker consumer on/off) | worker |
+| `CI_EMBED_POLL_INTERVAL_MS` | `30000` | worker |
+| `CI_EMBED_BATCH` | `5` (messages per tick) | worker |
+| `CI_EMBED_VT_S` | `120` (pgmq visibility timeout) | worker |
+| `CI_EMBED_MAX_ATTEMPTS` | `3` (read_ct dead-letter cutoff) | worker |
+| `CI_EMBED_DIMS` | `1024` (matches `vector(1024)`) | worker |
+
+The flag-ON deploy sets ONLY `CI_EMBED_PROVIDER=bedrock` +
+`CI_EMBED_MODEL_ID` on both containers; every other knob keeps its in-code
+default. **NO new secret lands anywhere** — Bedrock auth is SigV4 via the
+task role — and the worker task-def stays secret-frozen (§9.4).
+
+### 13.2 What the flag changes (IAM surface)
+
+`-c enableBedrockEmbeddings=true` adds, and nothing else:
+
+- `~ AppTaskDef` / `~ WorkerTaskDef`: the two `CI_EMBED_*` env vars each
+  (the app embeds search QUERIES in-request; the worker embeds document
+  chunks off the queue);
+- `+ 2` IAM policies — `bedrock:InvokeModel` on **exactly**
+  `arn:aws:bedrock:us-east-1::foundation-model/amazon.titan-embed-text-v2:0`,
+  one per TASK role (not the execution roles). These are the first task-role
+  policies either service has ever had. The empty account field in the ARN is
+  correct — foundation models are AWS-owned resources.
+
+### 13.3 Activation
+
+1. Apply the W8 migration first if not already live:
+   `bash /tmp/apply-w8-intel.sh` (schema + queue + `ci_embed_sweep` cron +
+   scoped rls-gate). Flag-ON with the schema absent is inert-safe (consumer
+   warn-once idles, `/intel` shows NotProvisioned) — but activate in order.
+2. Stage the PostgREST exposure if not already live:
+   `bash /tmp/stage-w8-env.sh` — appends `competitor_intel` + `pgmq_public`
+   to `PGRST_DB_SCHEMAS` (compose override + `.env` on the host, then
+   recreates the `rest` container — a sub-second blip). Run AFTER step 1
+   (reverse order is harmless — PostgREST just reloads again on the
+   migration's `pg_notify`); independent of steps 3–4. Until it runs,
+   `/intel` shows its honest NotProvisioned state (PGRST106) and the worker
+   consumer warn-once idles. `pgmq_public` exposure is safe: functions only;
+   `anon`/`authenticated` hold no schema USAGE, and the W8 migration revokes
+   the Postgres-default `PUBLIC` EXECUTE that Wave 1 never removed, so
+   EXECUTE really is `service_role`-exclusive — two independent denial
+   layers. NEVER `grant usage on schema pgmq_public` to user roles
+   (upstream's client-side-queues recipe): the wrappers run SECURITY DEFINER
+   over EVERY pgmq queue in the database.
+3. The LIVE images must already contain the Wave-8 build — the flag only sets
+   env, it cannot ship code. If they predate Wave 8, do a normal image deploy
+   (§2–4) first.
+4. `bash /tmp/stage-w8-bedrock.sh` — derives ALL context from live state
+   (incl. `workerImageTag` from the LIVE worker task-def, and the live W5
+   realtime/app-config posture which it PRESERVES on the same deploy — a
+   deploy omitting a live flag would strip that surface), runs the Bedrock +
+   schema preflights, shows the `cdk diff`, requires typing
+   `DEPLOY-W8-BEDROCK`, deploys. Expected diff = exactly §13.2; ANY new
+   secret on the worker, env/secret removal, or different image = STOP.
+5. Verify: both task-defs carry the two env vars; the
+   `marketinghub-sms-worker` log stream shows consumer JSON tick lines with
+   the bedrock provider and NO SMS dispatcher regression.
+6. **Re-embed the stub-era corpus.** Chunks embedded before activation carry
+   `embedding_model='stub-djb2-1024'`; `/intel/search` warns on corpus/query
+   provider mismatch until they are re-embedded. On the Supabase host:
+
+   ```bash
+   docker exec supabase-db psql -U supabase_admin -d postgres \
+     -c "update competitor_intel.documents set status='pending';"
+   ```
+
+   The `ci_embed_sweep` pg_cron job (`*/10` min) re-enqueues documents stuck
+   `pending` >10 min, so the whole corpus re-embeds within ~20 min unattended
+   (dupes harmless; processing is idempotent delete-then-insert). Spot-check:
+   `select embedding_model, count(*) from competitor_intel.chunks group by 1;`
+
+**Model-access gotcha:** if the first InvokeModel returns
+`AccessDeniedException` mentioning model access, enable "Amazon / Titan Text
+Embeddings V2" under Bedrock console → Model access in us-east-1 (one-time,
+free) — IAM alone does not grant 1P model entitlement in older accounts.
+
+### 13.4 Cost
+
+Titan Text Embeddings V2 is ≈ **$0.02 per 1M input tokens** ($0.00002/1K),
+on-demand, no provisioned throughput. Competitor-intel volumes (paste-text
+docs plus one query embed per search) land in the **cents per month**; a full
+1M-token corpus re-embed is ~2 cents. No budget action needed.
+
+### 13.5 Networking / PrivateLink
+
+Calls target `bedrock-runtime.us-east-1.amazonaws.com`. The tasks sit in the
+Supabase VPC's PRIVATE_WITH_EGRESS subnets, so this rides the existing NAT
+egress posture (same path as the SimpleTexting API). Optional hardening: an
+interface endpoint for `com.amazonaws.us-east-1.bedrock-runtime` (private DNS
+on = zero code changes; FIPS variant available) with an endpoint policy
+restricted to `bedrock:InvokeModel` on the Titan ARN. The staged script
+reports whether one exists — informational, not required.
+
+### 13.6 Rollback = flag off
+
+Rerun the same deploy with `-c enableBedrockEmbeddings=false` (the script
+prints the exact command after deploy; the strict `===true/'true'` flag makes
+`false` byte-identical to absent). The env reverts, `providerFromEnv()` falls
+back to the stub (zero AWS calls), and both task-role policies are removed —
+everything else (images, W5 posture) is preserved. Titan-embedded chunks KEEP
+their `embedding_model` tag, so stub queries then show the honest
+provider-mismatch warning; re-run the §13.3-step-6 UPDATE afterwards if you
+want a stub-consistent corpus again. No data is lost in either direction.

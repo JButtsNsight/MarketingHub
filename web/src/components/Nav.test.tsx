@@ -39,6 +39,19 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
+  it("slots Competitor Intel in the Marketing group, after Suppressions", () => {
+    const marketing = NAV_GROUPS.find((g) => g.label === "Marketing");
+    expect(marketing).toBeDefined();
+    expect(marketing!.items.map((i) => [i.label, i.href])).toEqual([
+      ["Templates", "/templates"],
+      ["SMS Campaigns", "/campaigns"],
+      ["Inbox", "/inbox"],
+      ["Review queue", "/review"],
+      ["Suppressions", "/suppressions"],
+      ["Competitor Intel", "/intel"],
+    ]);
+  });
+
   it("slots Cloud Features under Project, right after Admin", () => {
     const project = NAV_GROUPS.find((g) => g.label === "Project");
     expect(project).toBeDefined();
@@ -144,5 +157,21 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/admin/cloud";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Cloud"]);
+  });
+
+  it("lights Competitor Intel on /intel", () => {
+    h.pathname = "/intel";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Competitor Intel"]);
+  });
+
+  it("keeps Competitor Intel lit across /intel/search and detail pages", () => {
+    h.pathname = "/intel/search";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Competitor Intel"]);
+    cleanup();
+    h.pathname = "/intel/sources/8b2f1a4e-0000-4000-8000-000000000000";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Competitor Intel"]);
   });
 });

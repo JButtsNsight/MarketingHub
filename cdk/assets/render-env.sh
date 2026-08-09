@@ -124,7 +124,12 @@ set_or_replace POOLER_TENANT_ID "$POOLER_TENANT_ID"
 
 # PostgREST exposed schemas — MUST include marketinghub (the app queries that schema via
 # Accept-Profile: marketinghub; without it every service_role query fails PGRST106).
-set_or_replace PGRST_DB_SCHEMAS "public,storage,graphql_public,marketinghub"
+# Wave 8 appends competitor_intel (the intel module) and pgmq_public (function-only
+# queue wrappers for the worker's queue consume; the W8 migration revokes the
+# Postgres-default PUBLIC EXECUTE so service_role really is the only grantee, and
+# anon/authenticated also hold no schema USAGE — two independent denial layers).
+# Keep in lockstep with docker-compose.override.yml's rest.environment override.
+set_or_replace PGRST_DB_SCHEMAS "public,storage,graphql_public,marketinghub,competitor_intel,pgmq_public"
 
 # Storage S3 backend: the bundle storage service reads GLOBAL_S3_BUCKET + REGION and the
 # S3 protocol endpoint creds from the .env directly. (STORAGE_TENANT_ID keeps the example

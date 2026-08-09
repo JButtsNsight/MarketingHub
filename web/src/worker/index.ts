@@ -39,6 +39,7 @@ import {
   isSimpleTextingConfigured,
   sendSms,
 } from "../lib/simpletexting/client";
+import { startIntelConsumer } from "./intel-consumer";
 
 const DEFAULTS: DispatcherConfig = {
   pollMs: 30_000,
@@ -179,6 +180,22 @@ async function main(): Promise<void> {
   process.on("SIGINT", onSignal);
 
   logLine({ msg: "sms-dispatcher started", ...config });
+
+  // Wave 8: competitor-intel embedding consumer — fully isolated from the
+  // SMS dispatcher (its own module, its own interval and signal handlers,
+  // its own try/catch-everything error handling; it never touches the
+  // sequential sleep/wake above). startIntelConsumer never throws, and the
+  // fence below makes even that guarantee non-load-bearing: no consumer
+  // failure mode can crash, delay or starve SMS dispatch.
+  try {
+    startIntelConsumer();
+  } catch (err) {
+    logLine({
+      msg: "intel-consumer failed to start — SMS dispatch unaffected",
+      level: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
 
   while (!dispatcher.isShuttingDown()) {
     if (!isSimpleTextingConfigured()) {

@@ -209,7 +209,7 @@ export interface RefItem {
 
 export const SECURITY_POSTURE: RefItem[] = [
   { label: "Data API isolation", detail: "Private internal ALB → Kong, TLS via ACM Private CA. Only Studio + the marketing app are public (both Cognito/SAML + WAF).", status: "ok" },
-  { label: "RLS deploy gate", detail: "rls-gate.sql blocks release if any exposed table (public/storage/auth/realtime/marketinghub) has RLS off or zero policies.", status: "ok" },
+  { label: "RLS deploy gate", detail: "rls-gate.sql blocks release if any gated exposed table (public/storage/auth/realtime/marketinghub/competitor_intel) has RLS off or zero policies — app schemas additionally need FORCE RLS + a restrictive anon deny-all. Bundle-managed internals (auth.* GoTrue, storage-api internals, realtime partitions, wrappers stats) ride a documented allowlist; app schemas and storage.objects/buckets never do.", status: "ok" },
   { label: "service_role secrecy", detail: "service_role JWT delivered via Secrets Manager (own CMK, kms:ViaService=secretsmanager only); never in the image, env plaintext, or browser.", status: "ok" },
   { label: "pg_net lockdown", detail: "EXECUTE on net.http_* revoked from PUBLIC/anon/authenticated (blanket + per-function + default privileges).", status: "ok" },
   { label: "Kong admin surface", detail: "Kong Admin :8001/:8444 and Manager :8002 bind loopback-only — never in any security group or ALB.", status: "ok" },

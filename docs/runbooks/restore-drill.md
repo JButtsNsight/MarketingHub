@@ -29,7 +29,11 @@ drill records the **measured RTO** each run.
    and confirm the Postgres `storage.objects` metadata row matches (dual-store
    consistency, spec §10).
 6. **Run the RLS gate** against the restored DB (`cdk/scripts/rls-gate.sh`) — must
-   exit 0 (RLS survived the restore).
+   exit 0 (RLS survived the restore). Since Wave 8 the gate is scoped: bundle-managed
+   internals (auth.* GoTrue, storage-api internals, realtime partitions, wrappers
+   stats) ride the documented allowlist inside `cdk/sql/rls-gate.sql`; the app
+   schemas (`marketinghub`, `competitor_intel`) and `storage.objects`/`buckets`
+   are never allowlisted, so exit 0 is a real deny-by-default proof.
 7. **Record measured RTO** = (time Postgres accepted connections + validation done) − T0.
    File the number in the drill ticket; if > 2 h, open a follow-up to shorten the path
    (e.g. enable Fast Snapshot Restore, spec §9).
