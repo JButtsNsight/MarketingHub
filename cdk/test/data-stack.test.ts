@@ -90,28 +90,49 @@ test('storage bucket denies non-TLS access (enforceSSL)', () => {
 test('both bucket policies require SSE-KMS with the specific CMK on upload (§14)', () => {
   const { t } = makeDataTemplate();
   const policies = t.findResources('AWS::S3::BucketPolicy');
-  const withKmsDeny = Object.values(policies).filter((p: any) =>
-    (p.Properties.PolicyDocument.Statement as any[]).some(
-      (s) =>
-        s.Effect === 'Deny' &&
-        s.Condition?.StringNotEqualsIfExists?.['s3:x-amz-server-side-encryption'] === 'aws:kms',
-    ),
+  const statements = Object.values(policies).flatMap(
+    (p: any) => p.Properties.PolicyDocument.Statement as any[],
   );
-  // Storage AND backup bucket policies each carry the non-KMS-encryption Deny.
-  expect(withKmsDeny).toHaveLength(2);
 
-  // And each also denies an explicit wrong KMS key id (the specific-CMK half of §14).
-  const withWrongKeyDeny = Object.values(policies).filter((p: any) =>
-    (p.Properties.PolicyDocument.Statement as any[]).some(
-      (s) =>
-        s.Effect === 'Deny' &&
-        Object.prototype.hasOwnProperty.call(
-          s.Condition?.StringNotEqualsIfExists ?? {},
-          's3:x-amz-server-side-encryption-aws-kms-key-id',
-        ),
-    ),
+  // Deny an explicit non-aws:kms scheme, Null-GUARDED so header-less uploads (every
+  // supabase-storage write, which relies on bucket default encryption with the CMK)
+  // are NOT denied. The pre-2026-07-31 StringNotEqualsIfExists form evaluated TRUE
+  // when the header was absent and blocked all supabase-storage writes; asserting the
+  // exact condition shape here fails any regression back to that form.
+  const nonKmsDenies = statements.filter((s) => s.Sid === 'DenyNonKmsEncryption');
+  // Storage AND backup bucket policies each carry the non-KMS-encryption Deny.
+  expect(nonKmsDenies).toHaveLength(2);
+  for (const s of nonKmsDenies) {
+    expect(s.Effect).toBe('Deny');
+    expect(s.Action).toBe('s3:PutObject');
+    expect(s.Condition).toEqual({
+      Null: { 's3:x-amz-server-side-encryption': 'false' },
+      StringNotEquals: { 's3:x-amz-server-side-encryption': 'aws:kms' },
+    });
+  }
+
+  // And each also denies an explicit wrong KMS key id (the specific-CMK half of §14),
+  // with the same Null guard: requests that don't name a key use the default CMK.
+  const wrongKeyDenies = statements.filter((s) => s.Sid === 'DenyWrongKmsKey');
+  expect(wrongKeyDenies).toHaveLength(2);
+  for (const s of wrongKeyDenies) {
+    expect(s.Effect).toBe('Deny');
+    expect(s.Action).toBe('s3:PutObject');
+    expect(Object.keys(s.Condition).sort()).toEqual(['Null', 'StringNotEquals']);
+    expect(s.Condition.Null).toEqual({
+      's3:x-amz-server-side-encryption-aws-kms-key-id': 'false',
+    });
+  }
+  // Key segregation: the wrong-key comparands are the imported Foundation key ARNs —
+  // one deny pins the DataKey (storage bucket), the other the BackupKey (backup bucket).
+  const wrongKeyComparands = wrongKeyDenies.map(
+    (s) =>
+      s.Condition.StringNotEquals['s3:x-amz-server-side-encryption-aws-kms-key-id'][
+        'Fn::ImportValue'
+      ],
   );
-  expect(withWrongKeyDeny).toHaveLength(2);
+  expect(wrongKeyComparands.filter((v) => /DataKey/.test(v))).toHaveLength(1);
+  expect(wrongKeyComparands.filter((v) => /BackupKey/.test(v))).toHaveLength(1);
 });
 
 test('backup bucket uses backupKey, Object-Lock compliance default, and lifecycle to Glacier', () => {
