@@ -65,6 +65,7 @@ bundle_allowlist(schemaname, tablename_like) AS (
     ('storage', 's3\_multipart\_uploads'),
     ('storage', 's3\_multipart\_uploads\_parts'),
     ('storage', 'buckets\_analytics'),
+    ('storage', 'buckets\_vectors'),
     ('storage', 'vector\_indexes'),
     ('storage', 'iceberg\_%'),
     -- realtime tenant internals: daily partitions of realtime.messages (the

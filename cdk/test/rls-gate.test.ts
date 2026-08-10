@@ -71,6 +71,7 @@ describe('rls-gate.sql Wave-8 scoping: documented bundle allowlist', () => {
     expect(allowlist).toMatch(/\('storage',\s*'s3\\_multipart\\_uploads'\)/);
     expect(allowlist).toMatch(/\('storage',\s*'s3\\_multipart\\_uploads\\_parts'\)/);
     expect(allowlist).toMatch(/\('storage',\s*'buckets\\_analytics'\)/);
+    expect(allowlist).toMatch(/\('storage',\s*'buckets\\_vectors'\)/);
     expect(allowlist).toMatch(/\('storage',\s*'vector\\_indexes'\)/);
     expect(allowlist).toMatch(/\('storage',\s*'iceberg\\_%'\)/);
     // realtime internals: partitions + subscription + migration ledger
