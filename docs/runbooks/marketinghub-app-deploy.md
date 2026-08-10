@@ -991,6 +991,13 @@ deploy (the deploy's task-def references the app-config key only
    `/usr/local/bin/backup-status-cron` (0750) +
    `/etc/cron.d/nsight-backup-status` (0644) byte-identical to the cdk
    assets, runs the reporter once, and verifies a `captured_at` row landed.
+   **NOT on preview hosts.** `SKIP_BACKUPS` preview stacks have no
+   pgBackRest AT ALL by design (no backup vault; see `setup_backups()`
+   above) — installing the reporter there just schedules a cron that fails
+   every 15 minutes. The backups console's "host reporter not installed"
+   empty state IS the correct preview behavior. If it was installed by
+   mistake, remove `/etc/cron.d/nsight-backup-status` (the 2026-08-10
+   preview rollout hit exactly this; removal script pattern in the ops log).
 
 Either W7 step alone is safe: SQL-without-cron ⇒ honest empty backups page;
 cron-without-SQL ⇒ the reporter no-ops quietly until the table exists.
