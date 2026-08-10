@@ -211,6 +211,42 @@ container listens on `PORT=3000` and serves the unauthenticated `/api/health`.
 
 ## 3. Set `app-infra` context
 
+**PREVIEW (canonical): never set context by hand.** Run
+`app-infra/scripts/deploy-preview.sh` (§4) — it derives EVERY context value
+from LIVE state at run time and passes the full `-c` set on the CLI, so a
+deploy can never roll the stack back to a stale/broken definition. This is the
+path that ends the out-of-band task-def drift era (§9.4 / §14.3).
+`app-infra/cdk.json` keeps its `REPLACE_ME` placeholders **on purpose**: a bare
+`cdk deploy` without the live-derived overrides fails loud instead of deploying
+stale values.
+
+What the script derives, and from where:
+
+| Context key | Derived LIVE from |
+|---|---|
+| `previewMode` | always `true`; the script aborts unless the stack's ALB scheme is `internal` (it refuses to touch a production front door) |
+| `appImageTag` | the `IMAGE_TAG` argument (default `parity-<HEAD short sha>`); built + pushed first if absent from ECR `marketinghub-app` |
+| `workerImageTag` | the LIVE worker task-def's image — **pinned**, so an app deploy never rolls the single SMS dispatcher onto a different build |
+| `supabaseUrl` | CFN export `SupabaseHostPrivateIp` → `http://<ip>:8000`, cross-checked against the live task-def's `SUPABASE_URL` (abort on mismatch) |
+| `smsLinkBaseUrl` | env override `SMS_LINK_BASE_URL` > live task-def value > default `http://localhost:8080` |
+| `supabaseServiceRoleSecretArn` + `supabaseSecretsKmsKeyArn` | `describe-secret nsight-supabase/service-role` (complete ARN) + its CMK via `kms describe-key`, cross-checked against the live `valueFrom` |
+| `smsSecretsArn` | `describe-secret marketinghub/sms-campaigns` (complete ARN), cross-checked against the live `valueFrom` |
+| `supabaseAppConfigSecretArn` + `supabaseAppConfigKmsKeyArn` | `describe-secret nsight-supabase/app-config` + its CMK — passed **only while the live task-def already carries `SUPABASE_JWT_SECRET`** (posture-preserving: this script never flips W4 on or off; §9) |
+| `headlessClaudeUrl` + `headlessClaudeApiKeySecretArn` | `describe-secret marketinghub/headless-claude`; `base_url` JSON field is the single source of truth for the URL — passed only while the live task-def carries BOTH gateway vars (§14); the secret's CMK must equal `supabaseSecretsKmsKeyArn` (the stack relies on the shared-CMK grant) |
+| `enableRealtimeAlb` | `true` iff the live stack already contains the `RealtimeTargetGroup` (§10) — the flag is read, never flipped |
+| `enableBedrockEmbeddings` | `true` iff live env `CI_EMBED_PROVIDER=bedrock` (normally off — Bedrock permanently skipped, §13/§14) |
+| `simpletextingAccountPhone`, `smsFreqCapCount`, `smsFreqCapDays` | passed through from the LIVE worker task-def when present (nothing optional is stripped) |
+| `supabaseVpcId` / `supabaseVpcAzs` / `supabasePrivateSubnetIds` / `supabaseInternalClientSgId` | the live AppService's awsvpc config (subnets sorted by AZ; the internal-client SG is the service SG the stack does not own), cross-checked against the `SupabaseVpcId` / `SupabaseInternalClientSgId` CFN exports |
+
+Secret **values** never appear anywhere — only names, complete ARNs, and the
+non-secret `base_url`; JSON-key presence is verified without display.
+
+### 3.1 Reference: full context table (manual / production front door)
+
+The table below remains as **reference** — required for the production front
+door (which `deploy-preview.sh` does not cover) and for troubleshooting. The
+preview path never hand-edits these.
+
 Edit `app-infra/cdk.json` (or pass `-c key=value` on the CLI) and replace every
 `REPLACE_ME` / default with the real value:
 
@@ -232,7 +268,15 @@ Edit `app-infra/cdk.json` (or pass `-c key=value` on the CLI) and replace every
 | `supabasePrivateSubnetIds` | comma-separated private (with-egress) subnet ids (Fargate tier) — from NetworkStack output `SupabasePrivateSubnetIds` |
 | `supabaseInternalClientSgId` | Supabase `internalClientSg` id — from NetworkStack output `SupabaseInternalClientSgId` (§1.5) |
 | `smsSecretsArn` | the **complete** ARN of the `marketinghub/sms-campaigns` secret (§1.7), `-XXXXXX` suffix included |
+| `supabaseSecretsKmsKeyArn` | ARN of the dedicated CMK that encrypts the service-role + sms secrets — the task execution roles' `kms:Decrypt` is scoped to exactly this key |
 | `simpletextingAccountPhone` | *(optional — omit unless your SimpleTexting account requires it)* account phone passed as `accountPhone` on sends |
+| `workerImageTag` | *(optional)* pin the SMS dispatcher's image independently of `appImageTag` — REQUIRED in practice while the app/worker images are drifted apart (§9.4) |
+| `smsLinkBaseUrl` | *(optional)* tracked-link base URL (§1.6b); preview uses `http://localhost:8080` |
+| `smsFreqCapCount` / `smsFreqCapDays` | *(optional)* dispatcher frequency cap, both > 0 to enable (§1.6b) |
+| `enableRealtimeAlb` | *(flag, default off)* `/realtime/v1/*` listener rule + Kong target group (§10) |
+| `supabaseAppConfigSecretArn` + `supabaseAppConfigKmsKeyArn` | *(optional, must be paired)* `nsight-supabase/app-config` complete ARN + its CMK — delivers `SUPABASE_JWT_SECRET` / `SUPABASE_ANON_KEY` / `LOGFLARE_PRIVATE_ACCESS_TOKEN` to the APP container only (§§9–11) |
+| `headlessClaudeUrl` + `headlessClaudeApiKeySecretArn` | *(optional, paired in practice)* gateway base URL (plain env) + `marketinghub/headless-claude` complete ARN (§14) |
+| `enableBedrockEmbeddings` | *(flag, default off — permanently skipped, §13)* Titan embeddings env + task-role IAM on app+worker |
 
 `AppStack` fails loud on any missing context, so a blank value stops synth before
 deploy. The five `supabase*` networking keys make the app run **inside the Supabase
@@ -261,6 +305,49 @@ aws cloudformation describe-stacks --stack-name SupabaseNetwork --region us-east
 ---
 
 ## 4. Synth + deploy
+
+**Canonical path (PREVIEW — the only supported image/infra deploy):**
+
+```
+echo DEPLOY-PREVIEW | bash app-infra/scripts/deploy-preview.sh [IMAGE_TAG]
+```
+
+`IMAGE_TAG` defaults to `parity-<HEAD short sha>`. The script, in order:
+
+1. **Preflight** — clean tree on a branch, account `439024109088`,
+   jq/docker(buildx)/cdk present.
+2. **Image** — if the tag is absent from ECR `marketinghub-app`: fresh ECR
+   login (the 12-hour-token 403 gotcha), `docker buildx` linux/amd64 from
+   `web/Dockerfile`, push, then **verify with `describe-images`** that the tag
+   actually landed (a masked push failure never reaches deploy).
+3. **Live context derivation** — the §3 table; nothing comes from notes or
+   `cdk.json`.
+4. **No-silent-strip safety gate** — `cdk synth MarketingHubApp` with the full
+   context, then a machine comparison of the synthesized app + worker container
+   definitions against the LIVE task-defs (read via the services): every live
+   env-var name and every live secret name must be present in the synth (crown
+   jewels: `HEADLESS_CLAUDE_URL`, `HEADLESS_CLAUDE_API_KEY`,
+   `SUPABASE_JWT_SECRET`), the app image must be the intended one and the
+   worker image the live pin. A readable diff prints; any would-be loss ABORTS
+   before any mutation.
+5. **Typed confirm** (`DEPLOY-PREVIEW`) after the printed plan + `cdk diff`,
+   then `cdk deploy MarketingHubApp --require-approval never` (the typed
+   confirm after the printed diff IS the approval — cdk's own TTY prompt
+   strands an unexecuted changeset in non-interactive runs).
+6. **Verification** — waits `services-stable` for BOTH services, re-checks
+   that the new live task-defs still carry every pre-deploy env + secret name
+   and the right images, prints old→new task-def revisions and rollback
+   one-liners (preferred rollback: re-run the script with the previous tag).
+7. **Drift report** — REPORT-ONLY `cdk diff` of the Supabase stacks (default
+   `SupabaseData`; override with `SUPABASE_DIFF_STACKS`). Never deploys them.
+
+Because the deploy goes through CloudFormation with the full live-derived
+context, **cdk owns the task definitions again**: the out-of-band
+`register-task-definition` scripts (`/tmp/deploy-w1.sh`, the `/tmp/stage-*`
+task-def surgeries) are superseded for image deploys — using them re-creates
+exactly the drift this script exists to end (§14.3).
+
+**Manual path (production front door, or reference only):**
 
 From `app-infra/`:
 ```
@@ -1332,6 +1419,9 @@ typed confirm, live-state derivation, verification + rollback at the end):
    update-service, wait stable, prints the previous-revision rollback.
 4. `bash /tmp/deploy-w1.sh` — normal image deploy of the Wave-8R build
    (auto-builds HEAD → `parity-<sha>`).
+   **Superseded (2026-08-10):** all future image deploys use
+   `app-infra/scripts/deploy-preview.sh` (§4) — `deploy-w1.sh` registered
+   task-defs out-of-band, which is what CREATED the task-def drift.
 
 Order 1→4 is the clean path, but the code is safe in ANY order: until both
 the SQL and the env exist it degrades to keyword-only (or the pre-existing
