@@ -17,7 +17,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import IntelSearchPage from "./page";
-import { RAG_DEFERRED_TEXT, STUB_BADGE_TEXT } from "@/components/intel/status";
+import { STUB_BADGE_TEXT } from "@/components/intel/status";
 
 function stubFetch() {
   vi.stubGlobal(
@@ -53,24 +53,24 @@ describe("intel/search/page.tsx (server component)", () => {
     expect(h.requireMarketingUser).toHaveBeenCalled();
   });
 
-  test("RAG answer panel is the honest deferred note — no aspirational UI", async () => {
+  test("renders the agentic search panel with honest idle copy", async () => {
     render(await IntelSearchPage());
-    expect(screen.getByText(RAG_DEFERRED_TEXT)).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: /answer synthesis/i }),
+      screen.getByRole("heading", { name: /intel search/i }),
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/keyword search over everything pasted/i),
     ).toBeInTheDocument();
   });
 
-  test("default env (provider unset) is labeled as stub embeddings", async () => {
+  test("the embedding-provider badge left this surface (search is FTS + gateway now)", async () => {
     render(await IntelSearchPage());
-    expect(screen.getByText(STUB_BADGE_TEXT)).toBeInTheDocument();
-  });
-
-  test("a misconfigured CI_EMBED_PROVIDER degrades honestly, not fatally", async () => {
-    vi.stubEnv("CI_EMBED_PROVIDER", "bogus");
-    render(await IntelSearchPage());
+    // The stub-embeddings badge stays on the document/source pages, where
+    // the dormant pgvector pipeline is deliberately visible — never here.
+    expect(screen.queryByText(STUB_BADGE_TEXT)).not.toBeInTheDocument();
+    // The old static "synthesis deferred" panel is gone with it.
     expect(
-      screen.getByText(/embedding provider misconfigured/i),
-    ).toBeInTheDocument();
+      screen.queryByText(/answer synthesis pending sign-off/i),
+    ).not.toBeInTheDocument();
   });
 });

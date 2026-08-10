@@ -1,17 +1,24 @@
 import { describe, expect, test } from "vitest";
 import {
+  ANSWER_POLL_DEADLINE_MS,
+  ANSWER_POLL_INTERVAL_MS,
   DOCUMENT_CONTENT_MAX_CHARS,
   DOCUMENT_STATUSES,
   DocumentCreateInputSchema,
   EMBEDDING_DIMS,
   INTEL_EMBED_QUEUE,
   INTEL_SCHEMA,
+  INTEL_TASK_ID_RE,
   SEARCH_DEFAULT_COUNT,
   SEARCH_MAX_COUNT,
   SOURCE_KINDS,
+  SYNTHESIS_MAX_TOKENS,
+  SYNTHESIS_PROMPT_MAX_BYTES,
+  SYNTHESIS_PROMPT_MAX_CHARS,
   SearchInputSchema,
   SourceCreateInputSchema,
   SourceUpdateInputSchema,
+  SynthesisResultSchema,
 } from "./schema";
 
 describe("constants", () => {
@@ -27,6 +34,20 @@ describe("constants", () => {
       "error",
     ]);
     expect(SEARCH_MAX_COUNT).toBe(50);
+    // W8R: one list serves display + synthesis (citations must point at
+    // retrieved rows), so the default doubled from 8.
+    expect(SEARCH_DEFAULT_COUNT).toBe(16);
+  });
+
+  test("mirror the gateway cost/latency contract", () => {
+    expect(SYNTHESIS_MAX_TOKENS).toBe(1500);
+    expect(SYNTHESIS_PROMPT_MAX_CHARS).toBe(150_000);
+    // Serialized-byte budget: must leave real headroom under the gateway's
+    // 256KB POST body limit (envelope + JSON escaping ride on top).
+    expect(SYNTHESIS_PROMPT_MAX_BYTES).toBe(200_000);
+    expect(SYNTHESIS_PROMPT_MAX_BYTES).toBeLessThan(256 * 1024);
+    expect(ANSWER_POLL_INTERVAL_MS).toBe(3000);
+    expect(ANSWER_POLL_DEADLINE_MS).toBe(90_000);
   });
 });
 
@@ -174,5 +195,87 @@ describe("SearchInputSchema", () => {
     expect(
       SearchInputSchema.safeParse({ q: "x", sourceId: "acme" }).success,
     ).toBe(false);
+  });
+});
+
+describe("SynthesisResultSchema", () => {
+  const valid = {
+    answer: "Plan A costs $10 [1]. Plan B is enterprise-only [2].",
+    citations: [1, 2],
+    ranking: [2, 1, 3],
+  };
+
+  test("accepts a well-formed synthesis result", () => {
+    expect(SynthesisResultSchema.parse(valid)).toEqual(valid);
+  });
+
+  test("accepts empty citations/ranking (no supporting passages)", () => {
+    const parsed = SynthesisResultSchema.parse({
+      answer: "The passages do not answer this question.",
+      citations: [],
+      ranking: [],
+    });
+    expect(parsed.citations).toEqual([]);
+  });
+
+  test("rejects an empty or oversized answer", () => {
+    expect(
+      SynthesisResultSchema.safeParse({ ...valid, answer: "" }).success,
+    ).toBe(false);
+    expect(
+      SynthesisResultSchema.safeParse({ ...valid, answer: "x".repeat(8001) })
+        .success,
+    ).toBe(false);
+  });
+
+  test("rejects passage numbers outside 1..50 or non-integers", () => {
+    for (const bad of [[0], [51], [1.5], ["2"]]) {
+      expect(
+        SynthesisResultSchema.safeParse({ ...valid, citations: bad }).success,
+      ).toBe(false);
+      expect(
+        SynthesisResultSchema.safeParse({ ...valid, ranking: bad }).success,
+      ).toBe(false);
+    }
+  });
+
+  test("rejects more than 50 entries", () => {
+    const overlong = Array.from({ length: 51 }, () => 1);
+    expect(
+      SynthesisResultSchema.safeParse({ ...valid, ranking: overlong }).success,
+    ).toBe(false);
+  });
+
+  test("rejects missing fields", () => {
+    expect(
+      SynthesisResultSchema.safeParse({ answer: "x", citations: [] }).success,
+    ).toBe(false);
+  });
+});
+
+describe("INTEL_TASK_ID_RE", () => {
+  test("matches our namespaced lowercase-uuid task ids", () => {
+    expect(
+      INTEL_TASK_ID_RE.test(
+        "mh-intel-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      ),
+    ).toBe(true);
+  });
+
+  test("rejects foreign namespaces, bare uuids and malformed ids", () => {
+    // Trust boundary: the answer route uses this to keep the shared gateway
+    // key from becoming an oracle over other clients' task results.
+    for (const id of [
+      "7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "other-client-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "mh-intel-7A1B2C3D-4E5F-4A6B-8C7D-9E0F1A2B3C4D",
+      "mh-intel-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d/../x",
+      "mh-intel-",
+      "mh-intel-not-a-uuid",
+      " mh-intel-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "mh-intel-7a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d ",
+    ]) {
+      expect(INTEL_TASK_ID_RE.test(id)).toBe(false);
+    }
   });
 });

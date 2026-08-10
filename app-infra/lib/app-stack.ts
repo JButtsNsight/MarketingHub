@@ -124,6 +124,16 @@ export class AppStack extends Stack {
     const smsFreqCapDays = this.node.tryGetContext('smsFreqCapDays') as
       | string
       | undefined;
+    // OPTIONAL (Wave-8R intel agentic search): the headless-claude gateway
+    // base URL. Set = /intel/search submits answer-synthesis tasks to the
+    // gateway; absent = gatewayFromEnv() returns null and search degrades
+    // honestly to keyword-only mode (zero gateway calls). Plain env — the URL
+    // is not secret material; the API KEY is (see the Wave-8R secret block
+    // below). Follows the smsLinkBaseUrl precedent: omitted entirely when
+    // unset, so the default synth is unchanged.
+    const headlessClaudeUrl = this.node.tryGetContext('headlessClaudeUrl') as
+      | string
+      | undefined;
 
     // The Supabase VPC + subnets + internal-client SG (from the Supabase NetworkStack
     // CfnOutputs). Comma-separated lists are split into string[]. The PUBLIC subnets
@@ -226,6 +236,7 @@ export class AppStack extends Stack {
         AWS_REGION: this.region,
         ALB_REGION: this.region,
         ...(smsLinkBaseUrl ? { SMS_LINK_BASE_URL: smsLinkBaseUrl } : {}),
+        ...(headlessClaudeUrl ? { HEADLESS_CLAUDE_URL: headlessClaudeUrl } : {}),
       },
       secrets: {
         // Delivered to the container from Secrets Manager at task start; adding
@@ -345,6 +356,42 @@ export class AppStack extends Stack {
           actions: ['kms:Decrypt'],
           resources: [supabaseAppConfigKmsKeyArn],
         }),
+      );
+    }
+
+    // --- Wave-8R (context-flagged, default OFF): headless-claude gateway key ----
+    // Intel agentic search (/intel/search FTS candidates → gateway rerank +
+    // answer synthesis). When the OPTIONAL headlessClaudeApiKeySecretArn
+    // context is set, the APP container gets
+    //   HEADLESS_CLAUDE_API_KEY — the per-client gateway key, the `api_key`
+    //                             JSON field of Secrets Manager
+    //                             `marketinghub/headless-claude`, delivered as
+    //                             an ECS `valueFrom` ref (never plaintext env;
+    //                             adding it here makes CDK grant the task
+    //                             EXECUTION role read on the exact ARN).
+    // That secret is encrypted with the SAME dedicated CMK as the sms-campaigns
+    // secret (mandated by /tmp/provision-intel-gateway-key.sh, which derives the
+    // KmsKeyId from marketinghub/sms-campaigns) — so the existing kms:Decrypt
+    // grant on supabaseSecretsKmsKeyArn covers this secret too and no new KMS
+    // statement is needed. NEVER add this to the WORKER task-def: the
+    // dispatcher has no search surface and stays secret-frozen (runbook §9.4).
+    // The live service's env is staged out-of-band by /tmp/stage-w8-gateway-env.sh;
+    // keeping this in cdk means future flag-ON deploys no longer strip the
+    // out-of-band task-def secret (the W4/W6 drift lesson). Context ABSENT
+    // (default) ⇒ this block emits NOTHING and the synthesized template is
+    // unchanged.
+    const headlessClaudeApiKeySecretArn = this.node.tryGetContext(
+      'headlessClaudeApiKeySecretArn',
+    ) as string | undefined;
+    if (headlessClaudeApiKeySecretArn) {
+      const headlessClaudeSecret = secretsmanager.Secret.fromSecretCompleteArn(
+        this,
+        'HeadlessClaudeSecret',
+        headlessClaudeApiKeySecretArn,
+      );
+      appContainer.addSecret(
+        'HEADLESS_CLAUDE_API_KEY',
+        ecs.Secret.fromSecretsManager(headlessClaudeSecret, 'api_key'),
       );
     }
 

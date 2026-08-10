@@ -10,6 +10,7 @@ import {
   SEARCH_MAX_COUNT,
   type DocumentCreateInput,
   type DocumentStatus,
+  type FtsChunkRow,
   type IntelDocument,
   type IntelSource,
   type MatchChunkRow,
@@ -421,4 +422,42 @@ export async function searchChunks(
     rows,
     mismatchedModels: [...mismatched].sort(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Keyword (FTS) search — W8R agentic retrieval candidate stage
+// ---------------------------------------------------------------------------
+
+/**
+ * Rank chunks by Postgres full-text search via the `search_chunks_fts` RPC
+ * (websearch_to_tsquery + ts_rank_cd, SECURITY INVOKER — RLS applies to the
+ * user client). NO embedding provider involved: this is the candidate stage
+ * of agentic retrieval; the dormant pgvector path (`searchChunks`) stays
+ * untouched. Stopword-only queries simply yield zero rows.
+ *
+ * Throws NotProvisionedError when the substrate/RPC is absent (same mapping
+ * as `searchChunks`); other PostgREST errors fail loud.
+ */
+export async function searchChunksFts(
+  query: string,
+  options: SearchOptions = {},
+  db?: SupabaseClient,
+): Promise<FtsChunkRow[]> {
+  const requested = Math.trunc(options.count ?? SEARCH_DEFAULT_COUNT);
+  const matchCount = Math.min(
+    Math.max(Number.isFinite(requested) ? requested : SEARCH_DEFAULT_COUNT, 1),
+    SEARCH_MAX_COUNT,
+  );
+
+  const client = db ?? getServiceClient();
+  const { data, error } = await client
+    .schema(SCHEMA)
+    .rpc("search_chunks_fts", {
+      query_text: query,
+      match_count: matchCount,
+      filter_source_id: options.sourceId ?? null,
+    });
+  guard("search-fts", error);
+
+  return (data ?? []) as FtsChunkRow[];
 }

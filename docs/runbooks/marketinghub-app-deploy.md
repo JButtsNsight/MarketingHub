@@ -1109,6 +1109,18 @@ GoTrue login integration (the SAML cutover) is Wave 3's blocked remainder, pendi
 
 ## 13. Wave-8 Competitor-Intel Bedrock embeddings (2026-08-08)
 
+> **⛔ PERMANENTLY SKIPPED — Bedrock activation will never run (decision
+> 2026-08-10).** Justin ruled Bedrock "wholly unnecessary when you have a
+> full-fledged Claude API key." The §13.2 IAM surface, the §13.3 step-4
+> `stage-w8-bedrock.sh` deploy, and the §13.3 step-6 re-embed are all
+> permanently off the table — do **NOT** run `/tmp/stage-w8-bedrock.sh`.
+> The embedding pipeline stays DORMANT on the stub provider (zero AWS
+> calls) as the parity demonstration; `/intel/search` no longer uses
+> embeddings at all — it runs the Wave-8R agentic search instead (**§14**).
+> §13.3 steps 1–2 (`apply-w8-intel.sh` schema migration + `stage-w8-env.sh`
+> PostgREST exposure) are NOT skipped: they provision the intel schema
+> itself and remain prerequisites for §14. §13.4–13.6 are moot.
+
 Wave 8 ships the competitor-intel RAG module (`/intel`, schema
 `competitor_intel`, `ci_embed` pgmq queue + worker consumer). **By default it
 makes ZERO AWS calls**: `CI_EMBED_PROVIDER` defaults to `stub` — a
@@ -1235,3 +1247,133 @@ everything else (images, W5 posture) is preserved. Titan-embedded chunks KEEP
 their `embedding_model` tag, so stub queries then show the honest
 provider-mismatch warning; re-run the §13.3-step-6 UPDATE afterwards if you
 want a stub-consistent corpus again. No data is lost in either direction.
+
+---
+
+## 14. Wave-8R Intel agentic search (2026-08-10)
+
+Wave 8R replaces the (never-activated) pgvector similarity path on
+`/intel/search` with **agentic retrieval**, and ships the answer synthesis
+that Wave 8 had left "pending sign-off" — synthesis is now APPROVED
+(2026-08-10 decision, same one that permanently skipped Bedrock, §13 header
+note). No new model vendors: the LLM leg rides the existing
+**headless-claude gateway** (direct Anthropic, BAA-confirmed).
+
+### 14.1 Architecture
+
+Two-phase, async:
+
+1. **Retrieve (synchronous):** `GET /api/intel/search` (marketing-gated,
+   per-user client) calls the new `competitor_intel.search_chunks_fts` RPC —
+   Postgres full-text search (`websearch_to_tsquery('english', …)`) over
+   `competitor_intel.chunks`, backed by a matching expression GIN index
+   (migration `cdk/sql/2026-08-10-w8-intel-fts.sql`, SECURITY INVOKER so W4
+   RLS applies). The response returns the keyword-ranked passages
+   immediately, plus — when the gateway is configured — a pending answer
+   handle.
+2. **Synthesize (async):** the route submits ONE gateway task per unique
+   query (fresh `mh-intel-<uuid>` task id) containing the numbered passages
+   and a hardened system prompt (passages are untrusted competitor material;
+   instructions inside them are ignored; JSON-only output). The browser
+   polls `GET /api/intel/search/answer/[taskId]` every 3 s; on completion it
+   renders the answer as PLAIN TEXT with `[n]` citation chips mapped
+   client-side onto the retrieved rows (out-of-range citations dropped) and
+   reorders the passage list by Claude's relevance ranking.
+
+The answer route regex-rejects any task id outside our `mh-intel-<uuid>`
+namespace — the gateway key is shared ClaudeCloud-wide, and this endpoint
+must not become an oracle for other clients' task results.
+
+**What is dormant vs. load-bearing** (do not confuse the two): the
+`ci_embed` queue and the worker consumer are **LIVE and load-bearing for
+Wave-8R** — the consumer is the ONLY thing that creates
+`competitor_intel.chunks` rows (chunk + stub-embed on its ~30 s poll,
+`CI_EMBED_ENABLED` ships on), and `search_chunks_fts` searches exactly those
+rows. Disable the consumer and new documents never chunk: FTS returns zero
+rows for them forever. What stays deployed-but-**dormant** is only the
+EMBEDDING leg of the pgvector pipeline — the `embedding` column, the HNSW
+index, `match_chunks`, and the provider choice (default-`stub`; Bedrock
+permanently skipped) — untouched in code and DB as the parity
+demonstration; the search route simply no longer calls it.
+Document/status surfaces keep their embedding-status UI deliberately.
+
+### 14.2 Gateway env vars (app task-def only; worker untouched)
+
+Read by `web/src/lib/intel/gateway.ts` (`gatewayFromEnv()`), server-side
+ONLY — never in client bundles, never logged, never echoed in error bodies:
+
+| var | required | default | notes |
+| --- | --- | --- | --- |
+| `HEADLESS_CLAUDE_URL` | for agentic mode | — (unset/blank ⇒ keyword-only) | plain env; gateway base URL (`https://tr9vow8etd.execute-api.us-east-1.amazonaws.com`); trailing `/` tolerated |
+| `HEADLESS_CLAUDE_API_KEY` | for agentic mode | — (unset/blank ⇒ keyword-only) | task-def SECRET from `marketinghub/headless-claude` JSON key `api_key`; per-client key provisioned into `headless-claude/client-keys` |
+| `HEADLESS_CLAUDE_MODEL` | no | `claude-opus-4-8` | gateway allow-list: `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`, `claude-opus-4-6`, `claude-opus-4-8`; unknown values are silently coerced to `claude-opus-4-8` server-side |
+
+Both required vars must be non-blank or the app runs keyword-only (§14.4) —
+there is no error state, missing config degrades honestly.
+
+### 14.3 Activation order
+
+Prerequisite: §13.3 steps 1–2 (intel schema + PostgREST exposure) live.
+Then, staged scripts in `/tmp` (same conventions as the §10–13 scripts —
+typed confirm, live-state derivation, verification + rollback at the end):
+
+1. `bash /tmp/apply-w8-fts.sh` (confirm `APPLY-W8-FTS`) — applies
+   `cdk/sql/2026-08-10-w8-intel-fts.sql` (GIN index + `search_chunks_fts`
+   RPC + grants) as `supabase_admin` over SSM, then verifies RPC/index
+   existence, a live smoke call, and the PostgREST schema reload.
+2. `bash /tmp/provision-intel-gateway-key.sh` (confirm
+   `PROVISION-INTEL-KEY`) — idempotent: ensures a `marketinghub` client key
+   exists in `headless-claude/client-keys`, then creates/updates secret
+   `marketinghub/headless-claude` (`{"api_key", "base_url"}`, same CMK as
+   `marketinghub/sms-campaigns`). Never echoes key values.
+3. `bash /tmp/stage-w8-gateway-env.sh` (confirm `STAGE-W8-GATEWAY`) — new
+   app task-def revision adding the `HEADLESS_CLAUDE_URL` env +
+   `HEADLESS_CLAUDE_API_KEY` secret (execution-role read verified),
+   update-service, wait stable, prints the previous-revision rollback.
+4. `bash /tmp/deploy-w1.sh` — normal image deploy of the Wave-8R build
+   (auto-builds HEAD → `parity-<sha>`).
+
+Order 1→4 is the clean path, but the code is safe in ANY order: until both
+the SQL and the env exist it degrades to keyword-only (or the pre-existing
+NotProvisioned state). No worker task-def change anywhere in this wave.
+
+### 14.4 Degraded behavior / gateway semantics
+
+- **Env unset/blank** → mode `keyword-only`: FTS results with keyword
+  ranking, honest "no synthesis" copy, ZERO gateway calls.
+- **Zero FTS candidates** → no gateway call at all (cost bound); empty
+  results list, no answer.
+- **Task submit fails** → results still return, degraded
+  `synthesis-unavailable` (generic detail, no internals).
+- **The gateway has NO failed/running state** — `GET /task/{id}` only ever
+  answers `pending` or `completed`. A crashed worker or dropped task reads
+  `pending` forever, so the CLIENT owns the deadline: the browser polls
+  every 3 s and gives up at **90 s** with an honest timeout state, keeping
+  the keyword results. Completed results persist ~90 days server-side, so
+  re-polling is always safe.
+
+### 14.5 Cost bounds
+
+- ≤ 50 passages per query (`SEARCH_MAX_COUNT`; default 16), synthesis prompt
+  hard-capped at 150 K chars (trailing candidates dropped), `max_tokens`
+  1500 per task.
+- Completed answers cached in-process 10 min (max 50 entries) keyed on
+  `query|source|count` **plus a fingerprint of the ordered candidate chunk
+  ids** (citations are positional, so a cached answer is only ever served
+  against the exact row set the model read — corpus drift busts the key);
+  in-flight submissions deduped 5 min (max 200 entries) under the same key —
+  repeat queries don't resubmit. A per-process token bucket (burst 10,
+  ≤1 submit/2 s) additionally bounds gateway spend; exhaustion degrades to
+  keyword-only.
+- Zero-candidate queries never reach the gateway. Gateway throttle is
+  10 rps / 20 burst account-wide; one Fargate cold start per task means
+  ~10–60 s answer latency is NORMAL, not a fault.
+
+### 14.6 Rollback
+
+Unset the two gateway vars (re-register the prior task-def revision — the
+step-3 script prints the exact command) → instant, honest keyword-only mode;
+no data or schema changes needed. The FTS migration is additive and harmless
+(one index + one STABLE SECURITY INVOKER function) — leave it in place. The
+dormant pgvector pipeline is untouched in either direction, so there is
+nothing to re-embed, re-queue, or reconcile.

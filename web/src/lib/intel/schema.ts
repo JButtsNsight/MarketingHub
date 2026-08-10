@@ -55,8 +55,12 @@ export const DOCUMENT_MAX_CHUNKS = 400;
 /** `match_chunks` caps at 50 rows server-side (`least(match_count, 50)`). */
 export const SEARCH_MAX_COUNT = 50;
 
-/** Default `match_count` for semantic search. */
-export const SEARCH_DEFAULT_COUNT = 8;
+/**
+ * Default `match_count` for search. 16 (was 8): one retrieved list serves
+ * both the displayed passages AND answer synthesis — citations must always
+ * point at rows the user can see.
+ */
+export const SEARCH_DEFAULT_COUNT = 16;
 
 function isHttpUrl(value: string): boolean {
   try {
@@ -249,3 +253,103 @@ export interface MatchChunkRow {
   document_title: string;
   source_name: string;
 }
+
+// ---------------------------------------------------------------------------
+// Wave-8R agentic search (2026-08-10): Postgres FTS candidates → headless-
+// claude gateway rerank + synthesis with citations. The pgvector path above
+// (match_chunks / MatchChunkRow / embedding fields) stays dormant and intact.
+// ---------------------------------------------------------------------------
+
+/**
+ * One row returned by the `competitor_intel.search_chunks_fts` RPC — chunk
+ * plus document/source context. `rank` = `ts_rank_cd` keyword relevance.
+ */
+export interface FtsChunkRow {
+  chunk_id: number;
+  document_id: string;
+  source_id: string;
+  seq: number;
+  content: string;
+  rank: number;
+  document_title: string;
+  source_name: string;
+}
+
+/**
+ * How a search was served: `agentic` = FTS candidates + gateway synthesis;
+ * `keyword-only` = FTS ranking alone (gateway unconfigured or unavailable).
+ */
+export type SearchMode = "agentic" | "keyword-only";
+
+/** Honest degraded-state marker attached to keyword-only responses. */
+export interface SearchDegraded {
+  reason: "gateway-not-configured" | "synthesis-unavailable";
+  detail?: string;
+}
+
+/**
+ * The JSON object the model must emit (prompt-engineered — the gateway has
+ * no JSON mode). `citations`/`ranking` are 1-BASED PASSAGE NUMBERS into the
+ * retrieved results array; all mapping to real chunk/document/source data
+ * happens client-side from the caller's own rows, so out-of-range numbers
+ * can only ever be dropped, never dereferenced.
+ */
+export const SynthesisResultSchema = z.object({
+  answer: z.string().min(1).max(8000),
+  citations: z.array(z.number().int().min(1).max(50)).max(50),
+  ranking: z.array(z.number().int().min(1).max(50)).max(50),
+});
+export type SynthesisResult = z.infer<typeof SynthesisResultSchema>;
+
+/** Answer slot in the initial search response (async two-phase UX). */
+export type SearchAnswer =
+  | { state: "pending"; taskId: string }
+  | ({ state: "completed" } & SynthesisResult);
+
+/** Response shape of GET /api/intel/search. */
+export interface SearchResponse {
+  query: string;
+  mode: SearchMode;
+  results: FtsChunkRow[];
+  answer: SearchAnswer | null;
+  degraded: SearchDegraded | null;
+}
+
+/** Response shape of GET /api/intel/search/answer/[taskId] (poll endpoint). */
+export type AnswerResponse =
+  | { state: "pending" }
+  | ({ state: "completed" } & SynthesisResult)
+  | { state: "failed"; reason: string };
+
+/**
+ * Task-id namespace for our gateway submissions. The answer route rejects
+ * anything else so the shared gateway key can never be used as an oracle to
+ * read other ClaudeCloud clients' task results.
+ */
+export const INTEL_TASK_ID_RE =
+  /^mh-intel-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** Output cap for the synthesis task (gateway `max_tokens`). */
+export const SYNTHESIS_MAX_TOKENS = 1500;
+
+/** Hard cap on the synthesis prompt; trailing candidates are dropped. */
+export const SYNTHESIS_PROMPT_MAX_CHARS = 150_000;
+
+/**
+ * Byte budget for the JSON-ENCODED synthesis prompt. The gateway's POST /task
+ * limit is 256KB of serialized request body, and JS chars under-count it:
+ * JSON escaping and UTF-8 expand multibyte content 2–4x, so a prompt that
+ * passes the char cap can still overflow the body. The passage loop budgets
+ * escaped bytes against this too, leaving headroom for the request envelope
+ * (system prompt, task id, model fields).
+ */
+export const SYNTHESIS_PROMPT_MAX_BYTES = 200_000;
+
+/** Browser poll cadence for a pending answer. */
+export const ANSWER_POLL_INTERVAL_MS = 3000;
+
+/**
+ * Client-owned deadline: the gateway has NO failed state (crashed/dropped
+ * tasks read `pending` forever), so the browser stops polling here.
+ */
+export const ANSWER_POLL_DEADLINE_MS = 90_000;

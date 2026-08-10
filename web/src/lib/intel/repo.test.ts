@@ -25,6 +25,7 @@ import {
   listSourceStats,
   NotProvisionedError,
   searchChunks,
+  searchChunksFts,
   updateSource,
 } from "./repo";
 
@@ -277,6 +278,22 @@ describe("not-provisioned mapping", () => {
       NotProvisionedError,
     );
   });
+
+  test("search_chunks_fts missing (PGRST202) becomes NotProvisionedError", async () => {
+    installClient([
+      {
+        data: null,
+        error: {
+          code: "PGRST202",
+          message:
+            "Could not find the function competitor_intel.search_chunks_fts",
+        },
+      },
+    ]);
+    await expect(searchChunksFts("pricing")).rejects.toBeInstanceOf(
+      NotProvisionedError,
+    );
+  });
 });
 
 describe("documents", () => {
@@ -407,14 +424,14 @@ describe("searchChunks", () => {
     expect(result.mismatchedModels).toEqual([]);
   });
 
-  test("defaults: count 8, no source filter", async () => {
+  test("defaults: count 16 (SEARCH_DEFAULT_COUNT), no source filter", async () => {
     const { calls } = installClient([{ data: [], error: null }]);
 
     await searchChunks("q");
 
     expect(calls.queries[0].rpc?.[1]).toEqual({
       query_embedding: [0.25, 0.5],
-      match_count: 8,
+      match_count: 16,
       filter_source_id: null,
     });
   });
@@ -459,5 +476,90 @@ describe("searchChunks", () => {
 
     await searchChunks("q", {}, client as never);
     expect(calls.queries[0].rpc?.[0]).toBe("match_chunks");
+  });
+});
+
+describe("searchChunksFts", () => {
+  const ftsRow = {
+    chunk_id: 7,
+    document_id: "d1",
+    source_id: "s1",
+    seq: 0,
+    content: "Acme charges $99.",
+    rank: 0.42,
+    document_title: "Pricing page",
+    source_name: "Acme Corp",
+  };
+
+  test("calls search_chunks_fts with bound params and NO embedding provider", async () => {
+    const { calls } = installClient([{ data: [ftsRow], error: null }]);
+
+    const rows = await searchChunksFts("acme pricing", {
+      sourceId: sourceRow.id,
+      count: 5,
+    });
+
+    expect(h.providerFromEnv).not.toHaveBeenCalled();
+    expect(stubProvider.embed).not.toHaveBeenCalled();
+    expect(calls.schema).toEqual(["competitor_intel"]);
+    expect(calls.queries[0].rpc).toEqual([
+      "search_chunks_fts",
+      {
+        query_text: "acme pricing",
+        match_count: 5,
+        filter_source_id: sourceRow.id,
+      },
+    ]);
+    expect(rows).toEqual([ftsRow]);
+  });
+
+  test("defaults: count 16 (SEARCH_DEFAULT_COUNT), no source filter", async () => {
+    const { calls } = installClient([{ data: [], error: null }]);
+
+    await searchChunksFts("q");
+
+    expect(calls.queries[0].rpc?.[1]).toEqual({
+      query_text: "q",
+      match_count: 16,
+      filter_source_id: null,
+    });
+  });
+
+  test("clamps count into 1..50", async () => {
+    let built = installClient([{ data: [], error: null }]);
+    await searchChunksFts("q", { count: 999 });
+    expect(
+      (built.calls.queries[0].rpc?.[1] as { match_count: number }).match_count,
+    ).toBe(50);
+
+    built = installClient([{ data: [], error: null }]);
+    await searchChunksFts("q", { count: 0 });
+    expect(
+      (built.calls.queries[0].rpc?.[1] as { match_count: number }).match_count,
+    ).toBe(1);
+  });
+
+  test("null data comes back as an empty array", async () => {
+    installClient([{ data: null, error: null }]);
+    expect(await searchChunksFts("q")).toEqual([]);
+  });
+
+  test("fail-loud on ordinary PostgREST errors", async () => {
+    installClient([{ data: null, error: { message: "boom", code: "XX000" } }]);
+    await expect(searchChunksFts("q")).rejects.toThrow(
+      "[intel] search-fts failed: boom",
+    );
+  });
+
+  test("uses the threaded user client instead of the service client", async () => {
+    const { client, calls } = buildClient([{ data: [], error: null }]);
+    h.client = {
+      schema() {
+        throw new Error("service client must not be used when db is threaded");
+      },
+    };
+
+    await searchChunksFts("q", {}, client as never);
+    expect(calls.queries[0].rpc?.[0]).toBe("search_chunks_fts");
   });
 });

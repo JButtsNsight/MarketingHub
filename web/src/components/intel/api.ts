@@ -13,16 +13,22 @@
 //   GET  /api/intel/documents/:id/status   → { status }
 //   DELETE /api/intel/documents/:id        → 204
 //   GET  /api/intel/search?q=&sourceId=&count= →
-//        { query, provider: {model, dims}, mismatchedModels, results }
+//        SearchResponse { query, mode, results, answer, degraded }
+//   GET  /api/intel/search/answer/:taskId  → AnswerResponse
 // Errors: { error, message? } — error === "intel-not-provisioned" (503) is
-// the repo's NotProvisionedError; "embedding-not-configured" (503) and
-// "embedding-failed" (502) stay generic degraded states.
+// the repo's NotProvisionedError; anything else stays a generic degraded
+// state (a non-200 from the answer poll is retryable until the deadline).
 
 import type {
+  AnswerResponse,
   DocumentStatus,
+  FtsChunkRow,
   IntelDocument,
   IntelSource,
-  MatchChunkRow,
+  SearchAnswer,
+  SearchDegraded,
+  SearchMode,
+  SearchResponse,
 } from "@/lib/intel/schema";
 import type {
   ChunkStatusSummary,
@@ -186,33 +192,99 @@ export async function getChunkStatus(id: string): Promise<ChunkStatusSummary> {
 
 /* --------------------------------- search -------------------------------- */
 
-export interface SearchResult {
-  rows: MatchChunkRow[];
-  /** The model that embedded the QUERY, as reported by the route. */
-  queryModel: string | null;
-  /** Corpus models among the matches that differ from the query provider. */
-  mismatchedModels: string[];
+/**
+ * Validate a wire answer object into the shapes the panel dereferences.
+ * `state` alone is NOT trusted: a "completed" without a string `answer` and
+ * array `citations`/`ranking` would crash the rerank memo, and a "pending"
+ * without a taskId would poll `/answer/undefined` for the full deadline.
+ * Malformed ⇒ null (caller degrades to keyword-only / keeps waiting).
+ */
+function normalizeAnswer(
+  value: unknown,
+): { state: "pending"; taskId: string } | ({ state: "completed" } & {
+  answer: string;
+  citations: number[];
+  ranking: number[];
+}) | null {
+  if (!value || typeof value !== "object") return null;
+  const a = value as Record<string, unknown>;
+  if (a.state === "pending") {
+    return typeof a.taskId === "string" && a.taskId.length > 0
+      ? { state: "pending", taskId: a.taskId }
+      : null;
+  }
+  if (
+    a.state === "completed" &&
+    typeof a.answer === "string" &&
+    Array.isArray(a.citations) &&
+    Array.isArray(a.ranking)
+  ) {
+    const nums = (arr: unknown[]) =>
+      arr.filter((n): n is number => typeof n === "number");
+    return {
+      state: "completed",
+      answer: a.answer,
+      citations: nums(a.citations),
+      ranking: nums(a.ranking),
+    };
+  }
+  return null;
 }
 
+/**
+ * Agentic search (Wave-8R): FTS-ranked passages arrive immediately; when the
+ * gateway is configured the route also returns a pending answer taskId for
+ * the panel to poll. Normalized defensively — a malformed payload degrades
+ * to keyword-only with no answer, never a crash.
+ */
 export async function searchIntel(params: {
   q: string;
   sourceId?: string | null;
   count?: number;
-}): Promise<SearchResult> {
+}): Promise<SearchResponse> {
   const qs = new URLSearchParams({ q: params.q });
   if (params.sourceId) qs.set("sourceId", params.sourceId);
   if (params.count) qs.set("count", String(params.count));
   const json = (await request(`/api/intel/search?${qs.toString()}`)) as {
-    provider?: { model?: string };
-    mismatchedModels?: string[];
-    results?: MatchChunkRow[];
+    query?: string;
+    mode?: SearchMode;
+    results?: FtsChunkRow[];
+    answer?: SearchAnswer | null;
+    degraded?: SearchDegraded | null;
   } | null;
   return {
-    rows: Array.isArray(json?.results) ? json.results : [],
-    queryModel:
-      typeof json?.provider?.model === "string" ? json.provider.model : null,
-    mismatchedModels: Array.isArray(json?.mismatchedModels)
-      ? json.mismatchedModels
-      : [],
+    query: typeof json?.query === "string" ? json.query : params.q,
+    mode: json?.mode === "agentic" ? "agentic" : "keyword-only",
+    results: Array.isArray(json?.results) ? json.results : [],
+    answer: normalizeAnswer(json?.answer),
+    degraded:
+      json?.degraded && typeof json.degraded === "object" ? json.degraded : null,
   };
+}
+
+/** Client-side bound on ONE poll round trip. The server bounds its gateway
+ * leg at ~10s; this keeps a stalled proxy/relay from pinning a poll open,
+ * since the panel's 90s deadline is only checked after each poll settles. */
+const ANSWER_POLL_FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Poll the async answer for a search. 200 payloads are VALIDATED into the
+ * typed AnswerResponse; a malformed body reads as `pending` (the caller's
+ * deadline bounds retries). Non-200s throw IntelApiError — also retryable,
+ * because the gateway itself has no failed state (see ANSWER_POLL_DEADLINE_MS).
+ */
+export async function pollIntelAnswer(taskId: string): Promise<AnswerResponse> {
+  const json = (await request(
+    `/api/intel/search/answer/${encodeURIComponent(taskId)}`,
+    { signal: AbortSignal.timeout(ANSWER_POLL_FETCH_TIMEOUT_MS) },
+  )) as AnswerResponse | null;
+  const completed = normalizeAnswer(json);
+  if (completed?.state === "completed") return completed;
+  if (json && typeof json === "object" && json.state === "failed") {
+    return {
+      state: "failed",
+      reason: typeof json.reason === "string" ? json.reason : "unknown",
+    };
+  }
+  return { state: "pending" };
 }

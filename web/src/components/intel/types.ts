@@ -4,7 +4,24 @@
 // summaries) — kept as local interfaces so client components never import the
 // server-only repo module.
 
-import type { DocumentStatus, IntelSource } from "@/lib/intel/schema";
+import type {
+  DocumentStatus,
+  IntelSource,
+  SynthesisResult,
+} from "@/lib/intel/schema";
+
+/**
+ * Client-side lifecycle of the async answer for ONE search (Wave-8R
+ * two-phase UX). `none` covers keyword-only mode and zero-result searches;
+ * `timeout` is the client-owned deadline — the gateway has no failed state,
+ * so a crashed task reads `pending` forever and the browser must stop.
+ */
+export type AnswerPhase =
+  | { name: "none" }
+  | { name: "pending" }
+  | { name: "completed"; result: SynthesisResult }
+  | { name: "failed" }
+  | { name: "timeout" };
 
 /**
  * What the server knows about the embedding provider at render time, passed

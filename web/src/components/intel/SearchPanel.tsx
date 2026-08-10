@@ -1,26 +1,42 @@
 "use client";
 
-// Semantic search over the competitor-intel corpus. Follows the templates
-// q-param precedent (the query lives in the URL, so results are shareable and
-// survive reloads) but searches on explicit submit rather than per keystroke:
-// every query costs an embedding call (Bedrock once enabled), so we don't
-// spam the provider while someone types.
+// Agentic search over the competitor-intel corpus (Wave-8R). Two-phase UX:
+// Postgres full-text search returns keyword-ranked passages immediately; when
+// the headless-claude gateway is configured the route also enqueues an async
+// rerank + answer-synthesis task, which this panel polls until it completes,
+// fails, or the client-owned deadline passes (the gateway has NO failed
+// state — crashed tasks read `pending` forever, so the browser must stop).
 //
-// Honesty rules carried through: the provider badge labels stub mode plainly,
-// a corpus/query model mismatch gets a visible warning (similarities across
-// models are not comparable), zero matches distinguishes "nothing embedded
-// yet" from "no hits", and a missing schema renders the not-provisioned state.
+// Follows the templates q-param precedent (the query lives in the URL, so
+// results are shareable and survive reloads) but searches on explicit submit:
+// every agentic query costs a gateway task, so we don't spam it per keystroke.
+//
+// Honesty rules carried through: keyword-only mode says plainly that no
+// answer is coming, the ranking badge names who ranked the list ("Keyword
+// rank" vs "Ranked by Claude"), timeout/failure keep the still-valid keyword
+// results, and a missing schema renders the not-provisioned state.
+//
+// Trust rule: passage numbers [n] are frozen at retrieval (1-based FTS
+// order). Reranking reorders the DISPLAY only — numbers travel with their
+// rows — so the answer's [n] citations always name the passage the model
+// actually read.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import type { MatchChunkRow } from "@/lib/intel/schema";
+import {
+  ANSWER_POLL_DEADLINE_MS,
+  ANSWER_POLL_INTERVAL_MS,
+  type FtsChunkRow,
+  type SearchResponse,
+} from "@/lib/intel/schema";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "../Surface";
-import { listSources, searchIntel, IntelApiError, type SearchResult } from "./api";
-import { ProviderBadge } from "./ProviderBadge";
+import { listSources, pollIntelAnswer, searchIntel, IntelApiError } from "./api";
+import { RagAnswerPanel } from "./RagAnswerPanel";
 import { ErrorState } from "./States";
-import type { EmbeddingProviderInfo, IntelSourceSummary } from "./types";
+import { KEYWORD_ONLY_TEXT } from "./status";
+import type { AnswerPhase, IntelSourceSummary } from "./types";
 
 const EXCERPT_CHARS = 600;
 
@@ -31,9 +47,9 @@ function excerpt(content: string): string {
 type Phase =
   | { name: "idle" }
   | { name: "loading" }
-  | { name: "done"; q: string; result: SearchResult };
+  | { name: "done"; q: string; response: SearchResponse };
 
-export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
+export function SearchPanel() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -41,6 +57,7 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
   const [query, setQuery] = useState(searchParams.get("q") ?? "");
   const [sourceId, setSourceId] = useState(searchParams.get("sourceId") ?? "");
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
+  const [answer, setAnswer] = useState<AnswerPhase>({ name: "none" });
   const [error, setError] = useState<IntelApiError | null>(null);
   // Filter dropdown data; a failed load hides the DROPDOWN without blocking
   // search — but an active URL filter must stay visible (no silent state).
@@ -51,28 +68,108 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
   // matching nothing against a deleted source.
   const [droppedStaleFilter, setDroppedStaleFilter] = useState(false);
 
-  const runSearch = useCallback(async (q: string, sid: string) => {
-    const trimmed = q.trim();
-    if (!trimmed) {
-      setPhase({ name: "idle" });
-      setError(null);
-      return;
+  // Stale-poll guard: bumped on every new search and on unmount. A poll tick
+  // (or its in-flight response) whose generation no longer matches is from a
+  // superseded query — its result must never land on the current one.
+  const generation = useRef(0);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards the URL-driven initial search (declared here so the unmount
+  // cleanup below can re-arm it).
+  const ranInitial = useRef(false);
+
+  const stopPolling = () => {
+    if (pollTimer.current !== null) {
+      clearTimeout(pollTimer.current);
+      pollTimer.current = null;
     }
-    setPhase({ name: "loading" });
-    setError(null);
-    try {
-      const result = await searchIntel({ q: trimmed, sourceId: sid || null });
-      setPhase({ name: "done", q: trimmed, result });
-    } catch (err) {
-      setPhase({ name: "idle" });
-      setError(
-        err instanceof IntelApiError ? err : new IntelApiError("http", "Search failed."),
-      );
-    }
+  };
+
+  useEffect(
+    () => () => {
+      // Unmount: invalidate in-flight polls and drop the scheduled tick.
+      // ranInitial is re-armed too: React StrictMode's simulated
+      // unmount/remount runs this cleanup once at dev mount, and without the
+      // reset the remount would skip the initial URL-driven search while the
+      // generation bump discards the first run's in-flight response —
+      // leaving /intel/search?q=… stuck on "Searching…" forever in dev.
+      // (Production single-mounts, so the reset is a no-op there.)
+      generation.current += 1;
+      ranInitial.current = false;
+      stopPolling();
+    },
+    [],
+  );
+
+  const startPolling = useCallback((taskId: string, gen: number) => {
+    const deadline = Date.now() + ANSWER_POLL_DEADLINE_MS;
+    const tick = async () => {
+      if (generation.current !== gen) return;
+      try {
+        const result = await pollIntelAnswer(taskId);
+        if (generation.current !== gen) return; // superseded mid-flight
+        if (result.state === "completed") {
+          setAnswer({ name: "completed", result });
+          return;
+        }
+        if (result.state === "failed") {
+          setAnswer({ name: "failed" });
+          return;
+        }
+      } catch {
+        if (generation.current !== gen) return;
+        // Non-200 polls are retryable — the deadline below bounds them.
+      }
+      if (Date.now() >= deadline) {
+        // Honest timeout: no answer is coming (or the task silently died —
+        // indistinguishable by contract). The keyword results stay.
+        setAnswer({ name: "timeout" });
+        return;
+      }
+      pollTimer.current = setTimeout(() => void tick(), ANSWER_POLL_INTERVAL_MS);
+    };
+    pollTimer.current = setTimeout(() => void tick(), ANSWER_POLL_INTERVAL_MS);
   }, []);
 
+  const runSearch = useCallback(
+    async (q: string, sid: string) => {
+      generation.current += 1;
+      const gen = generation.current;
+      stopPolling();
+      setAnswer({ name: "none" });
+      const trimmed = q.trim();
+      if (!trimmed) {
+        setPhase({ name: "idle" });
+        setError(null);
+        return;
+      }
+      setPhase({ name: "loading" });
+      setError(null);
+      try {
+        const response = await searchIntel({ q: trimmed, sourceId: sid || null });
+        if (generation.current !== gen) return; // superseded mid-flight
+        setPhase({ name: "done", q: trimmed, response });
+        if (response.answer?.state === "completed") {
+          // Server cache hit — the answer arrived with the results.
+          setAnswer({ name: "completed", result: response.answer });
+        } else if (response.answer?.state === "pending") {
+          setAnswer({ name: "pending" });
+          startPolling(response.answer.taskId, gen);
+        } else if (response.degraded?.reason === "synthesis-unavailable") {
+          // Gateway configured but the submission failed — results stand.
+          setAnswer({ name: "failed" });
+        }
+      } catch (err) {
+        if (generation.current !== gen) return;
+        setPhase({ name: "idle" });
+        setError(
+          err instanceof IntelApiError ? err : new IntelApiError("http", "Search failed."),
+        );
+      }
+    },
+    [startPolling],
+  );
+
   // Run once for a q that arrived in the URL (shared link / reload).
-  const ranInitial = useRef(false);
   useEffect(() => {
     if (ranInitial.current) return;
     ranInitial.current = true;
@@ -90,7 +187,7 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
             // The URL's sourceId matches nothing (deleted source / stale
             // share link). Keeping it would silently filter every search by
             // a dead uuid while the dropdown reads "All sources" — a
-            // perpetual "No matches" that blames embedding lag. Drop it
+            // perpetual "No matches" with no cause in sight. Drop it
             // visibly and re-run any active query unfiltered.
             setDroppedStaleFilter(true);
             if (query.trim()) void runSearch(query, "");
@@ -119,15 +216,34 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
     void runSearch(query, sourceId);
   };
 
-  // The server-reported query model wins over the render-time env snapshot.
-  const queryModel =
-    (phase.name === "done" ? phase.result.queryModel : null) ?? provider.model;
-  const mismatched =
-    phase.name === "done"
-      ? phase.result.rows.filter(
-          (row) => row.embedding_model !== null && row.embedding_model !== queryModel,
-        )
+  // Display order. Passage numbers n are frozen at retrieval; a completed
+  // rerank reorders rows by `ranking` (dedup, out-of-range dropped) and any
+  // unranked rows keep their keyword order at the tail — never lost.
+  const ordered = useMemo(() => {
+    const rows = phase.name === "done" ? phase.response.results : [];
+    const numbered = rows.map((row, i) => ({ row, n: i + 1 }));
+    if (answer.name !== "completed") return numbered;
+    // Defensive: api.ts guarantees an array, but a non-array here must fall
+    // back to keyword order, never crash the whole results panel.
+    const ranking = Array.isArray(answer.result.ranking)
+      ? answer.result.ranking
       : [];
+    const picked = new Set<number>();
+    const out: typeof numbered = [];
+    for (const n of ranking) {
+      if (Number.isInteger(n) && n >= 1 && n <= numbered.length && !picked.has(n)) {
+        picked.add(n);
+        out.push(numbered[n - 1]);
+      }
+    }
+    for (const item of numbered) {
+      if (!picked.has(item.n)) out.push(item);
+    }
+    return out;
+  }, [phase, answer]);
+
+  const results = phase.name === "done" ? phase.response.results : [];
+  const degraded = phase.name === "done" ? phase.response.degraded : null;
 
   return (
     <div className="stack">
@@ -159,10 +275,6 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
         </button>
       </form>
 
-      <div className="form-actions">
-        <ProviderBadge info={provider} />
-      </div>
-
       {droppedStaleFilter ? (
         <p className="note" role="alert">
           The source filter from this link no longer exists — it was cleared,
@@ -190,72 +302,77 @@ export function SearchPanel({ provider }: { provider: EmbeddingProviderInfo }) {
 
       {phase.name === "idle" && !error ? (
         <p className="muted">
-          Semantic search over everything pasted into competitor intel. Results
-          rank by cosine similarity with document and source provenance.
+          Keyword search over everything pasted into competitor intel, with a
+          Claude-synthesized, passage-cited answer when the gateway is
+          configured. Results carry document and source provenance.
         </p>
       ) : null}
 
       {phase.name === "loading" ? <p className="muted">Searching…</p> : null}
 
       {phase.name === "done" ? (
-        phase.result.rows.length === 0 ? (
+        results.length === 0 ? (
           <Surface className="empty-state" glint>
             <h2>No matches</h2>
             <p>
-              Nothing in the embedded corpus matched “{phase.q}”. Documents
-              added recently may still be awaiting embedding — check their
-              status on the source page.
+              No passage in the corpus matched “{phase.q}”. Documents added in
+              the last minute may still be waiting on the chunking worker —
+              check their status on the source page.
             </p>
           </Surface>
         ) : (
-          <div className="stack">
-            {mismatched.length > 0 ? (
-              <p className="note" role="alert">
-                {mismatched.length} of {phase.result.rows.length} results were
-                embedded with a different model than the current query provider
-                ({queryModel ?? "unknown"}) — similarity is not comparable
-                across models. Re-embed those documents to fix ranking.
-              </p>
+          <>
+            {degraded?.reason === "gateway-not-configured" ? (
+              <p className="note">{KEYWORD_ONLY_TEXT}</p>
             ) : null}
-            {phase.result.rows.map((row) => (
-              <ResultCard key={row.chunk_id} row={row} queryModel={queryModel} />
-            ))}
-          </div>
+
+            <RagAnswerPanel phase={answer} rows={results} />
+
+            <div className="stack">
+              <div className="form-actions">
+                {/* Ranking provenance must be TRUE, not aspirational: the
+                    model may legally omit/void `ranking` (coerced to [] by
+                    the gateway parser), in which case the order below is
+                    still pure keyword rank and must say so. */}
+                {answer.name === "completed" &&
+                Array.isArray(answer.result.ranking) &&
+                answer.result.ranking.length > 0 ? (
+                  <Badge
+                    tone="var(--ok)"
+                    title="passage order reranked by the synthesis task"
+                  >
+                    Ranked by Claude
+                  </Badge>
+                ) : (
+                  <Badge title="Postgres full-text rank (ts_rank_cd)">
+                    Keyword rank
+                  </Badge>
+                )}
+              </div>
+              {ordered.map(({ row, n }) => (
+                <ResultCard key={row.chunk_id} row={row} n={n} />
+              ))}
+            </div>
+          </>
         )
       ) : null}
     </div>
   );
 }
 
-function ResultCard({
-  row,
-  queryModel,
-}: {
-  row: MatchChunkRow;
-  queryModel: string | null;
-}) {
+function ResultCard({ row, n }: { row: FtsChunkRow; n: number }) {
   return (
     <Surface className="panel" glint>
       <div className="panel-head">
         <div className="panel-head-text">
           <span className="eyebrow mono">
-            {/* Raw cosine similarity, honestly signed: 1 − distance ranges
-                over [-1, 1], so a "% match" framing would print negative or
-                eyebrow-raising percentages (routine with stub vectors and
-                possible with real ones on dissimilar content). */}
-            cosine {row.similarity.toFixed(3)} · chunk #{row.seq}
+            {/* Frozen passage number — what the answer's citations refer to. */}
+            [{n}] · rank {row.rank.toFixed(3)} · chunk #{row.seq}
           </span>
           <h2>
             {row.source_name} ›{" "}
             <Link href={`/intel/documents/${row.document_id}`}>{row.document_title}</Link>
           </h2>
-        </div>
-        <div className="panel-actions">
-          {row.embedding_model !== null && row.embedding_model !== queryModel ? (
-            <Badge tone="var(--warn)" title="embedded with a different model than the query">
-              {row.embedding_model}
-            </Badge>
-          ) : null}
         </div>
       </div>
       <p>{excerpt(row.content)}</p>
