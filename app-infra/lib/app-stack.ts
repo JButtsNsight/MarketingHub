@@ -647,10 +647,10 @@ export class AppStack extends Stack {
         });
       }
 
-      // The app's preview auth shim treats every request as this group. No ALB
+      // The app's preview auth shim treats every request as these groups. No ALB
       // identity token is issued in this mode, so ALB_ARN is intentionally NOT set
       // (the shim needs no token).
-      appContainer.addEnvironment('PREVIEW_AUTH', 'marketing');
+      appContainer.addEnvironment('PREVIEW_AUTH', 'marketing,marketinghub-admins');
 
       return;
     }

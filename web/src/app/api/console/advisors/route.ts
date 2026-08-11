@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { ADMIN_GROUP } from "@/lib/authGroups";
 import { runAdvisors, type AdvisorLevel } from "@/lib/console/advisors";
 
 /**
  * Supabase-parity Advisors: runs the fixed security + performance lint suite
  * (postgres catalog reads only) and returns the findings, gated on the
- * `marketing` Cognito group.
+ * `marketinghub-admins` Cognito group (Admin nav surface; non-admins get a
+ * 403 `admin-only`).
  *
  * READ-ONLY — the only verb is GET; nothing here mutates state, so there is no
  * write to put behind a confirm. The lint SQL is a module constant in the
@@ -17,11 +19,13 @@ import { runAdvisors, type AdvisorLevel } from "@/lib/console/advisors";
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    // 403 body is the fixed "admin-only" marker; 401 keeps the lib's message.
+    return Response.json(
+      { error: err.status === 403 ? "admin-only" : err.message },
+      { status: err.status },
+    );
   }
   throw err;
 }
@@ -50,7 +54,7 @@ const LevelSchema = z.enum(["security", "performance"]);
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, ADMIN_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }

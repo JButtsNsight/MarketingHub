@@ -6,7 +6,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => h.pathname,
 }));
 
-import { NAV_GROUPS, Nav } from "./Nav";
+import { NAV_GROUPS, Nav, navGroupsFor } from "./Nav";
 
 afterEach(cleanup);
 
@@ -150,7 +150,7 @@ describe("Nav active state — most-specific match wins", () => {
 
   it("keeps Logs lit across the drains sub-route", () => {
     h.pathname = "/logs/drains";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual(["Logs"]);
   });
 
@@ -168,29 +168,29 @@ describe("Nav active state — most-specific match wins", () => {
 
   it("lights nothing on /admin itself (redirect stub, no nav item)", () => {
     h.pathname = "/admin";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual([]);
   });
 
   it("lights ONLY Cloud on /admin/cloud", () => {
     h.pathname = "/admin/cloud";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual(["Cloud"]);
   });
 
   it("lights Authentication across the /admin/auth subtree", () => {
     h.pathname = "/admin/auth";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual(["Authentication"]);
     cleanup();
     h.pathname = "/admin/auth/providers";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual(["Authentication"]);
   });
 
   it("lights Advisors at its new /admin/advisors home", () => {
     h.pathname = "/admin/advisors";
-    render(<Nav />);
+    render(<Nav admin />);
     expect(activeLabels()).toEqual(["Advisors"]);
   });
 
@@ -208,5 +208,53 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/intel/sources/8b2f1a4e-0000-4000-8000-000000000000";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Competitor Intel"]);
+  });
+});
+
+describe("Nav admin visibility — display filter only (routes enforce)", () => {
+  it("navGroupsFor(false) drops ONLY the Admin group", () => {
+    expect(navGroupsFor(false).map((g) => g.label)).toEqual([
+      undefined,
+      "Platform",
+      "Integrations",
+      "Marketing",
+      "Project",
+    ]);
+  });
+
+  it("navGroupsFor(true) is the full NAV_GROUPS", () => {
+    expect(navGroupsFor(true)).toEqual(NAV_GROUPS);
+  });
+
+  it("hides the Admin group by default (fail-closed display)", () => {
+    h.pathname = "/overview";
+    render(<Nav />);
+    expect(screen.queryByText("Admin")).toBeNull();
+    expect(screen.queryByRole("link", { name: /authentication/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /logs/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /infrastructure/i })).toBeNull();
+    // Everything else identical — the other groups stay.
+    expect(screen.getByRole("link", { name: /settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /sms campaigns/i })).toBeInTheDocument();
+  });
+
+  it("shows the Admin group for admins", () => {
+    h.pathname = "/overview";
+    render(<Nav admin />);
+    expect(screen.getByText("Admin")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /authentication/i })).toHaveAttribute(
+      "href",
+      "/admin/auth",
+    );
+    expect(screen.getByRole("link", { name: /infrastructure/i })).toHaveAttribute(
+      "href",
+      "/infrastructure",
+    );
+  });
+
+  it("an explicit groups prop overrides the admin filter", () => {
+    h.pathname = "/overview";
+    render(<Nav groups={NAV_GROUPS} />);
+    expect(screen.getByRole("link", { name: /authentication/i })).toBeInTheDocument();
   });
 });

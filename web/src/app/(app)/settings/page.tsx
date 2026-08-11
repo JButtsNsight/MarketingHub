@@ -3,8 +3,13 @@ import { Section } from "@/components/ui/Section";
 import { KeyValue } from "@/components/ui/KeyValue";
 import { Badge } from "@/components/ui/Badge";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { getConnectionInfo, getSmsCampaignsInfo } from "@/lib/console/settings";
+import {
+  getConnectionInfo,
+  getPreviewPersona,
+  getSmsCampaignsInfo,
+} from "@/lib/console/settings";
 import { PROJECT } from "@/lib/console/backend-map";
+import { PersonaSwitch } from "./PersonaSwitch";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +21,7 @@ export default async function SettingsPage() {
   const user = await requireMarketingUser();
   const conn = getConnectionInfo();
   const sms = getSmsCampaignsInfo();
+  const persona = await getPreviewPersona();
 
   return (
     <>
@@ -44,7 +50,10 @@ export default async function SettingsPage() {
               {
                 label: "Preview auth shim",
                 value: conn.previewAuth ? (
-                  <Badge tone="var(--data-1)">on</Badge>
+                  <span className="filter-group">
+                    <Badge tone="var(--data-1)">on</Badge>
+                    {persona && <PersonaSwitch persona={persona} />}
+                  </span>
                 ) : (
                   <Badge>off</Badge>
                 ),

@@ -1,6 +1,17 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+
+// next/headers exists only inside a Next request scope; mock it (auth.test.ts
+// pattern) so getPreviewPersona can read the persona cookie under test.
+const nextMocks = vi.hoisted(() => ({ cookie: null as string | null }));
+vi.mock("next/headers", () => ({
+  headers: () =>
+    Promise.resolve({
+      get: (name: string) =>
+        name.toLowerCase() === "cookie" ? nextMocks.cookie : null,
+    }),
+}));
 
 // vitest runs with cwd = web/
 const SRC = resolve(process.cwd(), "src/lib/console/settings.ts");
@@ -23,6 +34,7 @@ describe("lib/console/settings", () => {
 
   beforeEach(() => {
     for (const key of ENV_KEYS) delete process.env[key];
+    nextMocks.cookie = null;
   });
 
   afterEach(() => {
@@ -44,6 +56,40 @@ describe("lib/console/settings", () => {
       expect(info.serviceRoleKeySet).toBe(true);
       expect(info.albArnSet).toBe(false);
       expect(JSON.stringify(info)).not.toContain("svc-key-value");
+    });
+  });
+
+  describe("getPreviewPersona", () => {
+    test("null when the shim is off — cookie never consulted", async () => {
+      nextMocks.cookie = "mh-preview-persona=member";
+      const { getPreviewPersona } = await import("./settings");
+      expect(await getPreviewPersona()).toBeNull();
+    });
+
+    test("admin when the shim grants the admin group and no cookie demotes", async () => {
+      process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+      const { getPreviewPersona } = await import("./settings");
+      expect(await getPreviewPersona()).toBe("admin");
+    });
+
+    test("member when the mh-preview-persona=member cookie demotes", async () => {
+      process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+      nextMocks.cookie = "mh-preview-persona=member";
+      const { getPreviewPersona } = await import("./settings");
+      expect(await getPreviewPersona()).toBe("member");
+    });
+
+    test("only the literal value 'member' demotes", async () => {
+      process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+      nextMocks.cookie = "mh-preview-persona=Member";
+      const { getPreviewPersona } = await import("./settings");
+      expect(await getPreviewPersona()).toBe("admin");
+    });
+
+    test("member when the shim never granted the admin group (honest chip)", async () => {
+      process.env.PREVIEW_AUTH = "marketing";
+      const { getPreviewPersona } = await import("./settings");
+      expect(await getPreviewPersona()).toBe("member");
     });
   });
 

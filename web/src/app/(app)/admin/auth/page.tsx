@@ -4,7 +4,8 @@ import { KeyValue } from "@/components/ui/KeyValue";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Tabs } from "@/components/ui/Tabs";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { AUTH_TABS } from "@/lib/console/tabs";
 import { COGNITO, REFERENCE_DISCLAIMER } from "@/lib/console/backend-map";
 
@@ -25,7 +26,9 @@ const GROUP_COLUMNS: Column<Group>[] = [
 ];
 
 export default async function AuthPage() {
-  const user = await requireMarketingUser();
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
+  const user = gate.user;
 
   return (
     <>

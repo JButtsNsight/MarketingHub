@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/Badge";
 import { StatusPill } from "@/components/ui/StatusPill";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { RefList, type RefRow } from "@/components/ui/RefList";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { AUTH_TABS } from "@/lib/console/tabs";
 import { REFERENCE_DISCLAIMER } from "@/lib/console/backend-map";
 import {
@@ -126,9 +127,10 @@ const MFA_ROWS: RefRow[] = [
 ];
 
 export default async function AuthConfigPage() {
-  // Server-side group gate first: the page fetches through the service-role
+  // Server-side admin gate first: the page fetches through the service-role
   // lib and never routes through an API handler, so it must gate itself.
-  await requireMarketingUser();
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   let settings: GoTrueSettings;
   let providers: SsoProvider[];

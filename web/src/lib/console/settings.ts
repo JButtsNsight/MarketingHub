@@ -1,5 +1,9 @@
 import "server-only";
 
+import { headers } from "next/headers";
+import { getUser } from "../auth";
+import { isAdmin } from "../authGroups";
+
 /**
  * Connection facts for the Settings page. Deliberately returns NO secret
  * values — only whether a secret is configured, plus the (non-secret) data-API
@@ -36,6 +40,19 @@ export function getSmsCampaignsInfo(): SmsCampaignsInfo {
     ),
     simpletextingSendTokenSet: Boolean(process.env.SIMPLETEXTING_API_TOKEN),
   };
+}
+
+/**
+ * Active PREVIEW_AUTH persona for the Settings preview chip. `null` when the
+ * shim is off (real ALB auth — the persona cookie is never consulted). On,
+ * it resolves the EFFECTIVE shim identity through `getUser` (same group parse
+ * + `mh-preview-persona=member` demote as auth.ts) and labels it by
+ * admin-group membership — so the chip can never disagree with the gates.
+ */
+export async function getPreviewPersona(): Promise<"admin" | "member" | null> {
+  if (!process.env.PREVIEW_AUTH) return null;
+  const user = await getUser(await headers());
+  return user !== null && isAdmin(user) ? "admin" : "member";
 }
 
 export function getConnectionInfo(): ConnectionInfo {

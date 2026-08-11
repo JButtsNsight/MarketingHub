@@ -131,6 +131,15 @@ export const NAV_GROUPS: NavGroup[] = [
 ];
 
 /**
+ * Nav groups visible to a user: non-admins lose the Admin group. Display
+ * filtering ONLY — the /admin/*, /logs and /infrastructure routes are the
+ * enforcement (`requireAdminUser`).
+ */
+export function navGroupsFor(admin: boolean): NavGroup[] {
+  return admin ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label !== "Admin");
+}
+
+/**
  * Whether a nav item is active for the current path. `exact` items match only
  * their exact route (so Table Editor `/database` never lights on the Database
  * section pages nested beneath it); `match` gives the Database section its
@@ -322,15 +331,24 @@ function NavIcon({ icon }: { icon: IconKey }) {
 
 /**
  * Left navigation rail. Built from the .surface primitive so it honors the
- * surface tokens. Highlights the active section from the pathname.
+ * surface tokens. Highlights the active section from the pathname. `admin`
+ * defaults false (fail-closed display: no Admin group unless threaded in);
+ * an explicit `groups` prop overrides the filter entirely.
  */
-export function Nav({ groups = NAV_GROUPS }: { groups?: NavGroup[] }) {
+export function Nav({
+  groups,
+  admin = false,
+}: {
+  groups?: NavGroup[];
+  admin?: boolean;
+}) {
   // usePathname() is null outside the App Router context (e.g. in unit tests);
   // fall back to "" so isActive() never calls .startsWith on null.
   const pathname = usePathname() ?? "";
+  const visible = groups ?? navGroupsFor(admin);
   return (
     <Surface as="nav" aria-label="Primary" className="nav" glint>
-      {groups.map((group, gi) => (
+      {visible.map((group, gi) => (
         <div className="nav-group" key={group.label ?? `group-${gi}`}>
           {group.label ? (
             <span className="nav-group-label">{group.label}</span>

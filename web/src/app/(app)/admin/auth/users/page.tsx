@@ -1,8 +1,9 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
+import { Forbidden } from "@/components/ui/Forbidden";
 import { AuthUsersClient } from "@/components/console/AuthUsersClient";
 import { AUTH_TABS } from "@/lib/console/tabs";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 
 // Reads request-time identity; never prerender.
 export const dynamic = "force-dynamic";
@@ -19,8 +20,9 @@ export const metadata = {
  * GoTrue store until the Wave-3 SAML cutover (external deliverable pending).
  */
 export default async function AuthUsersPage() {
-  // Server-side group gate: mirrors the API handler.
-  await requireMarketingUser();
+  // Server-side admin gate: mirrors the API handler.
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   return (
     <>

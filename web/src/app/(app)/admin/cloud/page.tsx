@@ -3,7 +3,8 @@ import { Section } from "@/components/ui/Section";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { RefList, type RefRow } from "@/components/ui/RefList";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 
 // Static reference content, but the page still reads request-time identity
 // for the group gate; never prerender.
@@ -172,9 +173,10 @@ const ASSISTANT_ROWS: RefRow[] = [
 ];
 
 export default async function CloudFeaturesPage() {
-  // Server-side group gate: static reference content, but the console stays
-  // behind the marketing group like every other surface.
-  await requireMarketingUser();
+  // Server-side admin gate: static reference content, but the Admin surfaces
+  // stay behind the admin group like the rest of the group.
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   return (
     <>

@@ -8,8 +8,10 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 import { getUser, requireUser, AuthError, type AppUser } from "./auth";
+import { ADMIN_GROUP, isAdmin, MARKETING_GROUP } from "./authGroups";
 import {
   albPublicPem,
   clearAlbEnv,
@@ -20,9 +22,40 @@ import {
   TEST_ALB_ARN,
 } from "./__test__/albToken";
 
+// next/headers + next/navigation exist only inside a Next request scope; mock
+// them (requireMarketingUser.test.ts pattern) so requireAdminUser is testable.
+// auth.ts itself imports neither, so the other suites are unaffected.
+const nextMocks = vi.hoisted(() => ({
+  headerValue: null as string | null,
+  cookieValue: null as string | null,
+  redirect: vi.fn((_url: string) => {
+    throw new Error("NEXT_REDIRECT");
+  }),
+}));
+
+vi.mock("next/headers", () => ({
+  headers: () =>
+    Promise.resolve({
+      get: (name: string) =>
+        name === "x-amzn-oidc-data"
+          ? nextMocks.headerValue
+          : name === "cookie"
+            ? nextMocks.cookieValue
+            : null,
+    }),
+}));
+vi.mock("next/navigation", () => ({ redirect: nextMocks.redirect }));
+
+import { requireAdminUser } from "./requireAdminUser";
+
 function headersWith(token?: string): Headers {
   const h = new Headers();
   if (token) h.set("x-amzn-oidc-data", token);
+  return h;
+}
+
+function withCookie(h: Headers, cookie: string): Headers {
+  h.set("cookie", cookie);
   return h;
 }
 
@@ -35,6 +68,9 @@ beforeAll(async () => {
 beforeEach(() => {
   setAlbEnv();
   fetchMock = installAlbKeyFetch();
+  nextMocks.headerValue = null;
+  nextMocks.cookieValue = null;
+  nextMocks.redirect.mockClear();
 });
 
 afterEach(() => {
@@ -57,6 +93,19 @@ describe("getUser (verified)", () => {
       name: "Casey Marketer",
       groups: ["marketing", "marketinghub-admins"],
     });
+  });
+
+  it("IGNORES the persona cookie on the verified path (PREVIEW_AUTH unset)", async () => {
+    // Real ALB tokens carry the groups; a cookie must never demote (or shape)
+    // them outside the preview shim.
+    const token = await signAlbToken({
+      email: "casey@nsightcare.com",
+      "cognito:groups": ["marketing", "marketinghub-admins"],
+    });
+    const user = await getUser(
+      withCookie(headersWith(token), "mh-preview-persona=member"),
+    );
+    expect(user?.groups).toEqual(["marketing", "marketinghub-admins"]);
   });
 
   it("accepts cognito:groups rendered as a bracketed/space string", async () => {
@@ -227,6 +276,46 @@ describe("getUser (internal-preview shim, default OFF)", () => {
     expect((await getUser(headersWith()))?.groups).toEqual(["custom-group"]);
   });
 
+  it("parses a comma-separated PREVIEW_AUTH into MULTIPLE groups", async () => {
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    expect((await getUser(headersWith()))?.groups).toEqual([
+      "marketing",
+      "marketinghub-admins",
+    ]);
+  });
+
+  it("drops the admin group when the mh-preview-persona=member cookie is set", async () => {
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    const user = await getUser(
+      withCookie(headersWith(), "theme=dark; mh-preview-persona=member"),
+    );
+    expect(user?.groups).toEqual(["marketing"]);
+  });
+
+  it("keeps every group for any OTHER persona cookie value", async () => {
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    const user = await getUser(
+      withCookie(headersWith(), "mh-preview-persona=admin"),
+    );
+    expect(user?.groups).toEqual(["marketing", "marketinghub-admins"]);
+  });
+
+  it("requireUser 403s an ADMIN_GROUP check after the member persona drops it", async () => {
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    await expect(
+      requireUser(
+        withCookie(headersWith(), "mh-preview-persona=member"),
+        ADMIN_GROUP,
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("requireUser passes an ADMIN_GROUP check when the shim lists it (no cookie)", async () => {
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    const user = await requireUser(headersWith(), ADMIN_GROUP);
+    expect(user.groups).toContain(ADMIN_GROUP);
+  });
+
   it("ignores any incoming token entirely (no verification) when PREVIEW_AUTH is set", async () => {
     clearAlbEnv();
     process.env.PREVIEW_AUTH = "marketing";
@@ -286,5 +375,57 @@ describe("requireUser (verified)", () => {
     await expect(
       requireUser(headersWith(await marketingToken()), "marketinghub-admins"),
     ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("throws a 403 AuthError for a marketing user missing ADMIN_GROUP", async () => {
+    await expect(
+      requireUser(headersWith(await marketingToken()), ADMIN_GROUP),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("authGroups", () => {
+  it("isAdmin is true only when ADMIN_GROUP is present", () => {
+    expect(isAdmin({ groups: [MARKETING_GROUP, ADMIN_GROUP] })).toBe(true);
+    expect(isAdmin({ groups: [MARKETING_GROUP] })).toBe(false);
+    expect(isAdmin({ groups: [] })).toBe(false);
+  });
+});
+
+describe("requireAdminUser (admin page gate)", () => {
+  it("returns ok + the user for a signed-in admin", async () => {
+    nextMocks.headerValue = await signAlbToken({
+      email: "admin@nsightcare.com",
+      "cognito:groups": ["marketing", "marketinghub-admins"],
+    });
+    const gate = await requireAdminUser();
+    expect(gate).toMatchObject({
+      ok: true,
+      user: { email: "admin@nsightcare.com" },
+    });
+    expect(nextMocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("returns ok:false (NOT a /login redirect) for a signed-in non-admin", async () => {
+    nextMocks.headerValue = await signAlbToken({
+      email: "casey@nsightcare.com",
+      "cognito:groups": ["marketing"],
+    });
+    expect(await requireAdminUser()).toEqual({ ok: false });
+    expect(nextMocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("redirects a signed-OUT user to /login", async () => {
+    nextMocks.headerValue = null;
+    await expect(requireAdminUser()).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(nextMocks.redirect).toHaveBeenCalledWith("/login");
+  });
+
+  it("honors the member persona under PREVIEW_AUTH (ok:false)", async () => {
+    clearAlbEnv();
+    process.env.PREVIEW_AUTH = "marketing,marketinghub-admins";
+    nextMocks.cookieValue = "mh-preview-persona=member";
+    expect(await requireAdminUser()).toEqual({ ok: false });
+    expect(nextMocks.redirect).not.toHaveBeenCalled();
   });
 });

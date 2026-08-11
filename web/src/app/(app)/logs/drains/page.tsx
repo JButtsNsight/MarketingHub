@@ -4,7 +4,8 @@ import { Section } from "@/components/ui/Section";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { RefList, type RefRow } from "@/components/ui/RefList";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { LOGS_TABS } from "@/lib/console/tabs";
 
 // Static reference content, but the page still reads request-time identity
@@ -143,9 +144,10 @@ const COVERAGE_ROWS: RefRow[] = [
 ];
 
 export default async function LogDrainsPage() {
-  // Server-side group gate: logs surfaces are sensitive (PHI-adjacent request
+  // Server-side admin gate: logs surfaces are sensitive (PHI-adjacent request
   // data) even when the page itself is static reference content.
-  await requireMarketingUser();
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   return (
     <>

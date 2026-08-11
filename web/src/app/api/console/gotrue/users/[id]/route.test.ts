@@ -31,8 +31,8 @@ import { GoTrueUnavailableError } from "@/lib/console/gotrue";
 import * as routeModule from "./route";
 import { GET } from "./route";
 
+let adminToken: string;
 let marketingToken: string;
-let viewersToken: string;
 
 const USER_ID = "5f5e1f9d-6a3a-4d3e-9a51-1c2f3a4b5c6d";
 
@@ -59,14 +59,14 @@ const DETAIL_USER = {
 
 beforeAll(async () => {
   await initAlbKeys();
-  marketingToken = await signAlbToken({
+  adminToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["marketing", "marketinghub-admins"],
   });
-  viewersToken = await signAlbToken({
+  marketingToken = await signAlbToken({
     email: "bob@nsight.example",
-    "cognito:groups": ["viewers"],
+    "cognito:groups": ["marketing"],
   });
 });
 
@@ -80,11 +80,11 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+function adminHeaders(): HeadersInit {
+  return { "x-amzn-oidc-data": adminToken };
 }
 
-function get(id: string, headers: HeadersInit = marketingHeaders()) {
+function get(id: string, headers: HeadersInit = adminHeaders()) {
   return GET(
     new Request(
       `http://x/api/console/gotrue/users/${encodeURIComponent(id)}`,
@@ -114,9 +114,10 @@ describe("GET /api/console/gotrue/users/[id] — auth gate", () => {
     expect(h.getUser).not.toHaveBeenCalled();
   });
 
-  test("403 when authenticated but missing the marketing group", async () => {
-    const res = await get(USER_ID, { "x-amzn-oidc-data": viewersToken });
+  test("403 admin-only when authenticated without the admin group", async () => {
+    const res = await get(USER_ID, { "x-amzn-oidc-data": marketingToken });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.getUser).not.toHaveBeenCalled();
   });
 });

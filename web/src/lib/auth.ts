@@ -2,6 +2,8 @@ import "server-only";
 
 import { decodeProtectedHeader, importSPKI, jwtVerify } from "jose";
 
+import { ADMIN_GROUP } from "./authGroups";
+
 /**
  * App identity from the ALB Cognito front door.
  *
@@ -83,6 +85,23 @@ function parseGroups(claim: unknown): string[] {
   return [];
 }
 
+/** Preview-only persona cookie; consulted ONLY inside the PREVIEW_AUTH shim. */
+const PREVIEW_PERSONA_COOKIE = "mh-preview-persona";
+
+/** Read the persona cookie value from the request's `Cookie` header, if any. */
+function previewPersona(headers: HeaderSource): string | null {
+  const cookie = readHeader(headers, "cookie");
+  if (!cookie) return null;
+  for (const pair of cookie.split(";")) {
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    if (pair.slice(0, eq).trim() === PREVIEW_PERSONA_COOKIE) {
+      return pair.slice(eq + 1).trim();
+    }
+  }
+  return null;
+}
+
 /** Imported (verified) EC public key, keyed by the ALB `kid`. */
 type PublicKey = Awaited<ReturnType<typeof importSPKI>>;
 const keyCache = new Map<string, PublicKey>();
@@ -128,17 +147,26 @@ export async function getUser(headers: HeaderSource): Promise<AppUser | null> {
   // For the no-SAML private deployment (the `previewMode` infra: an INTERNAL
   // HTTP:80 ALB with NO authenticate-cognito), no `x-amzn-oidc-data` token ever
   // arrives, so real verification could never succeed. When PREVIEW_AUTH is a
-  // non-empty string, short-circuit to a stub user in that group WITHOUT reading
-  // or verifying any token and WITHOUT requiring ALB_ARN. When PREVIEW_AUTH is
-  // unset/empty, this branch is skipped and behaviour is unchanged (real ES256
-  // jwtVerify + signer/exp checks, fail-loud on a token with ALB_ARN unset).
+  // non-empty string, short-circuit to a stub user in those groups (same
+  // list syntax as the `cognito:groups` claim, e.g. "marketing,marketinghub-
+  // admins") WITHOUT reading or verifying any token and WITHOUT requiring
+  // ALB_ARN. Persona flip: the `mh-preview-persona=member` cookie drops the
+  // admin group so both personas are reachable in one deploy — consulted ONLY
+  // inside this branch, never on the verified path (real ALB tokens carry the
+  // groups; cookies are ignored). When PREVIEW_AUTH is unset/empty, this branch
+  // is skipped and behaviour is unchanged (real ES256 jwtVerify + signer/exp
+  // checks, fail-loud on a token with ALB_ARN unset).
   // Remove this shim once the Cognito front door is the only deployment path.
-  const previewGroup = process.env.PREVIEW_AUTH;
-  if (previewGroup) {
+  const previewAuth = process.env.PREVIEW_AUTH;
+  if (previewAuth) {
+    let groups = parseGroups(previewAuth);
+    if (previewPersona(headers) === "member") {
+      groups = groups.filter((g) => g !== ADMIN_GROUP);
+    }
     return {
       email: "preview@nsightcare.com",
       name: "Preview User",
-      groups: [previewGroup],
+      groups,
     };
   }
   // ----------------------------------------------------------------------------

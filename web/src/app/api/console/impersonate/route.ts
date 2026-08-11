@@ -1,14 +1,15 @@
 import { z } from "zod";
 
 import { AuthError, requireUser } from "@/lib/auth";
+import { ADMIN_GROUP } from "@/lib/authGroups";
 import {
   ImpersonationAuditError,
   runImpersonatedQuery,
 } from "@/lib/console/impersonate";
 
 /**
- * User Impersonation execution, gated on the Cognito `marketing` group (same
- * gate as every console route).
+ * User Impersonation execution, gated on the Cognito `marketinghub-admins`
+ * group (Admin nav surface; non-admins get a 403 `admin-only`).
  *
  * The handler mints a bounded user JWT (role `authenticated` ONLY — the body
  * schema is strict, so a smuggled `role` key is a 400, and the lib re-verifies
@@ -21,11 +22,13 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    // 403 body is the fixed "admin-only" marker; 401 keeps the lib's message.
+    return Response.json(
+      { error: err.status === 403 ? "admin-only" : err.message },
+      { status: err.status },
+    );
   }
   throw err;
 }
@@ -56,7 +59,7 @@ const PostBodySchema = z
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireUser(req.headers, ADMIN_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }

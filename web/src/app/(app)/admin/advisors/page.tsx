@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { runAdvisors, type AdvisorReport } from "@/lib/console/advisors";
 import { AdvisorsClient } from "@/components/console/AdvisorsClient";
 
@@ -21,8 +22,9 @@ export const metadata = {
  * guard behind a confirm.
  */
 export default async function AdvisorsPage() {
-  // Server-side group gate: mirrors the API handler.
-  await requireMarketingUser();
+  // Server-side admin gate: mirrors the API handler.
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   let report: AdvisorReport | null = null;
   try {

@@ -5,16 +5,19 @@ import { ThemeToggle } from "./ThemeToggle";
 
 /**
  * The console shell: a masthead with the MARKETING HUB wordmark (links home) and the
- * global theme toggle; a left nav rail; and the main content region. No banned
- * "Claude look" patterns — no centered floating three-card hero, no violet
- * gradients, no frosted glass.
+ * global theme toggle; a left nav rail; and the main content region. `admin`
+ * (default false) shows the Admin nav group — display only; routes enforce.
+ * No banned "Claude look" patterns — no centered floating three-card hero,
+ * no violet gradients, no frosted glass.
  */
 export function AppShell({
   children,
   user,
+  admin = false,
 }: {
   children: ReactNode;
   user?: ReactNode;
+  admin?: boolean;
 }) {
   return (
     <div className="app-shell">
@@ -28,7 +31,7 @@ export function AppShell({
         </div>
       </header>
       <div className="app-body">
-        <Nav />
+        <Nav admin={admin} />
         <main className="app-main">{children}</main>
       </div>
     </div>

@@ -61,6 +61,33 @@ describe("AppShell", () => {
     expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
   });
 
+  it("hides the Admin nav group unless admin (display filter; routes enforce)", () => {
+    render(
+      <AppShell>
+        <p>body</p>
+      </AppShell>,
+    );
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).queryByRole("link", { name: /authentication/i })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: /infrastructure/i })).toBeNull();
+  });
+
+  it("shows the Admin nav group when admin", () => {
+    render(
+      <AppShell admin>
+        <p>body</p>
+      </AppShell>,
+    );
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: /authentication/i }),
+    ).toHaveAttribute("href", "/admin/auth");
+    expect(within(nav).getByRole("link", { name: /logs/i })).toHaveAttribute(
+      "href",
+      "/logs",
+    );
+  });
+
   it("renders children inside a <main> landmark", () => {
     render(
       <AppShell>

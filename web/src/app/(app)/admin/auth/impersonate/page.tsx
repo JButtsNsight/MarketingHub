@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
+import { Forbidden } from "@/components/ui/Forbidden";
 import { AUTH_TABS } from "@/lib/console/tabs";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { ImpersonateClient } from "./ImpersonateClient";
 
 // Reads request-time identity; never prerender.
@@ -18,8 +19,9 @@ export const metadata = {
  * Every mint+query is audited; the raw JWT never reaches the browser.
  */
 export default async function ImpersonatePage() {
-  // Server-side group gate: mirrors the API handler.
-  await requireMarketingUser();
+  // Server-side admin gate: mirrors the API handler.
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   return (
     <>

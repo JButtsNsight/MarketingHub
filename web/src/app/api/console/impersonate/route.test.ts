@@ -35,19 +35,19 @@ import { ImpersonationAuditError } from "@/lib/console/impersonate";
 
 import { POST } from "./route";
 
+let adminToken: string;
 let marketingToken: string;
-let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
-  marketingToken = await signAlbToken({
+  adminToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["marketing", "marketinghub-admins"],
   });
-  viewersToken = await signAlbToken({
+  marketingToken = await signAlbToken({
     email: "bob@nsight.example",
-    "cognito:groups": ["viewers"],
+    "cognito:groups": ["marketing"],
   });
 });
 
@@ -84,7 +84,7 @@ const RESULT = {
 function postReq(
   body: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": adminToken,
     "content-type": "application/json",
   },
 ) {
@@ -96,18 +96,16 @@ function postReq(
 }
 
 describe("POST /api/console/impersonate", () => {
-  test("401/403 before anything runs (same gate as every console route)", async () => {
+  test("401/403 admin-only before anything runs (admin-gated surface)", async () => {
     expect((await POST(postReq(VALID_BODY, {}))).status).toBe(401);
-    expect(
-      (
-        await POST(
-          postReq(VALID_BODY, {
-            "x-amzn-oidc-data": viewersToken,
-            "content-type": "application/json",
-          }),
-        )
-      ).status,
-    ).toBe(403);
+    const forbidden = await POST(
+      postReq(VALID_BODY, {
+        "x-amzn-oidc-data": marketingToken,
+        "content-type": "application/json",
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(await forbidden.json()).toEqual({ error: "admin-only" });
     expect(h.runImpersonatedQuery).not.toHaveBeenCalled();
   });
 

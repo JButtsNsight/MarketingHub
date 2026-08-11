@@ -611,9 +611,9 @@ test('preview: ZERO Route53 record', () => {
   template.resourceCountIs('AWS::Route53::RecordSet', 0);
 });
 
-test('preview: the task carries PREVIEW_AUTH=marketing and NO ALB_ARN', () => {
+test('preview: the task carries PREVIEW_AUTH=marketing,marketinghub-admins and NO ALB_ARN', () => {
   const { template } = makePreviewApp();
-  hasEnv(template, 'PREVIEW_AUTH', 'marketing');
+  hasEnv(template, 'PREVIEW_AUTH', 'marketing,marketinghub-admins');
   const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
   for (const td of Object.values(taskDefs) as any[]) {
     for (const c of td.Properties.ContainerDefinitions ?? []) {

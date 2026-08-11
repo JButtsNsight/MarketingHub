@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { formatBytes } from "@/components/storage/resumable";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { isAdmin } from "@/lib/authGroups";
 import { getUserClient } from "@/lib/supabase";
 import { getTemplateStats } from "@/lib/console/stats";
 import { listBucket } from "@/lib/console/storage";
@@ -95,6 +96,8 @@ const RECENT_COLUMNS: Column<CampaignRow>[] = [
 
 /**
  * The admin jump-to cards (moved here from the retired /admin landing page).
+ * Every destination is admin-gated, so the section renders for admins only —
+ * routes stay the enforcement; this just never advertises a 403.
  * Posture and the backend-services reference render on /infrastructure — one
  * card points there; no page duplicates another's content.
  */
@@ -248,18 +251,20 @@ export default async function OverviewPage() {
           />
         </Section>
 
-        {/* Admin surfaces sit below the marketing numbers — marketing users
-            see their stats first. */}
-        <Section eyebrow="Explore" title="Jump to a section">
-          <div className="card-grid">
-            {EXPLORE.map((c) => (
-              <Link key={c.href} href={c.href} className="surface glint link-card">
-                <span className="link-card-title">{c.title}</span>
-                <span className="link-card-desc">{c.desc}</span>
-              </Link>
-            ))}
-          </div>
-        </Section>
+        {/* Admin surfaces sit below the marketing numbers — and render for
+            admins only (all four cards are admin-gated routes). */}
+        {isAdmin(user) && (
+          <Section eyebrow="Explore" title="Jump to a section">
+            <div className="card-grid">
+              {EXPLORE.map((c) => (
+                <Link key={c.href} href={c.href} className="surface glint link-card">
+                  <span className="link-card-title">{c.title}</span>
+                  <span className="link-card-desc">{c.desc}</span>
+                </Link>
+              ))}
+            </div>
+          </Section>
+        )}
 
         <Section
           eyebrow="Object storage"

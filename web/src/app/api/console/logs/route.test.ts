@@ -31,8 +31,8 @@ vi.mock("@/lib/console/logs", async (importOriginal) => {
 import { AnalyticsUnavailableError } from "@/lib/console/logs";
 import { GET } from "./route";
 
+let adminToken: string;
 let marketingToken: string;
-let viewersToken: string;
 
 const ENTRIES = [
   {
@@ -46,14 +46,14 @@ const ENTRIES = [
 
 beforeAll(async () => {
   await initAlbKeys();
-  marketingToken = await signAlbToken({
+  adminToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["marketing", "marketinghub-admins"],
   });
-  viewersToken = await signAlbToken({
+  marketingToken = await signAlbToken({
     email: "bob@nsight.example",
-    "cognito:groups": ["viewers"],
+    "cognito:groups": ["marketing"],
   });
 });
 
@@ -67,11 +67,11 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+function adminHeaders(): HeadersInit {
+  return { "x-amzn-oidc-data": adminToken };
 }
 
-function get(qs: string, headers: HeadersInit = marketingHeaders()) {
+function get(qs: string, headers: HeadersInit = adminHeaders()) {
   return GET(new Request(`http://x/api/console/logs${qs}`, { headers }));
 }
 
@@ -82,11 +82,12 @@ describe("GET /api/console/logs — auth gate", () => {
     expect(h.queryLogs).not.toHaveBeenCalled();
   });
 
-  test("403 when authenticated but missing the marketing group", async () => {
+  test("403 admin-only when authenticated without the admin group", async () => {
     const res = await get("?source=edge_logs", {
-      "x-amzn-oidc-data": viewersToken,
+      "x-amzn-oidc-data": marketingToken,
     });
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.queryLogs).not.toHaveBeenCalled();
   });
 });

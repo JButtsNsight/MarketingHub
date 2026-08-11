@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireAdminUser } from "@/lib/requireAdminUser";
 import { LOGS_TABS } from "@/lib/console/tabs";
 import {
   AnalyticsUnavailableError,
@@ -34,9 +35,10 @@ export const metadata = {
  * unavailable" state — nothing else in the console changes.
  */
 export default async function LogsPage() {
-  // Server-side group gate: mirrors the API handler (the initial query below
+  // Server-side admin gate: mirrors the API handler (the initial query below
   // never routes through /api/console/logs, so the page must gate too).
-  await requireMarketingUser();
+  const gate = await requireAdminUser();
+  if (!gate.ok) return <Forbidden />;
 
   // Only the picker fields cross to the client — the lib's severity SQL
   // expressions stay server-side.

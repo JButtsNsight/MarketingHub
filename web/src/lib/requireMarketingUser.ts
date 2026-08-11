@@ -3,9 +3,10 @@ import "server-only";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { AuthError, requireUser, type AppUser } from "./auth";
+import { MARKETING_GROUP } from "./authGroups";
 
-/** Cognito group required to view the campaign-template library. */
-export const MARKETING_GROUP = "marketing";
+/** Re-exported for existing importers; the canonical home is `authGroups.ts`. */
+export { MARKETING_GROUP };
 
 /**
  * Server-component auth gate for the marketing template pages.

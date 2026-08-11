@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { ADMIN_GROUP } from "@/lib/authGroups";
 import {
   AnalyticsUnavailableError,
   LOG_SOURCES,
@@ -7,8 +8,8 @@ import {
 
 /**
  * Logs explorer query route (Wave 6 Logflare observability). READ-ONLY: GET is
- * the only verb, gated on the `marketing` Cognito group like every console
- * route.
+ * the only verb, gated on the `marketinghub-admins` Cognito group (Admin nav
+ * surface; non-admins get a 403 `admin-only`).
  *
  * Every input is validated against the foundation lib's own allowlists
  * (LOG_SOURCES ids + per-source severity values) before anything runs, and the
@@ -26,8 +27,6 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 /**
  * Fixed time-range presets (mirrors the LogsClient chips). from/to are
  * computed here so the client never sends timestamps.
@@ -42,7 +41,11 @@ const PRESET_MS: Record<string, number> = {
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    // 403 body is the fixed "admin-only" marker; 401 keeps the lib's message.
+    return Response.json(
+      { error: err.status === 403 ? "admin-only" : err.message },
+      { status: err.status },
+    );
   }
   throw err;
 }
@@ -86,7 +89,7 @@ async function consoleAttempt<T>(work: () => Promise<T>): Promise<T | Response> 
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, ADMIN_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }

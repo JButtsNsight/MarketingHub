@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { ADMIN_GROUP } from "@/lib/authGroups";
 import { GoTrueUnavailableError, getUser } from "@/lib/console/gotrue";
 
 /**
@@ -7,8 +8,8 @@ import { GoTrueUnavailableError, getUser } from "@/lib/console/gotrue";
  * list endpoint deliberately does not carry). READ-ONLY BY DESIGN: GET is
  * the only exported verb — Next answers 405 for everything else — and this
  * surface must never grow the PUT/DELETE that GoTrue exposes upstream (hard
- * Wave 3-partial program constraint). Gated on the `marketing` Cognito
- * group like every console route.
+ * Wave 3-partial program constraint). Gated on the `marketinghub-admins`
+ * Cognito group (Admin nav surface; non-admins get a 403 `admin-only`).
  *
  * Failure mapping:
  *   - GoTrueUnavailableError → 503 + `unavailable: true` (honest state).
@@ -20,14 +21,16 @@ import { GoTrueUnavailableError, getUser } from "@/lib/console/gotrue";
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 /** Path ids longer than this cannot name a user; refuse before any fetch. */
 const ID_MAX_CHARS = 100;
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    // 403 body is the fixed "admin-only" marker; 401 keeps the lib's message.
+    return Response.json(
+      { error: err.status === 403 ? "admin-only" : err.message },
+      { status: err.status },
+    );
   }
   throw err;
 }
@@ -70,7 +73,7 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, ADMIN_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }

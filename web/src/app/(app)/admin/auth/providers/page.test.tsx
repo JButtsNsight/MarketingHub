@@ -13,7 +13,7 @@ const h = vi.hoisted(() => {
     }
   }
   return {
-    requireMarketingUser: vi.fn(),
+    requireAdminUser: vi.fn(),
     getSettings: vi.fn(),
     listSsoProviders: vi.fn(),
     gotrueHealth: vi.fn(),
@@ -21,12 +21,12 @@ const h = vi.hoisted(() => {
   };
 });
 
-// The page is gated server-side on the marketing group; stub the gate so the
+// The page is gated server-side on the admin group; stub the gate so the
 // render tests focus on the page body (the gate itself is unit-tested in
-// requireMarketingUser.test.ts). One test below verifies the gate is enforced
-// BEFORE any GoTrue read happens.
-vi.mock("@/lib/requireMarketingUser", () => ({
-  requireMarketingUser: h.requireMarketingUser,
+// auth.test.ts). Tests below verify the gate is enforced BEFORE any GoTrue
+// read happens, for both the signed-out and the non-admin outcome.
+vi.mock("@/lib/requireAdminUser", () => ({
+  requireAdminUser: h.requireAdminUser,
 }));
 
 // Builder-B contract: the Config page consumes the foundation lib only via
@@ -40,7 +40,11 @@ vi.mock("@/lib/console/gotrue", () => ({
 
 import AuthConfigPage from "./page";
 
-const AMY = { email: "amy@nsight.example", name: "Amy", groups: ["marketing"] };
+const AMY = {
+  email: "amy@nsight.example",
+  name: "Amy",
+  groups: ["marketing", "marketinghub-admins"],
+};
 
 const SETTINGS = {
   external: {
@@ -74,7 +78,7 @@ const SAML_PROVIDER = {
 
 describe("auth/providers/page.tsx (server component, display-only)", () => {
   beforeEach(() => {
-    h.requireMarketingUser.mockReset().mockResolvedValue(AMY);
+    h.requireAdminUser.mockReset().mockResolvedValue({ ok: true, user: AMY });
     h.getSettings.mockReset().mockResolvedValue(SETTINGS);
     h.listSsoProviders.mockReset().mockResolvedValue([]);
     h.gotrueHealth.mockReset().mockResolvedValue(HEALTH);
@@ -83,7 +87,7 @@ describe("auth/providers/page.tsx (server component, display-only)", () => {
   test("renders provider flags enabled-first, posture rows, and the version chip behind the gate", async () => {
     render(await AuthConfigPage());
 
-    expect(h.requireMarketingUser).toHaveBeenCalledTimes(1);
+    expect(h.requireAdminUser).toHaveBeenCalledTimes(1);
     expect(
       screen.getByRole("heading", { name: "Auth configuration", level: 1 }),
     ).toBeInTheDocument();
@@ -220,9 +224,21 @@ describe("auth/providers/page.tsx (server component, display-only)", () => {
     expect(screen.queryByText("GoTrue unreachable")).not.toBeInTheDocument();
   });
 
-  test("gate failure (redirect) propagates before any GoTrue read", async () => {
-    // requireMarketingUser redirects to /login on AuthError; redirect() throws.
-    h.requireMarketingUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
+  test("signed-in non-admin gets the terse 403 panel, no GoTrue read", async () => {
+    h.requireAdminUser.mockResolvedValue({ ok: false });
+    render(await AuthConfigPage());
+
+    expect(screen.getByRole("heading", { name: "403" })).toBeInTheDocument();
+    expect(screen.getByRole("alert").textContent).toBe("Admin access required.");
+    expect(screen.queryByText("Sign-in providers")).not.toBeInTheDocument();
+    expect(h.getSettings).not.toHaveBeenCalled();
+    expect(h.listSsoProviders).not.toHaveBeenCalled();
+    expect(h.gotrueHealth).not.toHaveBeenCalled();
+  });
+
+  test("signed-out gate failure (redirect) propagates before any GoTrue read", async () => {
+    // requireAdminUser redirects to /login on 401; redirect() throws.
+    h.requireAdminUser.mockRejectedValue(new Error("NEXT_REDIRECT"));
     await expect(AuthConfigPage()).rejects.toThrow("NEXT_REDIRECT");
     expect(h.getSettings).not.toHaveBeenCalled();
     expect(h.listSsoProviders).not.toHaveBeenCalled();

@@ -25,8 +25,8 @@ vi.mock("@/lib/console/advisors", () => ({ runAdvisors: h.runAdvisors }));
 
 import { GET } from "./route";
 
+let adminToken: string;
 let marketingToken: string;
-let viewersToken: string;
 
 const REPORT = {
   lints: [
@@ -46,14 +46,14 @@ const REPORT = {
 
 beforeAll(async () => {
   await initAlbKeys();
-  marketingToken = await signAlbToken({
+  adminToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["marketing", "marketinghub-admins"],
   });
-  viewersToken = await signAlbToken({
+  marketingToken = await signAlbToken({
     email: "bob@nsight.example",
-    "cognito:groups": ["viewers"],
+    "cognito:groups": ["marketing"],
   });
 });
 
@@ -67,8 +67,8 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+function adminHeaders(): HeadersInit {
+  return { "x-amzn-oidc-data": adminToken };
 }
 
 describe("GET /api/console/advisors", () => {
@@ -78,19 +78,20 @@ describe("GET /api/console/advisors", () => {
     expect(h.runAdvisors).not.toHaveBeenCalled();
   });
 
-  test("403 when authenticated but missing the marketing group", async () => {
+  test("403 admin-only when authenticated without the admin group", async () => {
     const res = await GET(
       new Request("http://x/api/console/advisors", {
-        headers: { "x-amzn-oidc-data": viewersToken },
+        headers: { "x-amzn-oidc-data": marketingToken },
       }),
     );
     expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.runAdvisors).not.toHaveBeenCalled();
   });
 
   test("200 runs the full suite when no level is given", async () => {
     const res = await GET(
-      new Request("http://x/api/console/advisors", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/advisors", { headers: adminHeaders() }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(REPORT);
@@ -100,7 +101,7 @@ describe("GET /api/console/advisors", () => {
   test("scopes to a single level when ?level= is a known level", async () => {
     await GET(
       new Request("http://x/api/console/advisors?level=security", {
-        headers: marketingHeaders(),
+        headers: adminHeaders(),
       }),
     );
     expect(h.runAdvisors).toHaveBeenCalledWith("security");
@@ -109,7 +110,7 @@ describe("GET /api/console/advisors", () => {
   test("treats ?level=all as the full suite (undefined)", async () => {
     await GET(
       new Request("http://x/api/console/advisors?level=all", {
-        headers: marketingHeaders(),
+        headers: adminHeaders(),
       }),
     );
     expect(h.runAdvisors).toHaveBeenCalledWith(undefined);
@@ -118,7 +119,7 @@ describe("GET /api/console/advisors", () => {
   test("400 on an unknown level value", async () => {
     const res = await GET(
       new Request("http://x/api/console/advisors?level=bogus", {
-        headers: marketingHeaders(),
+        headers: adminHeaders(),
       }),
     );
     expect(res.status).toBe(400);
@@ -130,7 +131,7 @@ describe("GET /api/console/advisors", () => {
       new Error("[console:advisors] run failed: pg-meta exploded"),
     );
     const res = await GET(
-      new Request("http://x/api/console/advisors", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/advisors", { headers: adminHeaders() }),
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("pg-meta exploded");

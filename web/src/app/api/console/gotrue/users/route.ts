@@ -1,12 +1,14 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { ADMIN_GROUP } from "@/lib/authGroups";
 import { GoTrueUnavailableError, listUsers } from "@/lib/console/gotrue";
 
 /**
  * GoTrue admin user list (Wave 3-partial read-only console views). READ-ONLY
  * BY DESIGN: GET is the only exported verb — Next answers 405 for everything
  * else — and this surface must never grow a mutation (no create/invite/ban/
- * delete; hard Wave 3-partial program constraint). Gated on the `marketing`
- * Cognito group like every console route.
+ * delete; hard Wave 3-partial program constraint). Gated on the
+ * `marketinghub-admins` Cognito group (Admin nav surface; non-admins get a
+ * 403 `admin-only`).
  *
  * Every query param is validated HERE before the lib is called:
  *   - page      optional positive integer (default 1)
@@ -27,8 +29,6 @@ import { GoTrueUnavailableError, listUsers } from "@/lib/console/gotrue";
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 /** Mirrors the lib's clamps so a bad request 400s instead of being coerced. */
 const PER_PAGE_MAX = 100;
 const FILTER_MAX_CHARS = 200;
@@ -36,7 +36,11 @@ const SORT_DIRECTIONS = ["asc", "desc"] as const;
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
-    return Response.json({ error: err.message }, { status: err.status });
+    // 403 body is the fixed "admin-only" marker; 401 keeps the lib's message.
+    return Response.json(
+      { error: err.status === 403 ? "admin-only" : err.message },
+      { status: err.status },
+    );
   }
   throw err;
 }
@@ -88,7 +92,7 @@ function intParam(raw: string, min: number, max: number): number | null {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireUser(req.headers, ADMIN_GROUP);
   } catch (err) {
     return authErrorResponse(err);
   }
