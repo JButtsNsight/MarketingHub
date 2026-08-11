@@ -154,6 +154,19 @@ describe("ReportsClient", () => {
     expect(screen.getByText("42")).toBeInTheDocument();
   });
 
+  test("lays the four charts out in the two-up grid; the routes table stays outside it", () => {
+    const { container } = render(<ReportsClient initial={snapshot()} />);
+
+    const grid = container.querySelector(".split-2");
+    expect(grid).not.toBeNull();
+    // All four chart SVGs live inside the grid…
+    const charts = grid!.querySelectorAll("svg[role='img']");
+    expect(charts).toHaveLength(4);
+    // …while the full-width top-routes table does not.
+    expect(grid!.querySelector("table")).toBeNull();
+    expect(container.querySelector("table")).not.toBeNull();
+  });
+
   test("shows a per-chart empty state when a series has no rows in range", () => {
     render(
       <ReportsClient

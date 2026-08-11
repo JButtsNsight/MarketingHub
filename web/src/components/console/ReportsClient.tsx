@@ -377,72 +377,79 @@ export function ReportsClient({ initial }: { initial: ReportsData }) {
             />
           </div>
 
-          <ChartPanel
-            id="rpt-requests"
-            title="API request volume"
-            description={`Requests through Kong per ${interval}, from the edge logs.`}
-            color="var(--data-1)"
-            state={data.volume}
-            range={data.range}
-            fold={(rows) =>
-              totalsBy(
-                rows as ApiRequestVolumePoint[],
-                (r) => r.bucket,
-                (r) => r.total,
-              )
-            }
-          />
+          {/* Charts sit two-up on wide screens (single column under 900px,
+              via the shared .split-2 utility) so the page doesn't scroll
+              forever; LineChart is viewBox-scaled SVG, so each chart simply
+              renders at half width. The top-routes table below stays
+              full-width — its path column genuinely needs the room. */}
+          <div className="split-2">
+            <ChartPanel
+              id="rpt-requests"
+              title="API request volume"
+              description={`Requests through Kong per ${interval}, from the edge logs.`}
+              color="var(--data-1)"
+              state={data.volume}
+              range={data.range}
+              fold={(rows) =>
+                totalsBy(
+                  rows as ApiRequestVolumePoint[],
+                  (r) => r.bucket,
+                  (r) => r.total,
+                )
+              }
+            />
 
-          <ChartPanel
-            id="rpt-errors"
-            title="API error rate"
-            description={`Percentage of edge responses with status ≥ 400 per ${interval} bucket.`}
-            color="var(--data-2)"
-            state={data.errorRates}
-            range={data.range}
-            fold={(rows) =>
-              totalsBy(
-                rows as ApiErrorRatePoint[],
-                (r) => r.bucket,
-                (r) =>
-                  r.total > 0
-                    ? Math.round((r.errors4xx / r.total) * 1000) / 10
-                    : 0,
-              )
-            }
-          />
+            <ChartPanel
+              id="rpt-errors"
+              title="API error rate"
+              description={`Percentage of edge responses with status ≥ 400 per ${interval} bucket.`}
+              color="var(--data-2)"
+              state={data.errorRates}
+              range={data.range}
+              fold={(rows) =>
+                totalsBy(
+                  rows as ApiErrorRatePoint[],
+                  (r) => r.bucket,
+                  (r) =>
+                    r.total > 0
+                      ? Math.round((r.errors4xx / r.total) * 1000) / 10
+                      : 0,
+                )
+              }
+            />
 
-          <ChartPanel
-            id="rpt-auth"
-            title="Auth events"
-            description={`GoTrue log events per ${interval}, all levels combined.`}
-            color="var(--data-4)"
-            state={data.authEvents}
-            range={data.range}
-            fold={(rows) =>
-              totalsBy(
-                rows as AuthEventPoint[],
-                (r) => r.bucket,
-                (r) => r.count,
-              )
-            }
-          />
+            <ChartPanel
+              id="rpt-auth"
+              title="Auth events"
+              description={`GoTrue log events per ${interval}, all levels combined.`}
+              color="var(--data-4)"
+              state={data.authEvents}
+              range={data.range}
+              fold={(rows) =>
+                totalsBy(
+                  rows as AuthEventPoint[],
+                  (r) => r.bucket,
+                  (r) => r.count,
+                )
+              }
+            />
 
-          <ChartPanel
-            id="rpt-services"
-            title="Realtime & Storage log volume"
-            description={`Log lines from the realtime and storage services per ${interval}, all levels combined.`}
-            color="var(--data-3)"
-            state={data.serviceVolume}
-            range={data.range}
-            fold={(rows) =>
-              totalsBy(
-                rows as ServiceLogVolumePoint[],
-                (r) => r.bucket,
-                (r) => r.count,
-              )
-            }
-          />
+            <ChartPanel
+              id="rpt-services"
+              title="Realtime & Storage log volume"
+              description={`Log lines from the realtime and storage services per ${interval}, all levels combined.`}
+              color="var(--data-3)"
+              state={data.serviceVolume}
+              range={data.range}
+              fold={(rows) =>
+                totalsBy(
+                  rows as ServiceLogVolumePoint[],
+                  (r) => r.bucket,
+                  (r) => r.count,
+                )
+              }
+            />
+          </div>
 
           <Section
             eyebrow="Analytics"
