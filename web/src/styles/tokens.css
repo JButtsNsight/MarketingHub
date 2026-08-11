@@ -65,6 +65,17 @@
   --surface-shade: 0 0 0 0 transparent;
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
+
+  /* FLOATING surfaces (dialog cards, designer nodes) may never be translucent:
+   * the frosted-glass filter is banned, so anything underneath would read
+   * straight through. --surface-solid is --surface-bg (3.5% ink) composited
+   * onto --canvas #ECE4D3 — the identical visual tint, fully opaque.
+   * --shadow-float is the slight lift for nodes that float over a canvas
+   * (soft, low-alpha ink; graph lines keep their own sanctioned shadow). */
+  --surface-solid: #E4DECE;
+  --shadow-float:
+    0 1px 2px rgba(21, 48, 63, 0.1),
+    0 4px 12px rgba(21, 48, 63, 0.12);
 }
 
 /* ── DARK — Supabase-styled. This IS the app's dark theme: a faithful
@@ -129,4 +140,11 @@ html[data-theme="dark"] {
   --surface-shade: 0 0 0 0 transparent;
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
+
+  /* Floating surfaces — --surface-bg is already opaque here, so solid = same;
+   * the float shadow goes deeper so it reads on the #1c1c1c chrome. */
+  --surface-solid: #1f1f1f;
+  --shadow-float:
+    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.45);
 }

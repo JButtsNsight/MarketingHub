@@ -328,7 +328,7 @@ export function SchemaDesignerCanvas({
                     data-active={active ? "true" : "false"}
                     d={edgePath(s, t)}
                     fill="none"
-                    stroke={active ? "var(--data-4)" : "var(--surface-border)"}
+                    stroke={active ? "var(--data-4)" : "var(--hair)"}
                     strokeWidth={active && selected ? 2 : 1.4}
                     strokeOpacity={active ? 0.9 : 0.2}
                     markerEnd="url(#designer-arrow)"
@@ -349,15 +349,20 @@ export function SchemaDesignerCanvas({
                 left: box.x,
                 top: box.y,
                 width: box.w,
-                background: "var(--surface-bg)",
-                border: `1px solid ${focused ? tone : "var(--surface-border)"}`,
+                // Nodes FLOAT over the edge layer — the surface must be opaque
+                // (no backdrop-filter exists to rescue a translucent tint) and
+                // gets the slight per-theme float shadow.
+                background: "var(--surface-solid)",
+                border: `1px solid ${focused ? tone : "var(--hair)"}`,
                 borderRadius: 10,
                 overflow: "hidden",
                 textAlign: "left",
                 padding: 0,
                 cursor: "pointer",
                 opacity: dim ? 0.32 : 1,
-                boxShadow: focused ? `0 0 0 2px ${tone}` : "var(--surface-shadow)",
+                boxShadow: focused
+                  ? `0 0 0 2px ${tone}, var(--shadow-float)`
+                  : "var(--shadow-float)",
                 transition: "opacity 120ms ease, box-shadow 120ms ease",
               };
               return (
@@ -378,7 +383,7 @@ export function SchemaDesignerCanvas({
                       alignItems: "center",
                       gap: 8,
                       padding: "8px 10px",
-                      borderBottom: "1px solid var(--surface-border)",
+                      borderBottom: "1px solid var(--hair)",
                       borderLeft: `3px solid ${tone}`,
                     }}
                   >

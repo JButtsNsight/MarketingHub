@@ -1015,6 +1015,11 @@ input[type="file"].control {
   flex-direction: column;
   gap: 12px;
   border: 1px solid var(--hair);
+  /* The card FLOATS over the page — it must be opaque (backdrop-filter is
+     banned, so .surface's translucent light tint would let the page bleed
+     through). Same tint, composited solid. The .alert-backdrop scrim keeps
+     its alpha by design. */
+  background: var(--surface-solid);
 }
 .alert-title {
   font-family: var(--fd);
