@@ -353,6 +353,7 @@ export function SchemaDesignerCanvas({
                 // (no backdrop-filter exists to rescue a translucent tint) and
                 // gets the slight per-theme float shadow.
                 background: "var(--surface-solid)",
+                color: "var(--ink)",
                 border: `1px solid ${focused ? tone : "var(--hair)"}`,
                 borderRadius: 10,
                 overflow: "hidden",
