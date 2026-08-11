@@ -11,7 +11,15 @@ vi.mock("@/lib/requireMarketingUser", () => ({
   requireMarketingUser: h.requireMarketingUser,
 }));
 
+// SearchPanel is a client component using the app-router hooks.
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace: vi.fn() }),
+  usePathname: () => "/intel",
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 import IntelPage from "./page";
+import { STUB_BADGE_TEXT } from "@/components/intel/status";
 
 function stubFetch(status: number, body: unknown) {
   vi.stubGlobal(
@@ -46,18 +54,31 @@ describe("intel/page.tsx (server component)", () => {
     expect(h.requireMarketingUser).toHaveBeenCalled();
   });
 
-  test("renders the title-only header and the sources manager", async () => {
+  test("renders search on top and the sources manager below — no separate search page", async () => {
     stubFetch(200, { sources: [] });
     render(await IntelPage());
 
     expect(
       screen.getByRole("heading", { level: 1, name: /competitor intel/i }),
     ).toBeInTheDocument();
+    // The search bar lives on this page now (the old /intel/search 308s here).
+    expect(
+      screen.getByRole("searchbox", { name: /search competitor intel/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /^search$/i })).not.toBeInTheDocument();
     expect(await screen.findByText(/no sources yet/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /^search$/i })).toHaveAttribute(
-      "href",
-      "/intel/search",
-    );
+  });
+
+  test("the embedding-provider badge stays off the search surface (FTS + gateway)", async () => {
+    stubFetch(200, { sources: [] });
+    render(await IntelPage());
+    // The stub-embeddings badge belongs on the document/source pages, where
+    // the dormant pgvector pipeline is deliberately visible — never here.
+    expect(screen.queryByText(STUB_BADGE_TEXT)).not.toBeInTheDocument();
+    // The old static "synthesis deferred" panel is gone with it.
+    expect(
+      screen.queryByText(/answer synthesis pending sign-off/i),
+    ).not.toBeInTheDocument();
   });
 
   test("surfaces the not-provisioned state through the manager", async () => {

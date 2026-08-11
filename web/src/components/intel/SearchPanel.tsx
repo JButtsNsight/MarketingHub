@@ -91,7 +91,7 @@ export function SearchPanel() {
       // unmount/remount runs this cleanup once at dev mount, and without the
       // reset the remount would skip the initial URL-driven search while the
       // generation bump discards the first run's in-flight response —
-      // leaving /intel/search?q=… stuck on "Searching…" forever in dev.
+      // leaving /intel?q=… stuck on "Searching…" forever in dev.
       // (Production single-mounts, so the reset is a no-op there.)
       generation.current += 1;
       ranInitial.current = false;
@@ -247,18 +247,31 @@ export function SearchPanel() {
 
   return (
     <div className="stack">
-      <form className="search-bar surface control" onSubmit={onSubmit} role="search">
-        <input
-          type="search"
-          aria-label="Search competitor intel"
-          placeholder="Ask about the competitor corpus…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      {/* One full-width row: the bar takes the free space (the shared
+          .search-bar cap is lifted here — this page's search IS the surface),
+          filter and submit sit beside it. */}
+      <form
+        onSubmit={onSubmit}
+        role="search"
+        style={{ display: "flex", alignItems: "center", gap: "10px" }}
+      >
+        <div
+          className="search-bar surface control"
+          style={{ flex: "1 1 auto", maxWidth: "none", minWidth: 0 }}
+        >
+          <input
+            type="search"
+            aria-label="Search competitor intel"
+            placeholder="Ask about the competitor corpus…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
         {sources && sources.length > 0 ? (
           <select
             aria-label="Filter by source"
             className="surface control"
+            style={{ width: "auto", flex: "0 0 auto" }}
             value={sourceId}
             onChange={(e) => setSourceId(e.target.value)}
           >
@@ -270,7 +283,7 @@ export function SearchPanel() {
             ))}
           </select>
         ) : null}
-        <button type="submit" className="btn-primary">
+        <button type="submit" className="btn-primary" style={{ flex: "0 0 auto" }}>
           Search
         </button>
       </form>

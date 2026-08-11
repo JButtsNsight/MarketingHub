@@ -17,7 +17,7 @@ const nav = vi.hoisted(() => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: nav.replace }),
-  usePathname: () => "/intel/search",
+  usePathname: () => "/intel",
   useSearchParams: () => nav.params,
 }));
 
@@ -189,7 +189,7 @@ describe("SearchPanel — keyword phase", () => {
     );
     expect(String(searchCall![0])).toContain("q=pricing+tiers");
     // The query is written to the URL (shareable, q-param precedent).
-    expect(nav.replace).toHaveBeenCalledWith("/intel/search?q=pricing+tiers");
+    expect(nav.replace).toHaveBeenCalledWith("/intel?q=pricing+tiers");
   });
 
   test("keyword-only mode says plainly that no answer is coming", async () => {
@@ -213,7 +213,7 @@ describe("SearchPanel — keyword phase", () => {
     // Regression: the unmount cleanup used to bump the stale-response
     // generation without re-arming the initial-search guard, so StrictMode's
     // simulated remount skipped the search AND discarded the first run's
-    // in-flight response — every dev open of a shared /intel/search?q= link
+    // in-flight response — every dev open of a shared /intel?q= link
     // sat on "Searching…" forever.
     stubFetch(routes(keywordOnly([fts()], "alpha")));
     nav.params = new URLSearchParams("q=alpha");
