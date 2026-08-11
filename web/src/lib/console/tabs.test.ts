@@ -18,10 +18,10 @@ const APP_DIR = join(process.cwd(), "src/app/(app)");
 describe("AUTH_TABS (Wave 3-partial wiring)", () => {
   test("exact order: Overview, Users, Providers, Impersonation", () => {
     expect(AUTH_TABS).toEqual([
-      { href: "/auth", label: "Overview" },
-      { href: "/auth/users", label: "Users" },
-      { href: "/auth/providers", label: "Providers" },
-      { href: "/auth/impersonate", label: "Impersonation" },
+      { href: "/admin/auth", label: "Overview" },
+      { href: "/admin/auth/users", label: "Users" },
+      { href: "/admin/auth/providers", label: "Providers" },
+      { href: "/admin/auth/impersonate", label: "Impersonation" },
     ]);
   });
 });

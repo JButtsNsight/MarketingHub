@@ -18,7 +18,6 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Table Editor",
       "SQL Editor",
       "Database",
-      "Authentication",
       "Storage",
       "Edge Functions",
       "Realtime",
@@ -157,6 +156,16 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/admin/cloud";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Cloud"]);
+  });
+
+  it("keeps Admin lit across the folded-in /admin/auth subtree", () => {
+    h.pathname = "/admin/auth";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Admin"]);
+    cleanup();
+    h.pathname = "/admin/auth/providers";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Admin"]);
   });
 
   it("lights Competitor Intel on /intel", () => {

@@ -50,7 +50,7 @@ const STORAGE_COLUMNS: Column<StorageEntry>[] = [
 const EXPLORE = [
   { href: "/database", title: "Database", desc: "Rows, schema, and RLS for marketinghub.templates." },
   { href: "/storage", title: "Storage", desc: "The private campaign-templates bucket." },
-  { href: "/auth", title: "Authentication", desc: "Cognito + Google SAML and your session." },
+  { href: "/admin/auth", title: "Authentication", desc: "Cognito session, GoTrue users, SSO, impersonation." },
   { href: "/api-reference", title: "API", desc: "PostgREST, GraphQL, and Storage endpoints." },
   { href: "/infrastructure", title: "Infrastructure", desc: "Services, backups, and observability." },
 ];

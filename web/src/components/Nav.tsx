@@ -17,7 +17,6 @@ export type IconKey =
   | "review"
   | "suppressions"
   | "intel"
-  | "auth"
   | "edgeFunctions"
   | "realtime"
   | "api"
@@ -53,9 +52,11 @@ export interface NavGroup {
 /**
  * Console information architecture. The platform group mirrors Supabase
  * Studio's nav — same item names, same order (Table Editor, SQL Editor,
- * Database, Authentication, Storage, Edge Functions, Realtime, API Docs) —
- * so it reads 1:1 to anyone who knows Studio. The marketing product and
- * project/ops items follow in their own groups (Studio has no equivalent).
+ * Database, Storage, Edge Functions, Realtime, API Docs) — so it reads 1:1
+ * to anyone who knows Studio, with ONE deliberate deviation: Authentication
+ * lives under the Admin area (/admin/auth), not in the platform group. The
+ * marketing product and project/ops items follow in their own groups (Studio
+ * has no equivalent).
  */
 export const NAV_GROUPS: NavGroup[] = [
   { items: [{ href: "/overview", label: "Overview", icon: "overview" }] },
@@ -73,7 +74,6 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "database",
         match: "/database/",
       },
-      { href: "/auth", label: "Authentication", icon: "auth" },
       { href: "/storage", label: "Storage", icon: "storage" },
       // Wave 5: Studio slots Edge Functions and Realtime right after Storage.
       { href: "/functions", label: "Edge Functions", icon: "edgeFunctions" },
@@ -113,10 +113,12 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Project",
     items: [
       { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
-      // /admin is the ops landing page; Cloud Features (/admin/cloud) is its
-      // own nav item nested beneath it, so Admin matches exactly — same
+      // /admin is the ops landing page and also owns the Authentication
+      // section folded beneath it (/admin/auth/*) — hence `match` instead of
+      // `exact`. Cloud Features (/admin/cloud) stays its own nav item, so it
+      // is deliberately OUTSIDE Admin's match scope — same
       // most-specific-match treatment as Table Editor vs. Database.
-      { href: "/admin", label: "Admin", icon: "admin", exact: true },
+      { href: "/admin", label: "Admin", icon: "admin", match: "/admin/auth" },
       { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
       { href: "/settings", label: "Settings", icon: "settings" },
     ],
@@ -213,12 +215,6 @@ const ICONS: Record<IconKey, ReactNode> = {
       <circle cx="12" cy="12" r="9" />
       <path d="M12 7.5a4.5 4.5 0 1 0 4.5 4.5" />
       <path d="M12 12l6-6" />
-    </>
-  ),
-  auth: (
-    <>
-      <path d="M12 3l7 3v6c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6z" />
-      <path d="M9 12l2 2 4-4" />
     </>
   ),
   edgeFunctions: (
