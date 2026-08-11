@@ -324,6 +324,7 @@ export function BackupsClient({
             rows={newestFirst}
             getRowKey={(b) => b.label}
             empty="No completed backups reported yet — the first full backup runs Sunday 02:00."
+            paginate={50}
           />
         </div>
       </Section>

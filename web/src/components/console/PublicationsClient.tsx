@@ -253,6 +253,7 @@ export function PublicationsClient({
           rows={publications}
           getRowKey={(p) => p.name}
           empty="No publications."
+          paginate={50}
         />
       </Section>
       {dialog}

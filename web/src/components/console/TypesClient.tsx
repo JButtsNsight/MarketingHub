@@ -360,6 +360,7 @@ export function TypesClient({
           rows={types}
           getRowKey={keyOf}
           empty="No enum types in the surfaced schemas."
+          paginate={50}
         />
       </Section>
 

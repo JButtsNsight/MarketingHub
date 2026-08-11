@@ -220,6 +220,7 @@ export function TriggersClient({
           rows={triggers}
           getRowKey={keyOf}
           empty="No triggers in the exposed schemas."
+          paginate={50}
         />
       </Section>
 

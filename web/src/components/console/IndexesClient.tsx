@@ -288,11 +288,14 @@ export function IndexesClient({
           </button>
         </div>
 
+        {/* `filtered` is memoized, so paging state survives unrelated re-renders
+            and resets exactly when the query/data changes. */}
         <DataTable
           columns={columns}
           rows={filtered}
           getRowKey={(ix) => `${ix.schema}.${ix.table}.${ix.name}`}
           empty="No indexes in the managed schemas."
+          paginate={50}
         />
       </Section>
       {dialog}

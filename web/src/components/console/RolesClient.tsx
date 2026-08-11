@@ -355,6 +355,7 @@ export function RolesClient({
           rows={roles}
           getRowKey={(r) => r.name}
           empty="No roles."
+          paginate={50}
         />
       </Section>
 
@@ -372,6 +373,7 @@ export function RolesClient({
           rows={memberships}
           getRowKey={(m, i) => `${m.role}->${m.member}-${i}`}
           empty="No role memberships (pg_auth_members is empty)."
+          paginate={50}
         />
       </Section>
 

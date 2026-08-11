@@ -291,6 +291,7 @@ export function PoliciesClient({
           rows={availableTables}
           getRowKey={(t) => `${t.schema}.${t.name}`}
           empty="No tables."
+          paginate={50}
         />
       </Section>
 
@@ -344,6 +345,7 @@ export function PoliciesClient({
           rows={policies}
           getRowKey={(p) => policyKey(p)}
           empty="No policies reported."
+          paginate={50}
         />
       </Section>
       {dialog}

@@ -244,6 +244,7 @@ export function WebhooksClient({
           rows={webhooks}
           getRowKey={(h) => `${h.schema}.${h.table}.${h.name}`}
           empty="No database webhooks."
+          paginate={50}
         />
       </Section>
       {dialog}

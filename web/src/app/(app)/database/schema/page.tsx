@@ -4,9 +4,10 @@ import { Section } from "@/components/ui/Section";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { SchemaTableList } from "@/components/console/SchemaTableList";
 import { Surface } from "@/components/Surface";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { listEditorTables, type EditorColumn, type EditorTable } from "@/lib/console/tables";
+import { listEditorTables, type EditorTable } from "@/lib/console/tables";
 import { listExtensions, type PgExtension } from "@/lib/console/pgmeta";
 import { DB_TABS } from "@/lib/console/tabs";
 
@@ -16,42 +17,6 @@ export const dynamic = "force-dynamic";
 export const metadata = {
   title: "Schema · MarketingHub",
 };
-
-const COLUMN_COLUMNS: Column<EditorColumn>[] = [
-  {
-    key: "name",
-    header: "column",
-    mono: true,
-    render: (c) => (
-      <>
-        {c.name}{" "}
-        {c.isPrimaryKey ? <Badge tone="var(--data-1)">PK</Badge> : null}
-      </>
-    ),
-  },
-  { key: "dataType", header: "type", mono: true, width: "220px", render: (c) => c.dataType },
-  {
-    key: "nullable",
-    header: "nullable",
-    width: "90px",
-    render: (c) => (c.isNullable ? "yes" : "no"),
-  },
-  {
-    key: "default",
-    header: "default",
-    mono: true,
-    render: (c) =>
-      c.defaultValue ? (
-        <span title={c.defaultValue}>
-          {c.defaultValue.length > 48
-            ? `${c.defaultValue.slice(0, 47)}…`
-            : c.defaultValue}
-        </span>
-      ) : (
-        "—"
-      ),
-  },
-];
 
 const EXTENSION_COLUMNS: Column<PgExtension>[] = [
   { key: "name", header: "extension", mono: true },
@@ -143,26 +108,9 @@ export default async function SchemaPage() {
             title={schema}
             description={`${tables.filter((t) => t.schema === schema).length} tables`}
           >
-            <div className="stack">
-              {tables
-                .filter((t) => t.schema === schema)
-                .map((t) => (
-                  <div key={`${t.schema}.${t.name}`}>
-                    <p className="eyebrow">
-                      {t.name}{" "}
-                      <span className="mono">
-                        · {t.rowsEstimate.toLocaleString()} rows · {t.size}
-                      </span>
-                    </p>
-                    <DataTable
-                      columns={COLUMN_COLUMNS}
-                      rows={t.columns}
-                      getRowKey={(c) => c.name}
-                      empty="No columns."
-                    />
-                  </div>
-                ))}
-            </div>
+            {/* Client island: pages the table sections 10 at a time (the
+                unbounded dimension of this page) with the shared pager. */}
+            <SchemaTableList tables={tables.filter((t) => t.schema === schema)} />
           </Section>
         ))}
 

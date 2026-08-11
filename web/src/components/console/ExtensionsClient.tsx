@@ -185,6 +185,7 @@ export function ExtensionsClient({
         rows={extensions}
         getRowKey={(e) => e.name}
         empty="No extensions reported."
+        paginate={50}
       />
       {dialog}
     </div>

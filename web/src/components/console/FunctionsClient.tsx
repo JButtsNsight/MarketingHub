@@ -245,6 +245,7 @@ export function FunctionsClient({
           rows={functions}
           getRowKey={(f) => String(f.oid)}
           empty="No functions in these schemas."
+          paginate={50}
         />
       </Section>
 
