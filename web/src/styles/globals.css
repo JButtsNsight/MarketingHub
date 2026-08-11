@@ -123,10 +123,11 @@ a:hover {
   gap: 16px;
 }
 .word {
-  /* Single letterspaced all-caps wordmark: MARKETING HUB. */
-  font-family: var(--fd);
+  /* Single letterspaced all-caps wordmark: MARKETING HUB. Marcellus serif is
+     the one deliberate exception to the app-wide Geist unification. */
+  font-family: "Marcellus", serif;
   font-size: 15px;
-  font-weight: 500;
+  font-weight: 400; /* Marcellus ships 400 only */
   text-transform: uppercase;
   letter-spacing: 0.3em;
   margin-right: -0.3em; /* trim the trailing letter-space */
@@ -1347,6 +1348,17 @@ html[data-theme="dark"] .sqled .tok-invalid {
   flex-direction: column;
   gap: 2px;
   align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+/* SQL text and names must never escape the rail card — ellipsize, don't overflow. */
+.sqlconsole-rail .teditor-tname,
+.sqlconsole-hentry > span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 @media (max-width: 900px) {
   .sqlconsole {
@@ -1724,10 +1736,11 @@ html[data-theme="dark"] .chart-line {
 }
 .sso-wordmark {
   /* Single letterspaced all-caps wordmark: MARKETING HUB. The negative right
-     margin trims the trailing letter-space so centering holds. */
-  font-family: var(--fd);
+     margin trims the trailing letter-space so centering holds. Marcellus =
+     the one deliberate exception to the app-wide Geist unification. */
+  font-family: "Marcellus", serif;
   font-size: 1.15rem;
-  font-weight: 500;
+  font-weight: 400; /* Marcellus ships 400 only */
   text-transform: uppercase;
   letter-spacing: 0.3em;
   color: #f4f4f4;

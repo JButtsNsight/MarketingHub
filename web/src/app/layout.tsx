@@ -4,6 +4,7 @@ import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
 // Geist Sans — the one UI + display family across BOTH themes (replaced the
 // Marcellus/DM Sans light stack; hierarchy differentiates via weight/size).
+import "@fontsource/marcellus/400.css";
 import "@fontsource/geist-sans/400.css";
 import "@fontsource/geist-sans/500.css";
 import "@fontsource/geist-sans/600.css";
