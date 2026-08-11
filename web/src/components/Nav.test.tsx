@@ -23,7 +23,6 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Realtime",
       "API Docs",
       "Reports",
-      "Logs",
     ]);
   });
 
@@ -57,6 +56,8 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       ["Authentication", "/admin/auth"],
       ["Advisors", "/admin/advisors"],
       ["Cloud", "/admin/cloud"],
+      ["Logs", "/logs"],
+      ["Infrastructure", "/infrastructure"],
     ]);
   });
 
@@ -71,11 +72,10 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("keeps Project down to Infrastructure and Settings", () => {
+  it("keeps Project down to Settings", () => {
     const project = NAV_GROUPS.find((g) => g.label === "Project");
     expect(project).toBeDefined();
     expect(project!.items.map((i) => [i.label, i.href])).toEqual([
-      ["Infrastructure", "/infrastructure"],
       ["Settings", "/settings"],
     ]);
   });
@@ -99,13 +99,15 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     expect(byLabel["Realtime"]).toBe("/realtime");
   });
 
-  it("routes the Wave-6 observability surfaces at /reports and /logs", () => {
+  it("routes Reports on Platform and Logs under Admin", () => {
     const platform = NAV_GROUPS.find((g) => g.label === "Platform")!;
-    const byLabel = Object.fromEntries(
-      platform.items.map((i) => [i.label, i.href]),
-    );
-    expect(byLabel["Reports"]).toBe("/reports");
-    expect(byLabel["Logs"]).toBe("/logs");
+    const admin = NAV_GROUPS.find((g) => g.label === "Admin")!;
+    expect(
+      Object.fromEntries(platform.items.map((i) => [i.label, i.href]))["Reports"],
+    ).toBe("/reports");
+    expect(
+      Object.fromEntries(admin.items.map((i) => [i.label, i.href]))["Logs"],
+    ).toBe("/logs");
   });
 });
 

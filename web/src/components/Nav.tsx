@@ -81,9 +81,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/realtime", label: "Realtime", icon: "realtime" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
       // Wave 6: Studio's observability pair — Reports (canned Logflare
-      // metrics) then Logs (explorer + drains subtree).
       { href: "/reports", label: "Reports", icon: "reports" },
-      { href: "/logs", label: "Logs", icon: "logs" },
     ],
   },
   {
@@ -118,12 +116,15 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/auth", label: "Authentication", icon: "auth" },
       { href: "/admin/advisors", label: "Advisors", icon: "advisors" },
       { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
+      // Logs (explorer + drains subtree) and Infrastructure are ops surfaces —
+      // they live under Admin even though their URLs predate the group.
+      { href: "/logs", label: "Logs", icon: "logs" },
+      { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
     ],
   },
   {
     label: "Project",
     items: [
-      { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
       { href: "/settings", label: "Settings", icon: "settings" },
     ],
   },
