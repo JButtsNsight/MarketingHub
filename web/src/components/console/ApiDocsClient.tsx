@@ -186,7 +186,7 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
           description={
             isPublic
               ? undefined
-              : "Non-public schemas select the target with Accept-Profile (reads) / Content-Profile (writes)."
+              : "This schema is selected with Accept-Profile (reads) / Content-Profile (writes)."
           }
         >
           <div className="stack">
@@ -205,7 +205,7 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
           description={
             isPublic
               ? "The service-role client runs server-side only."
-              : "The non-default schema is selected with .schema(); the service-role client runs server-side only."
+              : ".schema() selects this schema; the service-role client runs server-side only."
           }
         >
           <div className="stack">

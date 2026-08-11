@@ -300,14 +300,6 @@ export function SearchPanel() {
 
       {error ? <ErrorState error={error} onRetry={() => void runSearch(query, sourceId)} /> : null}
 
-      {phase.name === "idle" && !error ? (
-        <p className="muted">
-          Keyword search over everything pasted into competitor intel, with a
-          Claude-synthesized, passage-cited answer when the gateway is
-          configured. Results carry document and source provenance.
-        </p>
-      ) : null}
-
       {phase.name === "loading" ? <p className="muted">Searching…</p> : null}
 
       {phase.name === "done" ? (
@@ -315,9 +307,8 @@ export function SearchPanel() {
           <Surface className="empty-state" glint>
             <h2>No matches</h2>
             <p>
-              No passage in the corpus matched “{phase.q}”. Documents added in
-              the last minute may still be waiting on the chunking worker —
-              check their status on the source page.
+              No passage matched “{phase.q}” — recent documents may still be
+              chunking.
             </p>
           </Surface>
         ) : (

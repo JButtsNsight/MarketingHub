@@ -53,13 +53,13 @@ describe("intel/search/page.tsx (server component)", () => {
     expect(h.requireMarketingUser).toHaveBeenCalled();
   });
 
-  test("renders the agentic search panel with honest idle copy", async () => {
+  test("renders the agentic search panel", async () => {
     render(await IntelSearchPage());
     expect(
       screen.getByRole("heading", { name: /intel search/i }),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/keyword search over everything pasted/i),
+      await screen.findByRole("searchbox", { name: /search competitor intel/i }),
     ).toBeInTheDocument();
   });
 

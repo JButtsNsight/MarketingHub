@@ -92,9 +92,8 @@ export default async function ReportsPage() {
         <Surface className="empty-state" glint>
           <h2>Analytics unavailable</h2>
           <p>
-            Logflare did not answer through the data API — the staged W6
-            analytics route/token apply is still pending, or the service is
-            unreachable. Nothing else in the console is affected.
+            Logflare did not answer through the data API — nothing else is
+            affected.
           </p>
         </Surface>
       </>

@@ -126,9 +126,7 @@ export default async function CampaignsPage() {
         <Surface className="empty-state" glint>
           <h2>No campaigns yet</h2>
           <p>
-            Create your first SMS campaign — pick a text template, a contact
-            list, and a weekday send slot (8:00 AM – 1:00 PM in your chosen US
-            time zone).
+            Pick a text template, a contact list, and a weekday send slot.
           </p>
           <Link className="btn-primary" href="/campaigns/new">
             New campaign

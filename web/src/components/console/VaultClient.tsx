@@ -517,7 +517,7 @@ export function VaultClient({
       <Section
         eyebrow="supabase_vault"
         title="Secrets"
-        description="Encrypted at rest inside Postgres. This list is metadata only — values are decrypted one at a time through the audited reveal, never in a listing."
+        description="Metadata only — values are revealed one at a time, never listed."
         actions={
           <button
             type="button"

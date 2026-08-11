@@ -37,9 +37,8 @@ export default async function NewCampaignPage() {
         <Surface className="empty-state" glint>
           <h2>No contact lists yet</h2>
           <p>
-            A campaign needs an audience. Upload a sheet of contacts (CSV) or
-            link a Monday.com board first — saved lists are reusable across
-            campaigns.
+            A campaign needs an audience — upload a CSV or link a Monday.com
+            board first.
           </p>
           <Link className="btn-primary" href="/campaigns/lists/new">
             Create a contact list

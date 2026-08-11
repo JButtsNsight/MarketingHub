@@ -114,8 +114,8 @@ export default async function SchedulePage() {
         <Surface className="empty-state" glint>
           <h2>Nothing scheduled</h2>
           <p>
-            No blasts are on the calendar. Scheduled, paused, and actively
-            sending campaigns show up here, grouped by send day.
+            Scheduled, paused, and sending campaigns appear here, grouped by
+            send day.
           </p>
           <Link className="btn-primary" href="/campaigns/new">
             New campaign

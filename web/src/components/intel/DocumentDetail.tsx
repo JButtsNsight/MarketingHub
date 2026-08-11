@@ -111,7 +111,7 @@ export function DocumentDetail({
         ) : null}
       </Section>
 
-      <Section title="Content" description="Pasted text — the chunker splits on headings, paragraphs, and sentences.">
+      <Section title="Content">
         <pre className="code-pre">{doc.content}</pre>
       </Section>
     </div>

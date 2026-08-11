@@ -42,11 +42,8 @@ export default async function ApiReferencePage() {
           <p className="ref-note">
             <Badge>note</Badge>
             <span>
-              The data API is <strong>private</strong> (internal ALB → Kong, ACM
-              Private CA TLS). The <code>service_role</code> key is server-only —
-              it is never sent to the browser; this console proxies every call
-              server-side after the Cognito group gate. The examples below print{" "}
-              <code>$SUPABASE_*</code> placeholders, never a real secret.
+              The data API is private — examples print placeholders, never a
+              real secret.
             </span>
           </p>
         </Section>

@@ -83,7 +83,7 @@ export default async function StoragePage() {
       <Section
         eyebrow="storage"
         title="S3 protocol"
-        description="The Storage API speaks the S3 wire protocol for any S3-compatible client — reachable from inside the VPC only."
+        description="S3-compatible API, reachable from inside the VPC only."
       >
         <KeyValue
           items={[

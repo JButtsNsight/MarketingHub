@@ -238,7 +238,7 @@ export function FunctionsClient({
       <Section
         eyebrow="Routines"
         title="Functions"
-        description="Live routines from pg_proc across marketinghub, public, and pgmq_public. Dropping a function is DDL — it runs behind a confirmation."
+        description="Live routines from pg_proc across marketinghub, public, and pgmq_public."
       >
         <DataTable
           columns={columns}

@@ -81,8 +81,8 @@ export default async function TemplatesPage({
           <h2>No templates found</h2>
           <p>
             {q || category || type
-              ? "No templates match the current search and filters. Try clearing them."
-              : "Nothing here yet — upload your first campaign template to get started."}
+              ? "No templates match the current search and filters — try clearing them."
+              : "Upload your first campaign template to get started."}
           </p>
           <Link className="btn-primary" href="/templates/new">
             Upload a template

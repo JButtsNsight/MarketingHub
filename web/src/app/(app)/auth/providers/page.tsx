@@ -114,13 +114,13 @@ const MFA_ROWS: RefRow[] = [
   {
     label: "Per-user factors",
     detail:
-      "Enrolled factors (TOTP / phone / WebAuthn) are per-user records — GoTrue's admin API exposes them only per user, never in aggregate. They are shown read-only in a user's detail on the Users tab.",
+      "Enrolled factors are shown read-only in each user's detail on the Users tab.",
     status: "info",
   },
   {
     label: "Global MFA policy",
     detail:
-      "Factor-type enroll/verify toggles and limits are GOTRUE_MFA_* env vars on the auth container. GoTrue v2.186.0 has no admin endpoint that reads back its runtime config, so live values cannot be displayed here.",
+      "GOTRUE_MFA_* env vars on the auth container — no runtime read endpoint.",
     status: "info",
   },
 ];
@@ -148,10 +148,8 @@ export default async function AuthConfigPage() {
           <Surface className="empty-state" glint>
             <h2>GoTrue unreachable</h2>
             <p>
-              The GoTrue auth service did not answer through Kong&apos;s
-              always-on auth route, so its configuration and SSO providers
-              cannot be read right now. App sign-in is Cognito and does not
-              depend on GoTrue. Nothing else in the console is affected.
+              GoTrue did not answer through Kong — app sign-in is Cognito and
+              unaffected.
             </p>
           </Surface>
         </>
@@ -194,7 +192,7 @@ export default async function AuthConfigPage() {
         <Section
           eyebrow="Providers"
           title="Sign-in providers"
-          description="Live flags from GoTrue's settings endpoint. App identity is Cognito/SAML today — these providers serve no login traffic, and their config is env-only on the auth container (display-only here)."
+          description="Live GoTrue flags — app sign-in is Cognito/SAML; these serve no login traffic."
         >
           <KeyValue
             items={[
@@ -245,7 +243,7 @@ export default async function AuthConfigPage() {
         <Section
           eyebrow="SSO"
           title="SSO / SAML"
-          description="Registered SAML identity providers in GoTrue. Providers are created and changed only by a deliberate operator action — never from this console."
+          description="Registered SAML identity providers — changed only by deliberate operator action."
         >
           <KeyValue
             items={[
@@ -267,11 +265,8 @@ export default async function AuthConfigPage() {
             <Surface className="empty-state" glint>
               <h2>No SSO providers</h2>
               <p>
-                GoTrue has no SAML identity provider registered. The external
-                SAML deliverable (IdP metadata from the identity provider
-                side) is still pending — that cutover is Wave 3&apos;s blocked
-                remainder. Until it lands, sign-in stays on Cognito and this
-                list is honestly empty.
+                GoTrue has no SAML identity provider registered; sign-in stays
+                on Cognito.
               </p>
             </Surface>
           )}
@@ -280,7 +275,7 @@ export default async function AuthConfigPage() {
         <Section
           eyebrow="Email"
           title="Email templates"
-          description="Self-hosted GoTrue reads each auth email template from an env-configured URL — these are the variable names, not live values."
+          description="Each template is an env-configured URL — variable names shown, not live values."
         >
           <DataTable
             columns={TEMPLATE_COLUMNS}
@@ -290,18 +285,13 @@ export default async function AuthConfigPage() {
           <p className="ref-note" style={{ marginTop: "14px" }}>
             <Badge>reference</Badge>
             <span>
-              {REFERENCE_DISCLAIMER} Template values are URLs GoTrue fetches
-              at send time; it exposes no read API for them, so template
-              content is not viewable from this console.
+              {REFERENCE_DISCLAIMER} GoTrue exposes no read API for template
+              content.
             </span>
           </p>
         </Section>
 
-        <Section
-          eyebrow="MFA"
-          title="Multi-factor authentication"
-          description="Where MFA state actually lives at the pinned GoTrue — per-user factors in the Users detail, global policy in env."
-        >
+        <Section eyebrow="MFA" title="Multi-factor authentication">
           <RefList items={MFA_ROWS} />
         </Section>
       </div>

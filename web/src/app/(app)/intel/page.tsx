@@ -21,13 +21,15 @@ export default async function IntelPage() {
 
   return (
     <>
-      <PageHeader title="Competitor Intel" />
+      <PageHeader
+        title="Competitor Intel"
+        actions={
+          <Link className="type-chip" href="/intel/search">
+            Search
+          </Link>
+        }
+      />
       <div className="stack">
-        <p className="muted">
-          Paste competitor material into sources; documents are chunked,
-          embedded, and searchable on the{" "}
-          <Link href="/intel/search">semantic search</Link> page.
-        </p>
         <SourcesManager />
       </div>
     </>

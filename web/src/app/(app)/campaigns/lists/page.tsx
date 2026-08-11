@@ -102,10 +102,7 @@ export default async function ContactListsPage() {
       ) : (
         <Surface className="empty-state" glint>
           <h2>No contact lists yet</h2>
-          <p>
-            Upload a sheet of contacts (CSV) or link a Monday.com board — saved
-            lists become the audiences you pick when building a campaign.
-          </p>
+          <p>Upload a CSV of contacts or link a Monday.com board.</p>
           <Link className="btn-primary" href="/campaigns/lists/new">
             New list
           </Link>

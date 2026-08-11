@@ -87,9 +87,7 @@ export default async function AuthPage() {
             <Badge>reference</Badge>
             <span>
               {REFERENCE_DISCLAIMER} Live Cognito user lists live in the AWS
-              console. GoTrue&apos;s own user store (empty by design today)
-              and auth configuration are browsable read-only on the Users and
-              Providers tabs.
+              console.
             </span>
           </p>
         </Section>

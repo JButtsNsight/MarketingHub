@@ -90,10 +90,6 @@ describe("database/backups/page.tsx (server component)", () => {
     expect(
       screen.getByText(/host reporter cron is not installed/),
     ).toBeInTheDocument();
-    // Runbook §12 pointer for the installer.
-    expect(
-      screen.getByText(/§12 of docs\/runbooks\/marketinghub-app-deploy\.md/),
-    ).toBeInTheDocument();
     // No snapshot ⇒ no PITR window to cross-check.
     expect(h.getLastArchivedAt).not.toHaveBeenCalled();
   });

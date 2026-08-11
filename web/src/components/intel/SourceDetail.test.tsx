@@ -92,7 +92,7 @@ describe("SourceDetail", () => {
     expect(screen.getByText("provider exploded")).toBeInTheDocument();
     // Honest queue-drain note while anything is pending/processing.
     expect(screen.getByText(/1 awaiting embedding/i)).toBeInTheDocument();
-    expect(screen.getByText(/drains the queue about every 30 seconds/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting on the embedding worker/i)).toBeInTheDocument();
   });
 
   test("labels stub mode plainly", async () => {

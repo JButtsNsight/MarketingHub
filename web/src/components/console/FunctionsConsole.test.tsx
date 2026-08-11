@@ -75,12 +75,12 @@ describe("FunctionsConsole — registry list", () => {
     expect(screen.getByRole("button", { name: "Send request" })).toBeDisabled();
   });
 
-  test("logs panel is the Wave-6 placeholder — no controls, no fake data", () => {
+  test("logs panel is an honest placeholder — no controls, no fake data", () => {
     mockInvokeFetch();
     render(<FunctionsConsole initialFunctions={[HELLO]} />);
     expect(
       screen.getByText(
-        /Logs are edge-runtime container stdout; surfacing lands with Logflare \(Wave 6\)/,
+        /Function logs are edge-runtime container stdout — not surfaced here/,
       ),
     ).toBeInTheDocument();
   });

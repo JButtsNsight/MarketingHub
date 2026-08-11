@@ -285,11 +285,7 @@ export function PoliciesClient({
         </p>
       ) : null}
 
-      <Section
-        eyebrow="Tables"
-        title="RLS coverage"
-        description="Every PostgREST-exposed table must have RLS enabled with at least one explicit policy (enforced by the rls-gate in CI/deploy)."
-      >
+      <Section eyebrow="Tables" title="RLS coverage">
         <DataTable
           columns={tableColumns}
           rows={availableTables}

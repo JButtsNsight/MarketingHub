@@ -47,9 +47,8 @@ export default async function VaultPage() {
         <Surface className="empty-state" glint>
           <h2>Vault unreachable</h2>
           <p>
-            vault.secrets did not answer through the data API — the
-            supabase_vault extension ships in the pinned Postgres image, so
-            this is usually a transient pg-meta hiccup. Refresh in a moment.
+            vault.secrets did not answer through the data API — refresh in a
+            moment.
           </p>
         </Surface>
       </>

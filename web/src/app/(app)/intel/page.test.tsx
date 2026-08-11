@@ -54,7 +54,7 @@ describe("intel/page.tsx (server component)", () => {
       screen.getByRole("heading", { level: 1, name: /competitor intel/i }),
     ).toBeInTheDocument();
     expect(await screen.findByText(/no sources yet/i)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /semantic search/i })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: /^search$/i })).toHaveAttribute(
       "href",
       "/intel/search",
     );

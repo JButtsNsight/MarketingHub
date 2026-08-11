@@ -95,10 +95,7 @@ export function SourceForm({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <p className="field-note">
-          {URL_FETCH_NOTE} — content is ingested by pasting text below the
-          source, never by fetching this URL.
-        </p>
+        <p className="field-note">{URL_FETCH_NOTE}</p>
       </div>
       <div className="field">
         <label htmlFor="source-notes">Notes</label>

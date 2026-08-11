@@ -135,9 +135,8 @@ export default async function ContactListDetailPage({
           <Surface className="empty-state" glint>
             <h2>Live Monday membership</h2>
             <p>
-              This list points at the board itself — recipients are fetched
-              from Monday at campaign-creation time, so the audience is always
-              whatever the board holds that day.
+              Recipients are fetched from the Monday board at campaign-creation
+              time.
             </p>
           </Surface>
         )}

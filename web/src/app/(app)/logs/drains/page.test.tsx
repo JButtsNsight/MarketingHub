@@ -46,11 +46,11 @@ describe("logs/drains/page.tsx (server component)", () => {
     expect(screen.getAllByText(/Logflare 1\.36\.1/).length).toBeGreaterThan(0);
     expect(screen.getByText("Not enabled here")).toBeInTheDocument();
     expect(
-      screen.getByText(/no drain exists and none can be created or listed/i),
+      screen.getByText(/no drain exists or can be created/i),
     ).toBeInTheDocument();
 
-    // Coverage story: in-stack vector→Logflare + CloudWatch as infra truth,
-    // plus the headroom-runbook pointer.
+    // Coverage story: in-stack vector→Logflare + CloudWatch as infra truth.
+    // Runbook pointers live in docs, not the UI.
     expect(
       screen.getByText(/In-stack pipeline \(vector → Logflare\)/),
     ).toBeInTheDocument();
@@ -58,8 +58,8 @@ describe("logs/drains/page.tsx (server component)", () => {
       screen.getByText(/CloudWatch — infrastructure log & alarm truth/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/docs\/runbooks\/w6-analytics-headroom\.md/),
-    ).toBeInTheDocument();
+      screen.queryByText(/docs\/runbooks\/w6-analytics-headroom\.md/),
+    ).not.toBeInTheDocument();
   });
 
   test("pipeline map lists exactly the seven shipped sources", async () => {

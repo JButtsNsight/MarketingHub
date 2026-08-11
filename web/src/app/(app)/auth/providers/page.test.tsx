@@ -116,10 +116,10 @@ describe("auth/providers/page.tsx (server component, display-only)", () => {
       screen.getByRole("heading", { name: "No SSO providers" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/external SAML deliverable .* still pending/i),
+      screen.getByText(/no SAML identity provider registered/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Wave 3.s blocked remainder/i),
+      screen.getByText(/sign-in stays on Cognito/i),
     ).toBeInTheDocument();
     // saml_enabled flag still shown truthfully alongside the empty list.
     expect(screen.getByText("Enabled (saml_enabled)")).toBeInTheDocument();
@@ -158,14 +158,14 @@ describe("auth/providers/page.tsx (server component, display-only)", () => {
       ).toBeInTheDocument();
     }
     expect(
-      screen.getByText(/no read API for them, so template content is not viewable/i),
+      screen.getByText(/no read API for template content/i),
     ).toBeInTheDocument();
 
     // MFA: per-user factors live in the Users detail; global policy is env-only.
     expect(screen.getByText(/GOTRUE_MFA_\*/)).toBeInTheDocument();
     expect(screen.getByText(/Users tab/)).toBeInTheDocument();
     expect(
-      screen.getByText(/no admin endpoint that reads back its runtime config/i),
+      screen.getByText(/no runtime read endpoint/i),
     ).toBeInTheDocument();
   });
 
@@ -192,7 +192,7 @@ describe("auth/providers/page.tsx (server component, display-only)", () => {
       screen.getByRole("heading", { name: "GoTrue unreachable" }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Nothing else in the console is affected\./),
+      screen.getByText(/app sign-in is Cognito and unaffected/),
     ).toBeInTheDocument();
     // No section pretends to hold data.
     expect(screen.queryByText("Sign-in providers")).not.toBeInTheDocument();

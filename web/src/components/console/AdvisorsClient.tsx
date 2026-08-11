@@ -182,7 +182,7 @@ export function AdvisorsClient({ initialReport }: { initialReport: AdvisorReport
         <Section
           eyebrow="Advisors"
           title="Checks that could not run"
-          description="These lints failed to execute (e.g. a catalog function that differs across a Postgres point release); the rest still ran."
+          description="These lints failed to execute; the rest still ran."
         >
           <DataTable
             columns={FAILED_COLUMNS}

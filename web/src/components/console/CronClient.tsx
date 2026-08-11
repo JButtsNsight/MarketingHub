@@ -265,7 +265,7 @@ export function CronClient({
       <Section
         eyebrow="Schedule"
         title="New cron job"
-        description="cron.schedule(name, schedule, command). Scheduling by an existing name replaces that job."
+        description="Scheduling with an existing name replaces that job."
       >
         <div className="cron-form">
           <div className="field">

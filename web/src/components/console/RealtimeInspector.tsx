@@ -355,23 +355,12 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
       {unreachable ? (
         <Surface className="empty-state" elevated={false} role="alert">
           <p>
-            <strong>Realtime unreachable — ALB route/env not applied yet.</strong>{" "}
-            The <span className="mono">/realtime/v1/*</span> listener rule, the{" "}
-            <span className="mono">cdk/sql/2026-08-08-w5-realtime.sql</span>{" "}
-            migration and the token-route env (
-            <span className="mono">SUPABASE_JWT_SECRET</span> /{" "}
-            <span className="mono">SUPABASE_ANON_KEY</span>) are operator-applied
-            steps. Until they land this console stays in this honest state and
-            every other page keeps today&apos;s behavior.
+            <strong>Realtime unreachable — ALB route/env not applied yet.</strong>
           </p>
         </Surface>
       ) : null}
 
-      <Section
-        eyebrow="Socket"
-        title="Connection"
-        description="Token minting, expiry and refresh are handled by the foundation: the access-token callback re-runs on every 25s heartbeat, so 300s user JWTs never lapse."
-      >
+      <Section eyebrow="Socket" title="Connection">
         <div className="campaign-actions">
           <span data-testid="rt-connection-status">
             <StatusPill status={chip.kind}>{chip.label}</StatusPill>
@@ -401,17 +390,7 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
 
       <Section
         eyebrow="Channel"
-        title="Join a topic"
-        description={
-          <>
-            W5 DB triggers broadcast id-only <span className="mono">change</span>{" "}
-            events on <span className="mono">mh:inbox</span>,{" "}
-            <span className="mono">mh:schedule</span>,{" "}
-            <span className="mono">mh:campaigns</span> and{" "}
-            <span className="mono">mh:campaign:&lt;id&gt;</span> — join one to
-            watch DML live.
-          </>
-        }
+        title="Join a channel"
         actions={
           joinedTopic ? (
             <button type="button" className="type-chip" onClick={leave}>
@@ -445,22 +424,11 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
             <input type="checkbox" checked readOnly disabled /> private (locked
             on)
           </label>
-          <p className="panel-desc">
-            The foundation wrapper joins every channel as{" "}
-            <span className="mono">private</span>, so the RLS policies on{" "}
-            <span className="mono">realtime.messages</span> decide access:
-            receiving is allowed on <span className="mono">mh:*</span> topics,
-            while sending/presence is allowed on{" "}
-            <span className="mono">mh:inspector:*</span> only — the live-view
-            topics are written exclusively by the DB triggers, so users cannot
-            forge refresh signals for each other.
-          </p>
         </div>
         {!topicIsMh ? (
           <p className="teditor-test">
-            This topic is outside <span className="mono">mh:*</span>, so the
-            private-channel policies will refuse the join and it will land in{" "}
-            <span className="mono">unavailable</span>.
+            This topic is outside <span className="mono">mh:*</span> — the
+            private-channel policies will refuse the join.
           </p>
         ) : null}
         {joinError ? (
@@ -475,11 +443,7 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
         </div>
       </Section>
 
-      <Section
-        eyebrow="Broadcast"
-        title="Send"
-        description="Publishes over the joined channel; the mh_send INSERT policy only permits sends on mh:inspector:* topics (the live-view topics are trigger-owned and receive-only, so a send there resolves &quot;error&quot;). The first send each session asks for confirmation."
-      >
+      <Section eyebrow="Broadcast" title="Send test broadcast">
         <div className="field">
           <label htmlFor="rt-send-event">event</label>
           <input
@@ -521,7 +485,6 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
       <Section
         eyebrow="Presence"
         title="Who's here"
-        description="Track announces this session on the channel (keyed by your email); the list mirrors the channel's presence state on every sync."
         actions={
           <>
             <button
@@ -561,8 +524,8 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
 
       <Section
         eyebrow="Feed"
-        title="Message log"
-        description="Timestamped broadcast, presence and lifecycle events from the wrapper (newest first, capped at 200). Select a row to inspect its full payload below."
+        title="Messages"
+        description="Newest first, capped at 200 — select a row to inspect its payload."
         actions={
           <button
             type="button"

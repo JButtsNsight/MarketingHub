@@ -61,9 +61,7 @@ export default async function LogsPage() {
           <Surface className="empty-state" glint>
             <h2>Analytics unavailable</h2>
             <p>
-              The Logflare analytics service did not answer through the data
-              API — the staged Wave-6 enable (Kong analytics route + access
-              token) has not been applied yet. Nothing else in the console is
+              Logflare did not answer through the data API — nothing else is
               affected.
             </p>
           </Surface>

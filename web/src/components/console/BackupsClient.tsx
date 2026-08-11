@@ -210,8 +210,7 @@ export function BackupsClient({
           <h2>Backup status unreachable</h2>
           <p>
             No pgBackRest snapshot to read — the host reporter cron is not
-            installed (or the status table is missing). Install it per §12 of
-            docs/runbooks/marketinghub-app-deploy.md.
+            installed.
           </p>
         </Surface>
       </div>
@@ -233,10 +232,7 @@ export function BackupsClient({
         ) : null}
         <Surface className="empty-state" glint>
           <h2>Status payload unreadable</h2>
-          <p>
-            The host reporter stored a payload with no parseable stanza —
-            inspect marketinghub.backup_status.payload on the host.
-          </p>
+          <p>The host reporter stored a payload with no parseable stanza.</p>
         </Surface>
       </div>
     );
@@ -266,7 +262,7 @@ export function BackupsClient({
       <Section
         eyebrow="pgBackRest"
         title={`Stanza ${stanza.name}`}
-        description="Host-reported pgbackrest info, captured every 15 minutes into marketinghub.backup_status. Status comes from the stanza's status.code — pgbackrest info exits 0 even when the stanza is broken."
+        description="Host-reported pgbackrest info, captured every 15 minutes."
         actions={
           <>
             {stanza.backupLockHeld ? (
@@ -308,7 +304,7 @@ export function BackupsClient({
       <Section
         eyebrow="Backups"
         title="Backup sets"
-        description="Physical pgBackRest sets, newest first. The nightly pg_dumpall to S3 (03:00) is the logical analog — it does not appear in pgbackrest info."
+        description="Physical pgBackRest sets, newest first."
         actions={<Badge>physical</Badge>}
       >
         <div className="stack">
@@ -335,7 +331,7 @@ export function BackupsClient({
       <Section
         eyebrow="Point-in-time recovery"
         title="Restore window"
-        description="Earliest = when the oldest retained backup set finished; latest = the newest WAL segment Postgres archived (live pg_stat_archiver cross-check, not part of the host snapshot)."
+        description="Earliest = oldest retained set's finish; latest = newest archived WAL segment."
       >
         <KeyValue
           items={[
@@ -367,11 +363,7 @@ export function BackupsClient({
         />
       </Section>
 
-      <Section
-        eyebrow="Restore drill"
-        title="Restore drill"
-        description="Read-only reference — restores and drills are host operations run from the runbook. This console never triggers a backup or a restore."
-      >
+      <Section eyebrow="Restore drill" title="Restore drill">
         <RefList
           items={[
             {

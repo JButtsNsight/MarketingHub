@@ -174,7 +174,7 @@ describe("WebhooksClient", () => {
     );
 
     expect(screen.getByRole("button", { name: "New webhook" })).toBeDisabled();
-    expect(screen.getByText(/NOT applied yet/)).toBeInTheDocument();
-    expect(screen.getByText(/2026-08-07-scope-pg-net\.sql/)).toBeInTheDocument();
+    expect(screen.getByText(/not applied yet/)).toBeInTheDocument();
+    expect(screen.getByText(/creating a webhook is refused/)).toBeInTheDocument();
   });
 });

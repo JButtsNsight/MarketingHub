@@ -183,17 +183,15 @@ export function WebhooksClient({
     <div className="stack">
       <Surface className="empty-state" elevated={false}>
         <p>
-          Database webhooks dispatch through{" "}
-          <span className="mono">supabase_functions.http_request</span> →{" "}
-          <span className="mono">pg_net</span>. Outbound HTTP from Postgres is
-          scoped to the <span className="mono">webhooks_admin</span> role by{" "}
-          <span className="mono">cdk/sql/2026-08-07-scope-pg-net.sql</span>.{" "}
           {ready ? (
-            <>That migration is applied — webhook creation is enabled.</>
+            <>
+              The <span className="mono">pg_net</span> scoping migration is
+              applied — webhook creation is enabled.
+            </>
           ) : (
             <strong>
-              That migration is NOT applied yet, so creating a webhook is
-              refused until it runs.
+              The <span className="mono">pg_net</span> scoping migration is not
+              applied yet — creating a webhook is refused.
             </strong>
           )}
         </p>

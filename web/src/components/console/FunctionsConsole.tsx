@@ -213,11 +213,7 @@ export function FunctionsConsole({
 
   return (
     <div className="stack">
-      <Section
-        eyebrow="Registry"
-        title="Edge Functions"
-        description="Deployed Deno functions, served by the edge-runtime container behind Kong. The marketinghub.edge_functions registry is the source of truth — the app cannot read the runtime's volume."
-      >
+      <Section eyebrow="Registry" title="Edge Functions">
         <DataTable
           columns={columns}
           rows={functions}
@@ -241,8 +237,7 @@ export function FunctionsConsole({
           </div>
           <p className="teditor-test">
             Read-only, from the registry row (version {openFn.version}
-            {openFn.notes ? ` — ${openFn.notes}` : ""}). Edits ship via the
-            staged host script, never from here.
+            {openFn.notes ? ` — ${openFn.notes}` : ""}).
           </p>
           <CodeBlock code={openFn.source} label="typescript" />
         </Surface>
@@ -251,7 +246,7 @@ export function FunctionsConsole({
       <Section
         eyebrow="Invoke"
         title="Invoke tester"
-        description="Runs the function server-side through Kong (/functions/v1/<name>) — 20s timeout, 64KB response cap. Your browser session headers are never forwarded."
+        description="Runs the function server-side — 20s timeout, 64KB response cap."
       >
         <div className="stack">
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
@@ -351,10 +346,9 @@ export function FunctionsConsole({
       </Section>
 
       <Section eyebrow="Logs" title="Logs">
-        {/* Wave-6 placeholder — no fake data, no dead controls. */}
+        {/* Honest placeholder — no fake data, no dead controls. */}
         <p className="teditor-test">
-          Logs are edge-runtime container stdout; surfacing lands with Logflare
-          (Wave 6).
+          Function logs are edge-runtime container stdout — not surfaced here.
         </p>
       </Section>
     </div>

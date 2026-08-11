@@ -45,9 +45,8 @@ export default async function DatabasePage() {
         <Surface className="empty-state" glint>
           <h2>Introspection unavailable</h2>
           <p>
-            postgres-meta did not answer through the data API. The backend may
-            be restarting — refresh in a moment. Row browsing is disabled until
-            live table metadata is available.
+            postgres-meta did not answer through the data API — refresh in a
+            moment.
           </p>
         </Surface>
       )}

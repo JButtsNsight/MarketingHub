@@ -380,7 +380,7 @@ export function ReportsClient({ initial }: { initial: ReportsData }) {
           <ChartPanel
             id="rpt-requests"
             title="API request volume"
-            description={`Requests through Kong per ${interval}, from the edge logs. Buckets with no traffic plot as zero.`}
+            description={`Requests through Kong per ${interval}, from the edge logs.`}
             color="var(--data-1)"
             state={data.volume}
             range={data.range}

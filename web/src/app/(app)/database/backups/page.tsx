@@ -49,10 +49,7 @@ export default async function BackupsPage() {
           <h2>Backup status unreachable</h2>
           <p>
             No pgBackRest snapshot to read — the host reporter cron is not
-            installed yet (or the status table has not been migrated). Install
-            it per §12 of docs/runbooks/marketinghub-app-deploy.md. Backups may
-            still be running on the host; this page just cannot see them until
-            the reporter lands.
+            installed yet.
           </p>
         </Surface>
       </>

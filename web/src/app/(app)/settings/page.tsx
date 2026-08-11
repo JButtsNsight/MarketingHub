@@ -28,7 +28,7 @@ export default async function SettingsPage() {
         <Section
           eyebrow="Runtime"
           title="Connection"
-          description="How this container reaches the backend. Only presence is shown for secrets."
+          description="How this container reaches the backend — secrets show presence only."
         >
           <KeyValue
             items={[
@@ -56,7 +56,7 @@ export default async function SettingsPage() {
         <Section
           eyebrow="Integrations"
           title="SMS Campaigns"
-          description="Monday.com and SimpleTexting credentials. Only presence is shown — token values are never displayed."
+          description="Monday.com and SimpleTexting credentials — presence shown, values never displayed."
         >
           <KeyValue
             items={[
@@ -122,13 +122,6 @@ export default async function SettingsPage() {
               },
             ]}
           />
-        </Section>
-
-        <Section eyebrow="Appearance" title="Theme">
-          <p className="note">
-            Switch between light and dark from the toggle in the masthead. Your
-            choice persists in this browser.
-          </p>
         </Section>
       </div>
     </>

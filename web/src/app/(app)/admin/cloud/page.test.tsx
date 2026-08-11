@@ -80,7 +80,7 @@ describe("admin/cloud/page.tsx (server component)", () => {
     expect(screen.getByText("Skipped pending sign-off")).toBeInTheDocument();
     // The honest reason: compliance decision (no BAA), not a technical gap.
     expect(
-      screen.getByText(/no BAA in place — a compliance decision, not a technical gap/),
+      screen.getByText(/No BAA covers OpenAI — a compliance decision, not a technical gap/),
     ).toBeInTheDocument();
     // And honest self-hosted availability (BYO key), never "cloud-only".
     expect(

@@ -110,20 +110,18 @@ const PIPELINE_COLUMNS: Column<PipelineRoute>[] = [
 const CAPABILITY_ROWS: RefRow[] = [
   {
     label: "Upstream capability",
-    detail:
-      "Log Drains are real self-hosted at our pin: Logflare 1.36.1 ships the drain backend adaptors (custom webhook, OTLP, Datadog, Loki, Amazon S3, Syslog, …), and Supabase Studio configures them through Logflare's management API (/api/backends + /api/rules).",
+    detail: "Log drains ship self-hosted at Logflare 1.36.1.",
     status: "info",
   },
   {
     label: "Not enabled here",
     detail:
-      "This console reaches Logflare only through Kong's analytics route, which exposes the read-only query endpoints (/api/endpoints/query/*). The management API a drain requires is deliberately unreachable, so no drain exists and none can be created or listed from here.",
+      "Kong's analytics route is read-only, so no drain exists or can be created.",
     status: "warn",
   },
   {
     label: "Why it stays off",
-    detail:
-      "Configuring a drain is a write surface — it creates Logflare backends and rules and opens egress from the analytics container to an external destination. The Wave-6 logs surfaces are read-only by design; enabling drains would be a deliberate future infrastructure decision, not a console toggle.",
+    detail: "Drain config is a write surface with external egress — deliberately off.",
     status: "info",
   },
 ];
@@ -133,20 +131,14 @@ const COVERAGE_ROWS: RefRow[] = [
   {
     label: "In-stack pipeline (vector → Logflare)",
     detail:
-      "The supabase-vector container ships all seven service log streams below into the in-stack Logflare (Postgres backend). That is the data behind Logs and Reports — service logs already land in a queryable store without leaving the host.",
+      "Ships the seven service log streams to a queryable in-stack store — the data behind Logs and Reports.",
     status: "ok",
   },
   {
     label: "CloudWatch — infrastructure log & alarm truth",
     detail:
-      "Off-host delivery and alerting already exist where they matter: CloudWatch alarms (CPU, disk, EC2 status checks, unhealthy-container count, backup-job failure) wired to on-call SNS, ALB per-request access logs and VPC flow logs to S3, and the 7-year Object Lock Glacier archive. For infrastructure truth, CloudWatch is the drain.",
+      "CloudWatch alarms, ALB access logs and VPC flow logs cover off-host delivery and alerting.",
     status: "ok",
-  },
-  {
-    label: "Capacity & health watch",
-    detail:
-      "Operating guidance for the analytics pipeline itself (host CPU/memory headroom, analytics/kong container health, query-load symptoms) lives in the runbook: docs/runbooks/w6-analytics-headroom.md.",
-    status: "info",
   },
 ];
 
@@ -160,37 +152,19 @@ export default async function LogDrainsPage() {
       <PageHeader title="Log Drains" />
       <Tabs items={LOGS_TABS} />
 
-      <p className="ref-note" style={{ marginBottom: "18px" }}>
-        <Badge>reference</Badge>
-        <span>
-          Static capability panel — nothing on this page queries Logflare. Log
-          Drains are not enabled in this stack; the sections below explain why,
-          and what covers the use-case instead.
-        </span>
-      </p>
-
       <div className="stack">
         <Section
           eyebrow="Capability"
           title="Drains are real upstream — and off here"
-          description="Logflare 1.36.1 supports log drains self-hosted, but this console's analytics route is read-only, so there is nothing to configure on this page."
         >
           <RefList items={CAPABILITY_ROWS} />
         </Section>
 
-        <Section
-          eyebrow="Coverage"
-          title="What does the drain job instead"
-          description="Durable, queryable, alertable log delivery already exists on two paths."
-        >
+        <Section eyebrow="Coverage" title="What does the drain job instead">
           <RefList items={COVERAGE_ROWS} />
         </Section>
 
-        <Section
-          eyebrow="Pipeline"
-          title="vector → Logflare routing map"
-          description="The seven service log streams vector ships in-stack — the exact sources the Logs explorer queries."
-        >
+        <Section eyebrow="Pipeline" title="vector → Logflare routing map">
           <DataTable
             columns={PIPELINE_COLUMNS}
             rows={PIPELINE_ROUTES}

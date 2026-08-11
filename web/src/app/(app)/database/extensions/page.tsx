@@ -77,7 +77,7 @@ export default async function ExtensionsPage() {
         <Section
           eyebrow="Postgres"
           title="Extensions"
-          description="Installed extensions carry a version badge; the rest are available to enable. Enable/drop run as the database superuser and ask for confirmation."
+          description="Installed extensions carry a version badge; the rest are available to enable."
         >
           <ExtensionsClient initialExtensions={extensions as ExtensionDto[]} />
         </Section>

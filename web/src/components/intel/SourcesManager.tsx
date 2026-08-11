@@ -154,11 +154,7 @@ export function SourcesManager() {
       {sources.length === 0 ? (
         <Surface className="empty-state" glint>
           <h2>No sources yet</h2>
-          <p>
-            A source groups the competitor material you paste in — a pricing
-            page, a changelog, an analyst note. Create one, then paste text
-            documents into it for semantic search.
-          </p>
+          <p>Create a source, then paste competitor text into it.</p>
         </Surface>
       ) : (
         <DataTable

@@ -152,12 +152,12 @@ afterEach(() => {
 });
 
 describe("SearchPanel — keyword phase", () => {
-  test("starts idle with an honest prompt and NO stub-embeddings badge", async () => {
+  test("starts idle with just the search controls and NO stub-embeddings badge", async () => {
     stubFetch(routes(keywordOnly([])));
     render(<SearchPanel />);
 
     expect(
-      await screen.findByText(/keyword search over everything pasted/i),
+      await screen.findByRole("searchbox", { name: /search competitor intel/i }),
     ).toBeInTheDocument();
     // The embedding pipeline left this surface entirely (it stays on the
     // document/source pages, where it is the honest dormant-parity badge).
@@ -225,14 +225,14 @@ describe("SearchPanel — keyword phase", () => {
     expect(await screen.findByText(/rank 0\.372/)).toBeInTheDocument();
   });
 
-  test("zero matches renders an honest empty state naming the chunking worker", async () => {
+  test("zero matches renders an honest empty state naming chunking lag", async () => {
     stubFetch(routes(keywordOnly([])));
     nav.params = new URLSearchParams("q=unheard-of");
     render(<SearchPanel />);
 
     expect(await screen.findByText(/no matches/i)).toBeInTheDocument();
     expect(
-      screen.getByText(/may still be waiting on the chunking worker/i),
+      screen.getByText(/recent documents may still be chunking/i),
     ).toBeInTheDocument();
   });
 

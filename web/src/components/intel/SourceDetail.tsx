@@ -172,10 +172,7 @@ export function SourceDetail({
         {documents.length === 0 ? (
           <Surface className="empty-state" glint={false} elevated={false}>
             <h2>No documents yet</h2>
-            <p>
-              Paste competitor text below — it&apos;s chunked and queued for
-              embedding, then becomes searchable on the Search page.
-            </p>
+            <p>Paste competitor text below to make it searchable.</p>
           </Surface>
         ) : (
           <DataTable

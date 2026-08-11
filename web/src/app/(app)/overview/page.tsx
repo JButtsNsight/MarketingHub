@@ -218,7 +218,7 @@ export default async function OverviewPage() {
         <Section
           eyebrow="Analytics"
           title="Recent campaigns"
-          description="Newest first. Clicked counts recipients who tapped a tracked link — campaigns without links show a dash."
+          description="Newest first — campaigns without tracked links show a dash for clicks."
         >
           <DataTable
             columns={RECENT_COLUMNS}

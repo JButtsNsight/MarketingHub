@@ -139,11 +139,7 @@ export default async function CampaignDetailPage({
           <StatCard label="Skipped" value={counts.skipped} />
         </div>
 
-        <Section
-          eyebrow="Engagement"
-          title="After the send"
-          description="Clicks come from the tracked short links rewritten into each message; replies from the SimpleTexting webhook; opt-outs are STOP events after this campaign's send."
-        >
+        <Section eyebrow="Engagement" title="After the send">
           <div className="stat-grid">
             <StatCard
               label="Clicked"
