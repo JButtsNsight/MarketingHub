@@ -152,3 +152,48 @@ describe("consent provenance columns", () => {
     expect(contacts[0].consentDate).toBe("Jan 2026");
   });
 });
+
+describe("timezone column", () => {
+  it("captures the timezone cell verbatim (never normalized here); blank → null", () => {
+    const sheet = [
+      "name,phone,timezone",
+      "Ada Lovelace,(555) 000-0001, Pacific/Honolulu ",
+      "Grace Hopper,(555) 000-0002,not-a-zone",
+      "Katherine Johnson,(555) 000-0003,",
+    ].join("\n");
+
+    const parsed = parseContactSheet(sheet);
+    expect(parsed.timezoneHeader).toBe("timezone");
+    // Verbatim raw strings — the repo normalizes at ingest, not the parser.
+    expect(parsed.contacts[0].timezone).toBe("Pacific/Honolulu");
+    expect(parsed.contacts[1].timezone).toBe("not-a-zone");
+    expect(parsed.contacts[2].timezone).toBeNull();
+  });
+
+  it("omits the timezone key entirely when the sheet has no timezone column", () => {
+    const parsed = parseContactSheet("name,phone\nAda,(555) 000-0001\n");
+    expect(parsed.timezoneHeader).toBeNull();
+    expect(parsed.contacts[0]).not.toHaveProperty("timezone");
+  });
+
+  it('matches header variants ("Time Zone", "TZ", "zone") case-insensitively', () => {
+    for (const header of ["Time Zone", "TZ", "zone", "Timezone (IANA)"]) {
+      const parsed = parseContactSheet(
+        `name,phone,${header}\nAda,(555) 000-0001,ET\n`,
+      );
+      expect(parsed.contacts[0].timezone, `header ${header}`).toBe("ET");
+    }
+  });
+
+  it("carries timezone on invalid and duplicate rows too", () => {
+    const sheet = [
+      "name,phone,timezone",
+      "Ada,(555) 000-0001,ET",
+      "Ada Again,(555) 000-0001,CT",
+      "Bad Phone,123,MT",
+    ].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[1]).toMatchObject({ reason: "duplicate", timezone: "CT" });
+    expect(contacts[2]).toMatchObject({ reason: "invalid", timezone: "MT" });
+  });
+});

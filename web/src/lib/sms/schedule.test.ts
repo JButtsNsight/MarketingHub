@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  earliestZonedSendAt,
   formatSlot,
   isWeekday,
   SEND_SLOTS,
@@ -96,6 +97,35 @@ describe("sendAtForZonedSlot", () => {
     expect(sendAtForEasternDate("2026-07-15").toISOString()).toBe(
       sendAtForZonedSlot("2026-07-15", "11:30", "America/New_York").toISOString(),
     );
+  });
+});
+
+describe("earliestZonedSendAt", () => {
+  test("no zones → the fallback zone's instant alone", () => {
+    expect(
+      earliestZonedSendAt("2026-08-05", "08:00", "Pacific/Honolulu", [])
+        .toISOString(),
+    ).toBe("2026-08-05T18:00:00.000Z");
+  });
+
+  test("mixed zones: the easternmost zone wins, null decoding to the fallback", () => {
+    // 08:00 CDT = 13:00Z (via null → fallback) beats 08:00 HST = 18:00Z.
+    expect(
+      earliestZonedSendAt("2026-08-05", "08:00", "America/Chicago", [
+        "Pacific/Honolulu",
+        null,
+      ]).toISOString(),
+    ).toBe("2026-08-05T13:00:00.000Z");
+  });
+
+  test("explicit-only zones do NOT drag the fallback zone in", () => {
+    // Every recipient is HT: the ET fallback must not gate the check.
+    expect(
+      earliestZonedSendAt("2026-08-05", "08:00", "America/New_York", [
+        "Pacific/Honolulu",
+        "Pacific/Honolulu",
+      ]).toISOString(),
+    ).toBe("2026-08-05T18:00:00.000Z");
   });
 });
 

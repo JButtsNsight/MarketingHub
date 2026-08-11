@@ -387,7 +387,7 @@ test('preview: NO listener rules at all (health + webhook + link exceptions are 
   template.resourceCountIs('AWS::ElasticLoadBalancingV2::ListenerRule', 0);
 });
 
-test('optional engagement env (smsLinkBaseUrl / smsFreqCap*) is OMITTED entirely when unset', () => {
+test('optional engagement env (smsLinkBaseUrl / smsFreqCap* / mondayWriteback*) is OMITTED entirely when unset', () => {
   const { template } = makeApp();
   const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
   for (const td of Object.values(taskDefs) as any[]) {
@@ -396,6 +396,9 @@ test('optional engagement env (smsLinkBaseUrl / smsFreqCap*) is OMITTED entirely
       expect(names).not.toContain('SMS_LINK_BASE_URL');
       expect(names).not.toContain('SMS_FREQ_CAP_COUNT');
       expect(names).not.toContain('SMS_FREQ_CAP_DAYS');
+      expect(names).not.toContain('MONDAY_WRITEBACK_ENABLED');
+      expect(names).not.toContain('MONDAY_WRITEBACK_POLL_INTERVAL_MS');
+      expect(names).not.toContain('MONDAY_WRITEBACK_RATE_PER_SEC');
     }
   }
 });
@@ -751,7 +754,7 @@ for (const [mode, make] of MODES) {
     expect(worker.PortMappings).toBeUndefined();
   });
 
-  test(`worker (${mode}): SUPABASE_URL env + service-role/SimpleTexting SECRETS + awslogs`, () => {
+  test(`worker (${mode}): SUPABASE_URL env + service-role/SimpleTexting/Monday SECRETS + awslogs`, () => {
     const { template } = make();
     const td = findWorkerTaskDef(template);
     const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
@@ -767,6 +770,12 @@ for (const [mode, make] of MODES) {
         {
           Name: 'SIMPLETEXTING_API_TOKEN',
           ValueFrom: `${SMS_SECRETS_ARN}:SIMPLETEXTING_API_TOKEN::`,
+        },
+        // Monday write-back — the documented §9.4 exception (same secret+CMK
+        // as the app container's Monday token, JSON-field extraction).
+        {
+          Name: 'MONDAY_API_TOKEN',
+          ValueFrom: `${SMS_SECRETS_ARN}:MONDAY_API_TOKEN::`,
         },
       ]),
     );
@@ -860,5 +869,51 @@ test('worker: WITHOUT the optional context, no SIMPLETEXTING_ACCOUNT_PHONE env a
         expect(e.Name).not.toBe('SIMPLETEXTING_ACCOUNT_PHONE');
       }
     }
+  }
+});
+
+test('worker: optional mondayWriteback* context becomes MONDAY_WRITEBACK_* env on the WORKER only', () => {
+  const app = new App({
+    context: {
+      ...CONTEXT,
+      mondayWritebackEnabled: 'false',
+      mondayWritebackPollMs: '60000',
+      mondayWritebackRatePerSec: '2',
+    },
+  });
+  const template = Template.fromStack(new AppStack(app, 'AppWithWriteback', { env }));
+  const td = findWorkerTaskDef(template);
+  const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+  expect(worker.Environment).toEqual(
+    expect.arrayContaining([
+      { Name: 'MONDAY_WRITEBACK_ENABLED', Value: 'false' },
+      // The exact name the consumer reads (buildMondayWritebackConfigFromEnv,
+      // web/src/worker/monday-writeback.ts) — a rename on either side turns
+      // the operator's poll knob into a silently-dead env var.
+      { Name: 'MONDAY_WRITEBACK_POLL_INTERVAL_MS', Value: '60000' },
+      { Name: 'MONDAY_WRITEBACK_RATE_PER_SEC', Value: '2' },
+    ]),
+  );
+  // Worker-only knobs — the app container never gets them.
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  for (const t of Object.values(taskDefs) as any[]) {
+    for (const c of t.Properties.ContainerDefinitions ?? []) {
+      if (c.Name === 'worker') continue;
+      const names = (c.Environment ?? []).map((e: any) => e.Name);
+      expect(names.filter((n: string) => n.startsWith('MONDAY_WRITEBACK_'))).toHaveLength(0);
+    }
+  }
+});
+
+test('worker: the MONDAY_API_TOKEN write-back secret rides the WORKER in BOTH modes, never as env', () => {
+  for (const { template } of [makeApp(), makePreviewApp()]) {
+    const td = findWorkerTaskDef(template);
+    const worker = td.Properties.ContainerDefinitions.find((c: any) => c.Name === 'worker');
+    expect(worker.Secrets).toEqual(
+      expect.arrayContaining([
+        { Name: 'MONDAY_API_TOKEN', ValueFrom: `${SMS_SECRETS_ARN}:MONDAY_API_TOKEN::` },
+      ]),
+    );
+    expect((worker.Environment ?? []).map((e: any) => e.Name)).not.toContain('MONDAY_API_TOKEN');
   }
 });

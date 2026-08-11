@@ -28,6 +28,14 @@ export interface ParsedContact {
    */
   consentSource?: string | null;
   consentDate?: string | null;
+  /**
+   * Recipient zone, verbatim from the sheet (blank cell → null) — stored
+   * verbatim on the member row too. Normalized to an IANA send zone at
+   * CAMPAIGN time (api/campaigns route): unknown values fall back to the
+   * campaign zone with a per-row note, never a hard reject. Absent when the
+   * sheet has no timezone column.
+   */
+  timezone?: string | null;
 }
 
 export interface ParsedSheet {
@@ -36,6 +44,7 @@ export interface ParsedSheet {
   /** Header titles the phone/name columns resolved to (for UI confirmation). */
   phoneHeader: string;
   nameHeader: string | null;
+  timezoneHeader: string | null;
 }
 
 export class SheetParseError extends Error {}
@@ -137,6 +146,9 @@ const CONSENT_SOURCE_HEADERS = [
   "optin",
 ];
 
+/** Recipient-zone column. "time zone" collapses to "timezone" via headerKey. */
+const TIMEZONE_HEADERS = ["timezone", "tz", "zone"];
+
 function findHeader(
   headers: string[],
   candidates: string[],
@@ -201,6 +213,12 @@ export function parseContactSheet(text: string): ParsedSheet {
     consentDateIdx,
   );
   const hasConsent = consentSourceIdx !== -1 || consentDateIdx !== -1;
+  const timezoneIdx = findHeader(headers, TIMEZONE_HEADERS);
+
+  const timezoneOf = (row: string[]): Pick<ParsedContact, "timezone"> => {
+    if (timezoneIdx === -1) return {};
+    return { timezone: (row[timezoneIdx] ?? "").trim() || null };
+  };
 
   const consentOf = (
     row: string[],
@@ -236,17 +254,18 @@ export function parseContactSheet(text: string): ParsedSheet {
     const phoneE164 = normalizeUsPhone(rawPhone);
 
     const consent = consentOf(row);
+    const tz = timezoneOf(row);
 
     if (!phoneE164) {
-      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const, ...consent };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const, ...consent, ...tz };
     }
     if (seen.has(phoneE164)) {
       // Duplicates must not carry the phone: the DB member table has
       // `unique (list_id, phone_e164)` and nulls are distinct.
-      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const, ...consent };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const, ...consent, ...tz };
     }
     seen.add(phoneE164);
-    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const, ...consent };
+    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const, ...consent, ...tz };
   });
 
   const counts = { ok: 0, invalid: 0, duplicate: 0, total: contacts.length };
@@ -262,5 +281,6 @@ export function parseContactSheet(text: string): ParsedSheet {
         : firstIdx !== -1
           ? headers[firstIdx].trim()
           : null,
+    timezoneHeader: timezoneIdx !== -1 ? headers[timezoneIdx].trim() : null,
   };
 }

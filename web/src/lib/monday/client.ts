@@ -38,13 +38,34 @@ export class MondayApiError extends Error {
   readonly status: number;
   /** Raw GraphQL `errors` array when present (empty for HTTP-level failures). */
   readonly errors: readonly unknown[];
+  /**
+   * The `Retry-After` response header in seconds, when present and numeric
+   * (Monday's hard per-minute rate limit sends `Retry-After: 60` on its 429
+   * with no hint in the body). Undefined otherwise — HTTP-date form is rare
+   * enough to ignore. Retry loops (lib/monday/writes) honor this first.
+   */
+  readonly retryAfterSeconds?: number;
 
-  constructor(message: string, status: number, errors: readonly unknown[] = []) {
+  constructor(
+    message: string,
+    status: number,
+    errors: readonly unknown[] = [],
+    retryAfterSeconds?: number,
+  ) {
     super(message);
     this.name = "MondayApiError";
     this.status = status;
     this.errors = errors;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
+}
+
+/** Numeric `Retry-After` header in seconds, or undefined. Never throws. */
+function retryAfterSecondsOf(res: Response): number | undefined {
+  const raw = res.headers.get("retry-after");
+  if (raw === null) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
 /**
@@ -106,6 +127,8 @@ export async function mondayGraphQL<T>(
     throw new MondayApiError(
       truncate(`Monday API HTTP ${res.status}: ${await safeText(res)}`),
       res.status,
+      [],
+      retryAfterSecondsOf(res),
     );
   }
 

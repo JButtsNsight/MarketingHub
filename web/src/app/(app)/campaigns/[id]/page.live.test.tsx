@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
   getCampaignRecipients: vi.fn(),
   getCampaignEngagement: vi.fn(),
   listInboundMessages: vi.fn(),
+  getExplicitZoneCounts: vi.fn(),
   requireMarketingUser: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -45,6 +46,11 @@ vi.mock("@/lib/sms/repo", () => ({
   getCampaignRecipients: h.getCampaignRecipients,
   getCampaignEngagement: h.getCampaignEngagement,
   listInboundMessages: h.listInboundMessages,
+}));
+// Only the DB aggregate is stubbed — the fold/chip helpers stay real.
+vi.mock("@/lib/sms/zoneStats", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sms/zoneStats")>()),
+  getExplicitZoneCounts: h.getExplicitZoneCounts,
 }));
 // Fixture campaign carries contact_list_id: null, so the page never fetches
 // the list — the mock keeps the server-only import inert.
@@ -113,6 +119,7 @@ describe("campaigns/[id]/page.tsx (live view)", () => {
       opt_outs: 0,
     });
     h.listInboundMessages.mockReset().mockResolvedValue([]);
+    h.getExplicitZoneCounts.mockReset().mockResolvedValue(new Map());
     h.requireMarketingUser.mockReset().mockResolvedValue({
       email: "amy@nsight.example",
       name: "Amy",

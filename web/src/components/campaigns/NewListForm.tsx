@@ -46,6 +46,8 @@ export function NewListForm() {
   const [board, setBoard] = useState("");
   const [preview, setPreview] = useState<BoardPreview | null>(null);
   const [phoneColumnId, setPhoneColumnId] = useState("");
+  const [timezoneColumnId, setTimezoneColumnId] = useState("");
+  const [outcomeColumnId, setOutcomeColumnId] = useState("");
   const [loadingBoard, setLoadingBoard] = useState(false);
   const [boardError, setBoardError] = useState<string | null>(null);
 
@@ -93,6 +95,8 @@ export function NewListForm() {
       if (!res.ok) {
         setPreview(null);
         setPhoneColumnId("");
+        setTimezoneColumnId("");
+        setOutcomeColumnId("");
         setBoardError(
           res.status === 503
             ? MONDAY_UNCONFIGURED
@@ -107,10 +111,14 @@ export function NewListForm() {
       const data = (await res.json()) as BoardPreview;
       setPreview(data);
       setPhoneColumnId(data.suggestedPhoneColumnId ?? "");
+      setTimezoneColumnId("");
+      setOutcomeColumnId("");
       if (!name.trim()) setName(data.boardName);
     } catch {
       setPreview(null);
       setPhoneColumnId("");
+      setTimezoneColumnId("");
+      setOutcomeColumnId("");
       setBoardError("Network error — please try again.");
     } finally {
       setLoadingBoard(false);
@@ -154,6 +162,13 @@ export function NewListForm() {
             name: name.trim(),
             board: board.trim(),
             phoneColumnId,
+            // Unset pickers are OMITTED — the schema rejects blank strings.
+            ...(timezoneColumnId
+              ? { mondayTimezoneColumnId: timezoneColumnId }
+              : {}),
+            ...(outcomeColumnId
+              ? { mondayOutcomeColumnId: outcomeColumnId }
+              : {}),
           };
 
     try {
@@ -243,6 +258,7 @@ export function NewListForm() {
               invalid · {sheet.counts.duplicate} duplicate — phone column
               &ldquo;{sheet.phoneHeader}&rdquo;
               {sheet.nameHeader ? <> · name column &ldquo;{sheet.nameHeader}&rdquo;</> : null}
+              {sheet.timezoneHeader ? <> · timezone column &ldquo;{sheet.timezoneHeader}&rdquo;</> : null}
             </p>
           ) : null}
         </div>
@@ -297,6 +313,44 @@ export function NewListForm() {
                     {c.title} ({c.type})
                   </option>
                 ))}
+              </select>
+              <label htmlFor="list-timezone-column">
+                Timezone column · optional
+              </label>
+              <select
+                id="list-timezone-column"
+                className="surface control"
+                value={timezoneColumnId}
+                onChange={(e) => setTimezoneColumnId(e.target.value)}
+              >
+                <option value="">None — campaign zone</option>
+                {preview.columns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} ({c.type})
+                  </option>
+                ))}
+              </select>
+              <label htmlFor="list-outcome-column">
+                Outcome column · optional · text columns only
+              </label>
+              <select
+                id="list-outcome-column"
+                className="surface control"
+                value={outcomeColumnId}
+                onChange={(e) => setOutcomeColumnId(e.target.value)}
+              >
+                <option value="">None — no write-back</option>
+                {/* Only writable text-like columns: the worker writes dated
+                    outcome strings via change_simple_column_value, which
+                    status/formula/mirror columns reject on every attempt
+                    (the API 400s a non-text pick for the same reason). */}
+                {preview.columns
+                  .filter((c) => c.type === "text" || c.type === "long_text")
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.type})
+                    </option>
+                  ))}
               </select>
             </>
           ) : null}

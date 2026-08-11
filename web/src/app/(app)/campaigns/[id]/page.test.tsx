@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   getCampaignRecipients: vi.fn(),
   getCampaignEngagement: vi.fn(),
   listInboundMessages: vi.fn(),
+  getExplicitZoneCounts: vi.fn(),
   requireMarketingUser: vi.fn(),
   notFound: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
@@ -32,6 +33,11 @@ vi.mock("@/lib/sms/repo", () => ({
   getCampaignEngagement: h.getCampaignEngagement,
   listInboundMessages: h.listInboundMessages,
 }));
+// Only the view accessor is faked — foldZoneCounts/zoneChip stay real (pure).
+vi.mock("@/lib/sms/zoneStats", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/sms/zoneStats")>();
+  return { ...actual, getExplicitZoneCounts: h.getExplicitZoneCounts };
+});
 // Legacy fixture campaigns carry contact_list_id: null, so the page never
 // fetches the list — the mock exists to keep the server-only import inert.
 vi.mock("@/lib/contacts/repo", () => ({
@@ -86,11 +92,14 @@ const recipient: SmsCampaignRecipient = {
   status: "failed_ambiguous",
   attempts: 1,
   send_after: "2026-08-03T15:30:00Z",
+  send_timezone: null,
   claimed_at: null,
   claim_expires_at: null,
   st_message_id: null,
   st_credits: null,
   last_error: "timeout",
+  monday_synced_at: null,
+  monday_synced_status: null,
   created_at: "2026-07-22T12:00:00Z",
   updated_at: "2026-07-22T12:00:00Z",
 };
@@ -126,6 +135,7 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     });
     h.listInboundMessages.mockReset();
     h.listInboundMessages.mockResolvedValue([]);
+    h.getExplicitZoneCounts.mockReset().mockResolvedValue(new Map());
   });
 
   test("enforces the marketing group gate and reads by the route param", async () => {
@@ -149,6 +159,25 @@ describe("campaigns/[id]/page.tsx (server component)", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("4567890123")).toBeInTheDocument();
     expect(screen.getByText("phone_col")).toBeInTheDocument();
+  });
+
+  test("an audience spanning zones surfaces one N-zones chip (title = spread), from the SAME view the list pages use", async () => {
+    // 3 rows total (per the counts view), 2 explicitly PT, remainder → ET.
+    // View-backed — NOT the 2000-row-capped recipients fetch, which would
+    // disagree with the /campaigns and /schedule chips on large campaigns.
+    h.getCampaignCounts.mockResolvedValue(counts({ pending: 1, sent: 2 }));
+    h.getExplicitZoneCounts.mockResolvedValue(
+      new Map([["c1", new Map([["America/Los_Angeles", 2]])]]),
+    );
+    await renderPage();
+    expect(h.getExplicitZoneCounts).toHaveBeenCalledWith(["c1"], h.userDb);
+    const chip = screen.getByText("2 zones");
+    expect(chip).toHaveAttribute("title", "ET 1 · PT 2");
+  });
+
+  test("a single-zone audience gets no zones chip", async () => {
+    await renderPage();
+    expect(screen.queryByText(/\d+ zones/)).not.toBeInTheDocument();
   });
 
   test("renders the per-status StatCard row", async () => {

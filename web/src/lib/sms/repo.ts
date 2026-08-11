@@ -20,7 +20,11 @@ import {
 } from "./schema";
 import type { TrackedLink } from "./links";
 import { firstNameOf, renderSms } from "./render";
-import { sendAtForZonedSlot } from "./schedule";
+import {
+  SEND_TIMEZONE_IDS,
+  sendAtForZonedSlot,
+  type SendTimezone,
+} from "./schedule";
 
 /**
  * Data access for SMS campaigns — the durable outbox behind the dispatcher
@@ -148,6 +152,19 @@ export interface SourceRecipientRow {
   firstName: string;
   phoneE164: string | null;
   rawPhone: string;
+  /**
+   * Per-recipient send zone, already normalized (timezone.ts) by the caller.
+   * Null/absent = the campaign zone — an unknown zone value must fall back,
+   * never hard-reject the recipient.
+   */
+  zone?: SendTimezone | null;
+  /**
+   * Caller-supplied audit note for a zone value that DID NOT normalize
+   * (fallback is silent otherwise — the plan requires a per-row note, never a
+   * hard reject). Lands in `last_error` on pending rows; skipped/suppressed
+   * rows keep their own reason.
+   */
+  zoneNote?: string | null;
 }
 
 /** Back-compat alias — the Monday fetch path predates CSV lists. */
@@ -169,6 +186,12 @@ export interface PreparedRecipient {
   status: PreparedRecipientStatus;
   last_error: string | null;
   /**
+   * EXPLICIT per-recipient send zone (a real column): create computes this
+   * row's send_after in it. Null/absent = the campaign zone, per the
+   * send_timezone column contract.
+   */
+  send_timezone?: SendTimezone | null;
+  /**
    * Tracked short links embedded in rendered_text (slug → target), persisted
    * to sms_links after the row insert returns its id. Absent/empty when link
    * tracking is off (LINK_BASE_URL unset) or the body has no URLs. NOT a
@@ -189,6 +212,10 @@ export interface PreparedRecipient {
  * - otherwise                          → `pending`.
  *
  * `rendered_text` is snapshotted for every row (audit trail), even skipped.
+ * Each row's normalized zone passes through as `send_timezone` (null = the
+ * campaign zone); createCampaign computes the per-row send instant from it.
+ * A row whose zone value did not normalize (`zoneNote`) carries that note in
+ * `last_error` (pending rows only — the skip/suppress reasons outrank it).
  */
 export function prepareRecipients(
   sourceRows: SourceRecipientRow[],
@@ -204,6 +231,7 @@ export function prepareRecipients(
       name: row.name,
       first_name: firstName,
       rendered_text: renderSms(body, { name: row.name, firstName }),
+      send_timezone: row.zone ?? null,
     };
 
     if (!row.phoneE164) {
@@ -236,7 +264,7 @@ export function prepareRecipients(
       ...base,
       phone_e164: row.phoneE164,
       status: "pending" as const,
-      last_error: null,
+      last_error: row.zoneNote ?? null,
     };
   });
 }
@@ -269,8 +297,13 @@ export async function getSuppressedSet(
 
 /**
  * Create a campaign plus its outbox rows. The campaign row snapshots the
- * template body (`message_body`) and the computed 11:30 AM America/New_York
- * instant (`send_at`); every recipient starts with `send_after = send_at`.
+ * template body (`message_body`) and the EARLIEST per-recipient send instant
+ * (`send_at` — so promoteDueCampaigns stays a single comparison); every
+ * recipient starts with `send_after` computed at the chosen slot in ITS zone
+ * (`send_timezone` null = the campaign zone). A zoneless audience therefore
+ * behaves exactly as before: every row at the campaign-zone instant. A
+ * multi-zone campaign sits `sending` until its westernmost rows come due —
+ * completion detection counts active rows, not the clock.
  *
  * Recipients are inserted in chunks of 200. NOT transactional (PostgREST has
  * no multi-statement transactions), so the campaign is born `paused` — a
@@ -293,11 +326,33 @@ export async function createCampaign(
   db?: SupabaseClient,
 ): Promise<SmsCampaign> {
   const parsed = CampaignCreateInputSchema.parse(input);
-  const sendAt = sendAtForZonedSlot(
-    parsed.sendDate,
-    parsed.sendTime,
-    parsed.sendTimezone,
-  ).toISOString();
+  // One slot instant per DISTINCT zone (memoized; per-row math stays
+  // app-side — PostgREST cannot compute it). Null decodes to the campaign
+  // zone per the send_timezone column contract.
+  const instantByZone = new Map<string, string>();
+  const instantFor = (zone: string): string => {
+    const cached = instantByZone.get(zone);
+    if (cached) return cached;
+    const iso = sendAtForZonedSlot(
+      parsed.sendDate,
+      parsed.sendTime,
+      zone,
+    ).toISOString();
+    instantByZone.set(zone, iso);
+    return iso;
+  };
+  // send_at = MIN of the PENDING row instants (the easternmost zone that will
+  // actually dispatch); campaign-zone instant when nothing is pending. Only
+  // pending rows count — suppressed/skipped rows can never send, and letting
+  // their zones drag send_at earlier would promote the campaign to `sending`
+  // before any real row is due (and defeat the route's past-slot check, which
+  // validates pending zones only — as does rescheduleCampaign).
+  const sendAt =
+    prepared.reduce<string | null>((earliest, row) => {
+      if (row.status !== "pending") return earliest;
+      const at = instantFor(row.send_timezone ?? parsed.sendTimezone);
+      return earliest === null || at < earliest ? at : earliest;
+    }, null) ?? instantFor(parsed.sendTimezone);
 
   const { data, error } = await campaigns(db)
     .insert({
@@ -320,11 +375,14 @@ export async function createCampaign(
   const campaign = data as SmsCampaign;
 
   // `links` is repo bookkeeping, not a column — strip it before insert and
-  // keep a parallel per-row array for the sms_links inserts below.
+  // keep a parallel per-row array for the sms_links inserts below. Every
+  // row's send_after is the slot instant in ITS zone; send_timezone stores
+  // only the EXPLICIT zone (null = the campaign zone).
   const rows = prepared.map(({ links: _links, ...r }) => ({
     ...r,
+    send_timezone: r.send_timezone ?? null,
     campaign_id: campaign.id,
-    send_after: sendAt,
+    send_after: instantFor(r.send_timezone ?? parsed.sendTimezone),
   }));
   const rowLinks = prepared.map((r) => r.links ?? []);
   const hasLinks = rowLinks.some((l) => l.length > 0);
@@ -611,13 +669,57 @@ export async function resumeCampaign(
 }
 
 /**
+ * The distinct send zones among a campaign's still-`pending` rows, in
+ * fixed easternmost-first order with `null` ("the campaign zone") last.
+ * One cheap HEAD count per candidate zone — PostgREST has no DISTINCT, and
+ * selecting every pending row's zone would be unbounded. Zones only ever
+ * come from the SEND_TIMEZONE_IDS enum (stamped at creation), so the
+ * candidate set is closed.
+ */
+export async function getPendingRecipientZones(
+  campaignId: string,
+  db?: SupabaseClient,
+): Promise<Array<SendTimezone | null>> {
+  const candidates: Array<SendTimezone | null> = [...SEND_TIMEZONE_IDS, null];
+  const results = await Promise.all(
+    candidates.map((zone) => {
+      const query = recipients(db)
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", campaignId)
+        .eq("status", "pending");
+      return zone === null
+        ? query.is("send_timezone", null)
+        : query.eq("send_timezone", zone);
+    }),
+  );
+  return candidates.filter((_, i) => {
+    const { count, error } = results[i];
+    if (error) fail("pending-zones", error.message);
+    return (count ?? 0) > 0;
+  });
+}
+
+/**
  * Reschedule a campaign that has not started sending (`scheduled`/`paused`):
- * recompute send_at from the new date + slot + zone, then sweep every
- * still-`pending` outbox row's send_after to the new instant — including
- * retry-backoff rows in a paused campaign (a reschedule means "everything
- * not yet sent goes at the new time"). Guarded like every transition:
- * `null` = the guard lost (e.g. the dispatcher promoted it to `sending`
- * mid-request) and the caller routes 409.
+ * recompute send_at from the new date + slot, then sweep every
+ * still-`pending` outbox row's send_after to its new instant — one guarded
+ * update per zone in the CLOSED candidate set (SEND_TIMEZONE_IDS + null),
+ * computed app-side. The sweeps deliberately do NOT trust the pending-zones
+ * snapshot read for send_at: a row can turn `pending` between that read and
+ * the sweeps (retryRecipient sets send_after=now on paused/scheduled
+ * campaigns; an in-flight send can markRetry during a paused reschedule),
+ * and a snapshot-filtered sweep would strand it due-immediately in a zone
+ * group that is never iterated — texting it at promotion, potentially hours
+ * before 8 AM its-local. Sweeping the whole closed set restores the pre-zones
+ * catch-all property: any row pending by the time its zone's sweep runs is
+ * re-timed. Rows with an explicit send_timezone keep it (new date + slot in
+ * THEIR zone); null-zone rows follow the campaign zone — including a changed
+ * one. Retry-backoff rows in a paused campaign are swept too (a reschedule
+ * means "everything not yet sent goes at the new time"). The campaign's
+ * send_at lands on the EARLIEST pending-group instant so promoteDueCampaigns
+ * stays a single comparison. Guarded like every transition: `null` = the
+ * guard lost (e.g. the dispatcher promoted it to `sending` mid-request) and
+ * the caller routes 409.
  */
 export async function rescheduleCampaign(
   id: string,
@@ -625,11 +727,19 @@ export async function rescheduleCampaign(
   db?: SupabaseClient,
 ): Promise<SmsCampaign | null> {
   const parsed = CampaignRescheduleInputSchema.parse(input);
-  const sendAt = sendAtForZonedSlot(
-    parsed.sendDate,
-    parsed.sendTime,
-    parsed.sendTimezone,
-  ).toISOString();
+  const instantFor = (zone: string): string =>
+    sendAtForZonedSlot(parsed.sendDate, parsed.sendTime, zone).toISOString();
+
+  // Zone groups are read BEFORE the campaign update so send_at can take the
+  // per-group minimum; campaign-zone instant when nothing is pending.
+  const zoneGroups = await getPendingRecipientZones(id, db);
+  const groupInstants = zoneGroups.map((zone) =>
+    instantFor(zone ?? parsed.sendTimezone),
+  );
+  const sendAt =
+    groupInstants.length > 0
+      ? groupInstants.reduce((a, b) => (a < b ? a : b))
+      : instantFor(parsed.sendTimezone);
 
   const { data, error } = await campaigns(db)
     .update({
@@ -646,11 +756,25 @@ export async function rescheduleCampaign(
   if (error) fail("reschedule", error.message);
   if (!data) return null;
 
-  const { error: sweepError } = await recipients(db)
-    .update({ send_after: sendAt, updated_at: nowIso() })
-    .eq("campaign_id", id)
-    .eq("status", "pending");
-  if (sweepError) fail("reschedule-recipients", sweepError.message);
+  // One sweep per candidate zone — the FULL closed set, not the snapshot
+  // (see the docstring: a row can turn pending after the snapshot). The
+  // `.eq('status','pending')` guard is the durability contract and stays
+  // exactly as-is; the zone filter only narrows which pending rows each
+  // sweep re-times, and an empty group is a cheap 0-row update.
+  const candidates: Array<SendTimezone | null> = [...SEND_TIMEZONE_IDS, null];
+  for (const zone of candidates) {
+    const sweep = recipients(db)
+      .update({
+        send_after: instantFor(zone ?? parsed.sendTimezone),
+        updated_at: nowIso(),
+      })
+      .eq("campaign_id", id)
+      .eq("status", "pending");
+    const { error: sweepError } = await (zone === null
+      ? sweep.is("send_timezone", null)
+      : sweep.eq("send_timezone", zone));
+    if (sweepError) fail("reschedule-recipients", sweepError.message);
+  }
 
   return data as SmsCampaign;
 }

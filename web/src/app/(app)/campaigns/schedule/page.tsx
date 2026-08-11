@@ -6,6 +6,11 @@ import {
   type CampaignWithCounts,
 } from "@/lib/sms/repo";
 import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
+import {
+  foldZoneCounts,
+  getExplicitZoneCounts,
+  zoneChip,
+} from "@/lib/sms/zoneStats";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
@@ -57,6 +62,17 @@ export default async function SchedulePage() {
     .filter((c) => ON_SCHEDULE.has(c.status))
     .sort((a, b) => a.send_at.localeCompare(b.send_at));
 
+  // Per-recipient zones: fold explicit send_timezone rows + the campaign-zone
+  // fallback into one "N zones" chip per multi-zone campaign.
+  const explicitZones = await getExplicitZoneCounts(
+    campaigns.map((c) => c.id),
+    db,
+  );
+  const zonesFor = (c: CampaignWithCounts) =>
+    zoneChip(
+      foldZoneCounts(explicitZones.get(c.id), c.send_timezone, totalRecipients(c)),
+    );
+
   const byDate = new Map<string, CampaignWithCounts[]>();
   for (const c of campaigns) {
     const list = byDate.get(c.send_date) ?? [];
@@ -92,20 +108,26 @@ export default async function SchedulePage() {
                 {humanDate(date)} <span className="mono muted">{date}</span>
               </h2>
               <ul className="schedule-day-list">
-                {dayCampaigns.map((c) => (
-                  <li key={c.id} className="schedule-entry">
-                    <span className="mono schedule-slot">
-                      {formatSlot(c.send_time)} {zoneAbbr(c.send_timezone)}
-                    </span>
-                    <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
-                    <Badge tone={statusTone(c.status)}>
-                      {statusLabel(c.status)}
-                    </Badge>
-                    <span className="mono muted">
-                      {pendingCount(c)} of {totalRecipients(c)} to send
-                    </span>
-                  </li>
-                ))}
+                {dayCampaigns.map((c) => {
+                  const zones = zonesFor(c);
+                  return (
+                    <li key={c.id} className="schedule-entry">
+                      <span className="mono schedule-slot">
+                        {formatSlot(c.send_time)} {zoneAbbr(c.send_timezone)}
+                      </span>
+                      {zones ? (
+                        <Badge title={zones.title}>{zones.label}</Badge>
+                      ) : null}
+                      <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
+                      <Badge tone={statusTone(c.status)}>
+                        {statusLabel(c.status)}
+                      </Badge>
+                      <span className="mono muted">
+                        {pendingCount(c)} of {totalRecipients(c)} to send
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             </Surface>
           ))}

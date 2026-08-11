@@ -23,6 +23,7 @@ const h = vi.hoisted(() => ({
   getCampaign: vi.fn(),
   getCampaignCounts: vi.fn(),
   getCampaignRecipients: vi.fn(),
+  getPendingRecipientZones: vi.fn(),
   pauseCampaign: vi.fn(),
   resumeCampaign: vi.fn(),
   cancelCampaign: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock("@/lib/sms/repo", () => ({
   getCampaign: h.getCampaign,
   getCampaignCounts: h.getCampaignCounts,
   getCampaignRecipients: h.getCampaignRecipients,
+  getPendingRecipientZones: h.getPendingRecipientZones,
   pauseCampaign: h.pauseCampaign,
   resumeCampaign: h.resumeCampaign,
   cancelCampaign: h.cancelCampaign,
@@ -68,6 +70,9 @@ beforeEach(() => {
   setAlbEnv();
   installAlbKeyFetch();
   for (const fn of Object.values(h)) fn.mockReset();
+  // No pending zone groups unless a test says otherwise → the past-slot
+  // check reduces to the fallback zone, exactly the pre-zones behavior.
+  h.getPendingRecipientZones.mockResolvedValue([]);
 });
 
 afterEach(() => {
@@ -250,6 +255,59 @@ describe("PATCH /api/campaigns/[id]", () => {
   test("reschedule → 400 when the slot is already in the past", async () => {
     const res = await PATCH(
       patchReq({ ...reschedule, sendDate: "2020-01-03" }), // a past Friday
+      ctx(),
+    );
+    expect(res.status).toBe(400);
+    expect(h.rescheduleCampaign).not.toHaveBeenCalled();
+  });
+});
+
+describe("PATCH reschedule — earliest-instant past-slot check", () => {
+  // 2999-01-04 (a Friday) 08:30 = 13:30Z in ET (EST) but 18:30Z in HT; the
+  // mocked "now" sits between the two instants.
+  const betweenEtAndHt = Date.parse("2999-01-04T15:00:00Z");
+  const slot = { action: "reschedule", sendDate: "2999-01-04", sendTime: "08:30" };
+  let nowSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  afterEach(() => {
+    nowSpy?.mockRestore();
+    nowSpy = null;
+  });
+
+  test("400 when a pending zone group is already past, even though the fallback zone is still ahead", async () => {
+    h.getPendingRecipientZones.mockResolvedValue(["America/New_York"]);
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await PATCH(
+      patchReq({ ...slot, sendTimezone: "Pacific/Honolulu" }),
+      ctx(),
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/already in the past/i);
+    expect(h.getPendingRecipientZones).toHaveBeenCalledWith(ID, userDb);
+    expect(h.rescheduleCampaign).not.toHaveBeenCalled();
+  });
+
+  test("200 when the only pending zone group is still ahead — the fallback zone is not dragged in", async () => {
+    h.getPendingRecipientZones.mockResolvedValue(["Pacific/Honolulu"]);
+    h.rescheduleCampaign.mockResolvedValue({ id: ID, status: "scheduled" });
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await PATCH(
+      patchReq({ ...slot, sendTimezone: "America/New_York" }),
+      ctx(),
+    );
+    expect(res.status).toBe(200);
+    expect(h.rescheduleCampaign).toHaveBeenCalledTimes(1);
+  });
+
+  test("null zone groups decode to the (new) fallback zone", async () => {
+    h.getPendingRecipientZones.mockResolvedValue([null]);
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await PATCH(
+      patchReq({ ...slot, sendTimezone: "America/New_York" }),
       ctx(),
     );
     expect(res.status).toBe(400);

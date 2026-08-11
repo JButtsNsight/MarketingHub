@@ -110,6 +110,7 @@ describe("fetchBoardRecipients — single page mapping", () => {
         firstName: "Jane",
         phoneE164: "+15551230001",
         rawPhone: "15551230001",
+        rawTimezone: null,
       },
     ]);
   });
@@ -142,6 +143,7 @@ describe("fetchBoardRecipients — single page mapping", () => {
         firstName: "Nigel",
         phoneE164: null,
         rawPhone: "441632960000",
+        rawTimezone: null,
       },
     ]);
   });
@@ -159,6 +161,7 @@ describe("fetchBoardRecipients — single page mapping", () => {
       firstName: "No",
       phoneE164: null,
       rawPhone: "",
+      rawTimezone: null,
     });
   });
 
@@ -196,6 +199,7 @@ describe("fetchBoardRecipients — single page mapping", () => {
         firstName: "Tex",
         phoneE164: "+15551230002",
         rawPhone: "(555) 123-0002",
+        rawTimezone: null,
       },
     ]);
   });
@@ -231,6 +235,102 @@ describe("fetchBoardRecipients — single page mapping", () => {
       fetchBoardRecipients("999", "phone_col"),
     ).resolves.toEqual([]);
     expect(h.mondayGraphQL).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("fetchBoardRecipients — timezone column", () => {
+  function firstPage(items: unknown[], cursor: string | null = null) {
+    return { boards: [{ items_page: { cursor, items } }] };
+  }
+
+  /** An item with a phone cell plus a text-ish timezone cell. */
+  function zonedItem(id: string, phone: string, tzText: string | null) {
+    return {
+      id,
+      name: `Zoned ${id}`,
+      column_values: [
+        { id: "phone_col", text: phone, phone, country_short_name: "US" },
+        { id: "tz_col", text: tzText },
+      ],
+    };
+  }
+
+  test("timezoneColumnId adds the column to $columnIds and fills rawTimezone verbatim", async () => {
+    h.mondayGraphQL.mockResolvedValueOnce(
+      firstPage([zonedItem("1", "15551230001", " ET ")]),
+    );
+
+    const rows = await fetchBoardRecipients("4567890123", "phone_col", "tz_col");
+
+    const [, variables] = h.mondayGraphQL.mock.calls[0];
+    expect(variables).toMatchObject({ columnIds: ["phone_col", "tz_col"] });
+    // Trimmed but otherwise verbatim — normalization happens at campaign
+    // creation (normalizeRecipientZone), never here.
+    expect(rows[0]).toMatchObject({
+      phoneE164: "+15551230001",
+      rawTimezone: "ET",
+    });
+  });
+
+  test("blank or missing timezone cell → rawTimezone null", async () => {
+    h.mondayGraphQL.mockResolvedValueOnce(
+      firstPage([
+        zonedItem("1", "15551230001", ""),
+        {
+          id: "2",
+          name: "No Tz Cell",
+          column_values: [
+            {
+              id: "phone_col",
+              text: "15551230002",
+              phone: "15551230002",
+              country_short_name: "US",
+            },
+          ],
+        },
+      ]),
+    );
+
+    const rows = await fetchBoardRecipients("4567890123", "phone_col", "tz_col");
+
+    expect(rows[0].rawTimezone).toBeNull();
+    expect(rows[1].rawTimezone).toBeNull();
+  });
+
+  test("no timezoneColumnId → only the phone column travels (unchanged shape)", async () => {
+    h.mondayGraphQL.mockResolvedValueOnce(
+      firstPage([zonedItem("1", "15551230001", "ET")]),
+    );
+
+    const rows = await fetchBoardRecipients("4567890123", "phone_col");
+
+    const [, variables] = h.mondayGraphQL.mock.calls[0];
+    expect(variables).toMatchObject({ columnIds: ["phone_col"] });
+    // The tz cell is ignored when the list has no timezone column configured.
+    expect(rows[0].rawTimezone).toBeNull();
+  });
+
+  test("cursor pages carry the same columnIds and map rawTimezone too", async () => {
+    h.mondayGraphQL
+      .mockResolvedValueOnce(
+        firstPage([zonedItem("1", "15551230001", "ET")], "cursor-1"),
+      )
+      .mockResolvedValueOnce({
+        next_items_page: {
+          cursor: null,
+          items: [zonedItem("2", "15551230002", "Pacific/Honolulu")],
+        },
+      });
+
+    const rows = await fetchBoardRecipients("4567890123", "phone_col", "tz_col");
+
+    expect(rows).toHaveLength(2);
+    expect(rows[1].rawTimezone).toBe("Pacific/Honolulu");
+    const [, v2] = h.mondayGraphQL.mock.calls[1];
+    expect(v2).toMatchObject({
+      cursor: "cursor-1",
+      columnIds: ["phone_col", "tz_col"],
+    });
   });
 });
 

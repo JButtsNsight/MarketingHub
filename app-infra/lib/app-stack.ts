@@ -124,6 +124,20 @@ export class AppStack extends Stack {
     const smsFreqCapDays = this.node.tryGetContext('smsFreqCapDays') as
       | string
       | undefined;
+    // OPTIONAL: Monday write-back consumer knobs (worker only). Each value is
+    // passed through verbatim when set and OMITTED entirely when absent —
+    // the consumer (web/src/worker/monday-writeback.ts) then uses its in-code
+    // defaults (enabled; own poll interval + mutation throttle). Follows the
+    // smsFreqCap* pattern, so the default synth is unchanged.
+    const mondayWritebackEnabled = this.node.tryGetContext('mondayWritebackEnabled') as
+      | string
+      | undefined;
+    const mondayWritebackPollMs = this.node.tryGetContext('mondayWritebackPollMs') as
+      | string
+      | undefined;
+    const mondayWritebackRatePerSec = this.node.tryGetContext('mondayWritebackRatePerSec') as
+      | string
+      | undefined;
     // OPTIONAL (Wave-8R intel agentic search): the headless-claude gateway
     // base URL. Set = /intel/search submits answer-synthesis tasks to the
     // gateway; absent = gatewayFromEnv() returns null and search degrades
@@ -519,6 +533,18 @@ export class AppStack extends Stack {
         // absent/0 as off and the claim RPC then behaves pre-cap).
         ...(smsFreqCapCount ? { SMS_FREQ_CAP_COUNT: smsFreqCapCount } : {}),
         ...(smsFreqCapDays ? { SMS_FREQ_CAP_DAYS: smsFreqCapDays } : {}),
+        // Optional Monday write-back knobs (absent = consumer defaults: on).
+        ...(mondayWritebackEnabled
+          ? { MONDAY_WRITEBACK_ENABLED: mondayWritebackEnabled }
+          : {}),
+        // NB: the consumer reads MONDAY_WRITEBACK_POLL_INTERVAL_MS (the
+        // SMS_POLL_INTERVAL_MS / CI_EMBED_POLL_INTERVAL_MS house pattern).
+        ...(mondayWritebackPollMs
+          ? { MONDAY_WRITEBACK_POLL_INTERVAL_MS: mondayWritebackPollMs }
+          : {}),
+        ...(mondayWritebackRatePerSec
+          ? { MONDAY_WRITEBACK_RATE_PER_SEC: mondayWritebackRatePerSec }
+          : {}),
       },
       secrets: {
         SUPABASE_SERVICE_ROLE_KEY: ecs.Secret.fromSecretsManager(
@@ -529,6 +555,12 @@ export class AppStack extends Stack {
           smsSecrets,
           'SIMPLETEXTING_API_TOKEN',
         ),
+        // Monday write-back (2026-08-11): the consumer syncs per-recipient
+        // outcomes back to boards — the ONE documented exception to the §9.4
+        // secret-frozen worker doctrine (JWT/anon/logflare stay prohibited).
+        // Same sms-campaigns secret + CMK as the app container, so no new
+        // IAM/KMS statement; empty field = the consumer idles with a warning.
+        MONDAY_API_TOKEN: ecs.Secret.fromSecretsManager(smsSecrets, 'MONDAY_API_TOKEN'),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'marketinghub-sms-worker' }),
     });

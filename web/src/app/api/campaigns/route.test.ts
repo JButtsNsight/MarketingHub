@@ -268,13 +268,13 @@ describe("POST /api/campaigns", () => {
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
-  test("400 when the chosen send slot is in the past", async () => {
+  test("400 when the chosen send slot is in the past (checked AFTER the audience is known — the earliest zone gates it)", async () => {
     primeHappyPath();
     const res = await POST(postReq({ ...validBody, sendDate: "2020-01-01" }));
     expect(res.status).toBe(400);
     const json = await res.json();
     expect(json.error).toMatch(/already in the past/i);
-    expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
+    expect(h.fetchBoardRecipients).toHaveBeenCalled();
     expect(h.createCampaign).not.toHaveBeenCalled();
   });
 
@@ -379,7 +379,12 @@ describe("POST /api/campaigns", () => {
 
     // The board's existence is verified up front, by the list's saved id.
     expect(h.getBoardMeta).toHaveBeenCalledWith("123456");
-    expect(h.fetchBoardRecipients).toHaveBeenCalledWith("123456", "phone_col");
+    // No timezone column configured on this list → undefined third arg.
+    expect(h.fetchBoardRecipients).toHaveBeenCalledWith(
+      "123456",
+      "phone_col",
+      undefined,
+    );
     // Sheet members are never consulted on the Monday path.
     expect(h.getSendableMembers).not.toHaveBeenCalled();
     // Suppressions are looked up for every fetched phone (nulls included —
@@ -388,9 +393,11 @@ describe("POST /api/campaigns", () => {
       mondayRows.map((r) => r.phoneE164),
       userDb,
     );
-    // Rows are prepared against the template body + suppression set.
+    // Rows are prepared against the template body + suppression set, each
+    // carrying its normalized zone (none here → campaign-zone fallback; no
+    // raw value ignored → no zone note).
     expect(h.prepareRecipients).toHaveBeenCalledWith(
-      mondayRows,
+      mondayRows.map((r) => ({ ...r, zone: null, zoneNote: null })),
       textTemplate.body,
       new Set(["+15550000003"]),
     );
@@ -450,7 +457,7 @@ describe("POST /api/campaigns", () => {
     expect(h.fetchBoardRecipients).not.toHaveBeenCalled();
     expect(h.getSendableMembers).toHaveBeenCalledWith(LIST_ID, userDb);
 
-    // Members map to source rows (no mondayItemId).
+    // Members map to source rows (no mondayItemId; no timezone cell → null).
     expect(h.prepareRecipients).toHaveBeenCalledWith(
       [
         {
@@ -458,12 +465,16 @@ describe("POST /api/campaigns", () => {
           firstName: "Ada",
           phoneE164: "+15550000001",
           rawPhone: "(555) 000-0001",
+          zone: null,
+          zoneNote: null,
         },
         {
           name: "Grace Hopper",
           firstName: "Grace",
           phoneE164: "+15550000002",
           rawPhone: "(555) 000-0002",
+          zone: null,
+          zoneNote: null,
         },
       ],
       textTemplate.body,
@@ -473,6 +484,81 @@ describe("POST /api/campaigns", () => {
     // Sheet-sourced campaigns snapshot NULL Monday coordinates.
     const [, source] = h.createCampaign.mock.calls[0];
     expect(source).toEqual({ mondayBoardId: null, mondayPhoneColumnId: null });
+  });
+
+  test("Monday rows' rawTimezone normalizes onto the source rows; the list's timezone column id travels to the fetch", async () => {
+    primeHappyPath();
+    h.getContactList.mockResolvedValue({
+      ...mondayList,
+      monday_timezone_column_id: "tz_col",
+    });
+    h.fetchBoardRecipients.mockResolvedValue([
+      { ...mondayRows[0], rawTimezone: "ht" },
+      { ...mondayRows[1], rawTimezone: "Springfield" }, // unknown → fallback
+    ]);
+
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(201);
+
+    expect(h.fetchBoardRecipients).toHaveBeenCalledWith(
+      "123456",
+      "phone_col",
+      "tz_col",
+    );
+    const [rows] = h.prepareRecipients.mock.calls[0];
+    expect(rows[0].zone).toBe("Pacific/Honolulu");
+    expect(rows[0].zoneNote).toBeNull();
+    // The ignored value is not silent: a per-row note travels to last_error.
+    expect(rows[1].zone).toBeNull();
+    expect(rows[1].zoneNote).toBe(
+      "unrecognized timezone, campaign zone used (raw: Springfield)",
+    );
+  });
+
+  test("sheet members' timezone cells normalize per row (unknown → null, campaign-zone fallback)", async () => {
+    primeHappyPath();
+    h.getContactList.mockResolvedValue(csvList);
+    h.getSendableMembers.mockResolvedValue([
+      {
+        id: "m1",
+        list_id: LIST_ID,
+        name: "Ada Lovelace",
+        first_name: "Ada",
+        phone_e164: "+15550000001",
+        raw_phone: "(555) 000-0001",
+        reason: "ok",
+        timezone: "et",
+      },
+      {
+        id: "m2",
+        list_id: LIST_ID,
+        name: "Grace Hopper",
+        first_name: "Grace",
+        phone_e164: "+15550000002",
+        raw_phone: "(555) 000-0002",
+        reason: "ok",
+        timezone: "EST5EDT", // not a send zone
+      },
+    ]);
+    h.prepareRecipients.mockReturnValue([
+      { monday_item_id: null, status: "pending" },
+    ]);
+
+    const res = await POST(postReq(validBody));
+    expect(res.status).toBe(201);
+
+    const [rows] = h.prepareRecipients.mock.calls[0];
+    expect(rows.map((r: { zone: string | null }) => r.zone)).toEqual([
+      "America/New_York",
+      null,
+    ]);
+    // Member cells are VERBATIM in the DB; the ignored one gets a note here.
+    expect(
+      rows.map((r: { zoneNote: string | null }) => r.zoneNote),
+    ).toEqual([
+      null,
+      "unrecognized timezone, campaign zone used (raw: EST5EDT)",
+    ]);
   });
 });
 
@@ -556,5 +642,67 @@ describe("POST /api/campaigns — tracked links (SMS_LINK_BASE_URL)", () => {
     const passed = h.createCampaign.mock.calls[0][3];
     expect(passed).toBe(linkedPrepared);
     expect(passed[0].links).toBeUndefined();
+  });
+});
+
+describe("POST /api/campaigns — earliest-instant past-slot check", () => {
+  // 2999-01-04 (a Friday) 08:30 = 13:30Z in ET (EST) but 18:30Z in HT; the
+  // mocked "now" sits between the two instants.
+  const htBody = {
+    ...validBody,
+    sendDate: "2999-01-04",
+    sendTime: "08:30",
+    sendTimezone: "Pacific/Honolulu",
+  };
+  const betweenEtAndHt = Date.parse("2999-01-04T15:00:00Z");
+  let nowSpy: ReturnType<typeof vi.spyOn> | null = null;
+
+  afterEach(() => {
+    nowSpy?.mockRestore();
+    nowSpy = null;
+  });
+
+  test("400 when a pending recipient's zone is already past, even though the fallback zone is still ahead", async () => {
+    primeHappyPath();
+    h.prepareRecipients.mockReturnValue([
+      {
+        monday_item_id: "1",
+        status: "pending",
+        send_timezone: "America/New_York",
+      },
+      { monday_item_id: "2", status: "pending" },
+    ]);
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await POST(postReq(htBody));
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/already in the past/i);
+    expect(h.createCampaign).not.toHaveBeenCalled();
+  });
+
+  test("201 at the same instant when the audience is fallback-only (HT still ahead)", async () => {
+    primeHappyPath(); // prepared rows carry no zones
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await POST(postReq(htBody));
+    expect(res.status).toBe(201);
+    expect(h.createCampaign).toHaveBeenCalledTimes(1);
+  });
+
+  test("non-pending rows' zones do not gate the check", async () => {
+    primeHappyPath();
+    h.prepareRecipients.mockReturnValue([
+      {
+        monday_item_id: "1",
+        status: "skipped", // its past ET zone must not block the send
+        send_timezone: "America/New_York",
+      },
+      { monday_item_id: "2", status: "pending" },
+    ]);
+    nowSpy = vi.spyOn(Date, "now").mockReturnValue(betweenEtAndHt);
+
+    const res = await POST(postReq(htBody));
+    expect(res.status).toBe(201);
   });
 });

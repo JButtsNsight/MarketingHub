@@ -143,6 +143,28 @@ export function sendAtForZonedSlot(
 }
 
 /**
+ * The EARLIEST instant of `sendTime` on `sendDate` across an audience's
+ * zones — `null` entries (and an empty audience) mean `fallbackZone`. The
+ * past-slot checks validate this: a multi-zone audience's first send is its
+ * easternmost zone's, which can precede the fallback zone's slot.
+ */
+export function earliestZonedSendAt(
+  sendDate: string,
+  sendTime: string,
+  fallbackZone: string,
+  zones: ReadonlyArray<string | null>,
+): Date {
+  const distinct = Array.from(
+    new Set(
+      zones.length > 0 ? zones.map((z) => z ?? fallbackZone) : [fallbackZone],
+    ),
+  );
+  return distinct
+    .map((zone) => sendAtForZonedSlot(sendDate, sendTime, zone))
+    .reduce((a, b) => (a.getTime() <= b.getTime() ? a : b));
+}
+
+/**
  * The UTC instant of 11:30 AM America/New_York on `sendDate` — the fixed
  * pre-scheduling slot, kept for legacy callers and as the migration default.
  */

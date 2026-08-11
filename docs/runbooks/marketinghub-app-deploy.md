@@ -273,6 +273,7 @@ Edit `app-infra/cdk.json` (or pass `-c key=value` on the CLI) and replace every
 | `workerImageTag` | *(optional)* pin the SMS dispatcher's image independently of `appImageTag` — REQUIRED in practice while the app/worker images are drifted apart (§9.4) |
 | `smsLinkBaseUrl` | *(optional)* tracked-link base URL (§1.6b); preview uses `http://localhost:8080` |
 | `smsFreqCapCount` / `smsFreqCapDays` | *(optional)* dispatcher frequency cap, both > 0 to enable (§1.6b) |
+| `mondayWritebackEnabled` / `mondayWritebackPollMs` / `mondayWritebackRatePerSec` | *(optional)* Monday write-back consumer knobs, worker env only (§15) |
 | `enableRealtimeAlb` | *(flag, default off)* `/realtime/v1/*` listener rule + Kong target group (§10) |
 | `supabaseAppConfigSecretArn` + `supabaseAppConfigKmsKeyArn` | *(optional, must be paired)* `nsight-supabase/app-config` complete ARN + its CMK — delivers `SUPABASE_JWT_SECRET` / `SUPABASE_ANON_KEY` / `LOGFLARE_PRIVATE_ACCESS_TOKEN` to the APP container only (§§9–11) |
 | `headlessClaudeUrl` + `headlessClaudeApiKeySecretArn` | *(optional, paired in practice)* gateway base URL (plain env) + `marketinghub/headless-claude` complete ARN (§14) |
@@ -299,7 +300,8 @@ aws cloudformation describe-stacks --stack-name SupabaseNetwork --region us-east
 - SMS campaigns: the app container gets secrets `MONDAY_API_TOKEN` +
   `SIMPLETEXTING_WEBHOOK_TOKEN`, and the separate **dispatcher worker** task
   (same image, command override `worker.cjs`, desiredCount 1, no ALB) gets
-  `SUPABASE_SERVICE_ROLE_KEY` + `SIMPLETEXTING_API_TOKEN` — all `ValueFrom` the
+  `SUPABASE_SERVICE_ROLE_KEY` + `SIMPLETEXTING_API_TOKEN` +
+  `MONDAY_API_TOKEN` (write-back, §15) — all `ValueFrom` the
   §1.7 secret's JSON fields. The send token never reaches the web task.
 
 ---
@@ -647,7 +649,11 @@ they are inert for BYPASSRLS roles — and there is no migration to unwind.
   flag is on — that is the timeout, not RLS.
 - **Never add `SUPABASE_JWT_SECRET` to the worker task-def.** The dispatcher
   must keep BYPASSRLS semantics (claims, releases, status flips across all
-  rows) — a per-user worker silently strands recipients.
+  rows) — a per-user worker silently strands recipients. The worker task-def
+  is otherwise **secret-frozen**, with ONE documented exception:
+  `MONDAY_API_TOKEN` (2026-08-11, the Monday write-back consumer — §15; same
+  §1.7 secret + CMK as the app container, no new IAM/KMS surface). The
+  JWT/anon/logflare prohibition is unchanged.
 - **Task-def drift compounds:** after staging, the live task-def differs from
   cdk by image tag, `supabaseUrl`, AND this secret. The next `cdk deploy` of
   `app-infra` must pass `appImageTag` + `supabaseUrl` overrides and fold the
@@ -1467,3 +1473,79 @@ no data or schema changes needed. The FTS migration is additive and harmless
 (one index + one STABLE SECURITY INVOKER function) — leave it in place. The
 dormant pgvector pipeline is untouched in either direction, so there is
 nothing to re-embed, re-queue, or reconcile.
+
+## 15. SMS timezones + Monday write-back (2026-08-11)
+
+The worker runs a THIRD consumer beside the SMS dispatcher and the intel
+consumer: `web/src/worker/monday-writeback.ts` syncs per-recipient campaign
+outcomes back to the source Monday board (per-list configured outcome
+column; CSV campaigns and rows without `monday_item_id` are skipped). For it
+the worker task-def gains ONE secret — `MONDAY_API_TOKEN` from the §1.7
+`marketinghub/sms-campaigns` secret (same CMK, no new IAM/KMS) — the
+documented exception to the §9.4 secret-frozen doctrine. Empty field ⇒ the
+consumer idles with a warning; it never crashes and never touches SMS
+dispatch (own interval, own error handling — the §13 consumer-isolation
+pattern).
+
+### 15.0 Apply the two migrations FIRST (before the new images)
+
+Same **migration-first** deploy order as §1.6b, same SSM + `psql` + **pgrst
+reload** recipe as §1.6. Two new dated files, applied **in date order** after
+the existing chain (both idempotent; neither touches `claim_due_sms_recipients`,
+so the engagement-suite migration does NOT need a re-apply):
+
+1. `cdk/sql/2026-08-11-monday-writeback.sql` — per-list outcome column, the
+   recipient sync watermark, and the w5 recipients-trigger split (watermark
+   bumps stop broadcasting realtime events).
+2. `cdk/sql/2026-08-11-recipient-timezones.sql` — member/list timezone
+   columns, `sms_campaign_recipients.send_timezone` (+ closed-set CHECK), and
+   the `sms_campaign_recipient_zone_counts` view behind the "N zones" chips.
+
+```
+aws ssm start-session --target <supabase-instance-id> --region us-east-1
+# on the host, with both files present:
+sudo docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 \
+  < 2026-08-11-monday-writeback.sql
+sudo docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 \
+  < 2026-08-11-recipient-timezones.sql
+sudo docker exec -i supabase-db psql -U postgres \
+  -c "select pg_notify('pgrst','reload schema');"
+```
+
+**Do not skip the reload, and do not ship the round-2 images first**: the new
+app code inserts `send_timezone` on every recipient row and writes the
+`monday_*_column_id` list config, so against an un-migrated database (or a
+stale PostgREST schema cache) EVERY campaign create fails loud (PGRST204
+"could not find the column", campaign auto-canceled), list creation with the
+new pickers 400s, reschedule 500s, and the write-back consumer errors every
+poll until the SQL lands and the reload runs.
+
+### 15.1 Env knobs (worker only; smsFreqCap* pattern)
+
+Optional context, passed through verbatim; absent = OMITTED from the
+task-def and the consumer uses its in-code default:
+
+| context | env var | absent |
+| --- | --- | --- |
+| `mondayWritebackEnabled` | `MONDAY_WRITEBACK_ENABLED` | on — pass `false` to disable the consumer |
+| `mondayWritebackPollMs` | `MONDAY_WRITEBACK_POLL_INTERVAL_MS` | in-code poll interval (`monday-writeback.ts`) |
+| `mondayWritebackRatePerSec` | `MONDAY_WRITEBACK_RATE_PER_SEC` | in-code Monday mutation throttle |
+
+### 15.2 Activation — write-scoped token
+
+The §1.7 token was provisioned for board READS. Write-back mutates board
+columns, so it needs a WRITE-scoped Monday token:
+
+1. Paste the write-scoped token into the `MONDAY_API_TOKEN` field of
+   `marketinghub/sms-campaigns` — `put-secret-value` with the FULL JSON,
+   §1.7 (never a partial update; the other two fields must survive).
+2. Force a new deployment of the WORKER service — secrets are injected at
+   task start, not live-reloaded. The app container reads the same field
+   for board reads; the wider token is a superset, so the app keeps
+   working on its old task until its next natural deploy.
+
+Rollback = restore a read-scoped token + force a new worker deployment;
+emptying the field drops the consumer to its honest idle-warn state. Sync
+is idempotent (a row re-writes only while its current outcome differs from
+the synced snapshot), so a later re-activation simply catches up — nothing
+to reconcile.

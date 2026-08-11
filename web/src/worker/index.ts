@@ -40,6 +40,7 @@ import {
   sendSms,
 } from "../lib/simpletexting/client";
 import { startIntelConsumer } from "./intel-consumer";
+import { startMondayWriteback } from "./monday-writeback";
 
 const DEFAULTS: DispatcherConfig = {
   pollMs: 30_000,
@@ -192,6 +193,21 @@ async function main(): Promise<void> {
   } catch (err) {
     logLine({
       msg: "intel-consumer failed to start — SMS dispatch unaffected",
+      level: "error",
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Round 2 Track B: Monday outcome write-back consumer — same isolation
+  // doctrine as the intel consumer above (own module, own interval and
+  // signal handlers, try/catch-everything, warn-once idle when
+  // MONDAY_API_TOKEN is unset). startMondayWriteback never throws, and the
+  // fence below makes even that guarantee non-load-bearing.
+  try {
+    startMondayWriteback();
+  } catch (err) {
+    logLine({
+      msg: "monday-writeback failed to start — SMS dispatch unaffected",
       level: "error",
       error: err instanceof Error ? err.message : String(err),
     });

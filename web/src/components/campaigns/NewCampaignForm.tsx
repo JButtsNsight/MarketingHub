@@ -269,6 +269,14 @@ export function NewCampaignForm({
             </option>
           ))}
         </select>
+        {/* Hidden only when the list provably has no per-contact zones (a
+            Monday list without a timezone column); CSV member zones are not
+            on the list row, so the hint stays static there. */}
+        {!selectedList ||
+        selectedList.source === "csv" ||
+        selectedList.monday_timezone_column_id ? (
+          <p className="note">Fallback for contacts without a timezone.</p>
+        ) : null}
       </div>
 
       <div className="field">

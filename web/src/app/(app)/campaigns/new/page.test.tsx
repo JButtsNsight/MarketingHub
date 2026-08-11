@@ -53,6 +53,8 @@ const list: ContactList = {
   monday_board_id: null,
   monday_board_name: null,
   monday_phone_column_id: null,
+  monday_timezone_column_id: null,
+  monday_outcome_column_id: null,
   contact_count: 42,
   invalid_count: 0,
   duplicate_count: 0,

@@ -15,17 +15,18 @@ import {
 import { CampaignCreateInputSchema } from "@/lib/sms/schema";
 import { applyLinkTracking } from "@/lib/sms/links";
 import { unsupportedMergeFields } from "@/lib/sms/render";
-import { sendAtForZonedSlot } from "@/lib/sms/schedule";
+import { earliestZonedSendAt } from "@/lib/sms/schedule";
+import { normalizeRecipientZone } from "@/lib/sms/timezone";
 import { getTemplate } from "@/lib/templates/repo";
 
 /**
  * SMS campaigns collection API. Group-gated SERVER-SIDE on the Cognito
  * `marketing` group (via `requireUser`); the service-role Supabase client is
  * only reached through the repos. POST snapshots everything at creation time:
- * the template body, the computed 11:30 AM America/New_York send instant, and
- * the audience of the chosen contact list — a linked Monday board fetched
- * live (every page), or an uploaded sheet's stored members — classified into
- * outbox rows.
+ * the template body, the per-recipient send instants (each row at the chosen
+ * slot in its own zone, campaign zone as the fallback), and the audience of
+ * the chosen contact list — a linked Monday board fetched live (every page),
+ * or an uploaded sheet's stored members — classified into outbox rows.
  */
 
 // Reads request-time headers (ALB identity); never prerender/cache.
@@ -46,6 +47,25 @@ function summarize(prepared: PreparedRecipient[]) {
   const counts = { pending: 0, skipped: 0, suppressed: 0, total: prepared.length };
   for (const row of prepared) counts[row.status] += 1;
   return counts;
+}
+
+/**
+ * Normalize a raw zone value (CSV member cell / Monday column text) to a send
+ * zone. Unknown values fall back to the campaign zone — never a hard reject —
+ * but leave a per-row audit note (→ the recipient's last_error), so a sheet
+ * full of "EST"/"PST" cells is diagnosable instead of silently zoneless.
+ */
+function zoneOf(
+  raw: string | null | undefined,
+): Pick<SourceRecipientRow, "zone" | "zoneNote"> {
+  const zone = normalizeRecipientZone(raw);
+  return {
+    zone,
+    zoneNote:
+      raw && !zone
+        ? `unrecognized timezone, campaign zone used (raw: ${raw})`
+        : null,
+  };
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -97,18 +117,6 @@ export async function POST(req: Request): Promise<Response> {
     );
   }
 
-  const sendAt = sendAtForZonedSlot(
-    input.sendDate,
-    input.sendTime,
-    input.sendTimezone,
-  );
-  if (sendAt.getTime() <= Date.now()) {
-    return Response.json(
-      { error: "The chosen send slot is already in the past" },
-      { status: 400 },
-    );
-  }
-
   const list = await getContactList(input.contactListId, db);
   if (!list) {
     return Response.json({ error: "Contact list not found" }, { status: 400 });
@@ -139,10 +147,17 @@ export async function POST(req: Request): Promise<Response> {
       if (!board) {
         return Response.json({ error: "board-not-found" }, { status: 404 });
       }
-      sourceRows = await fetchBoardRecipients(
+      const boardRows = await fetchBoardRecipients(
         list.monday_board_id!,
         list.monday_phone_column_id!,
+        list.monday_timezone_column_id,
       );
+      // Each row's raw timezone cell normalizes to a send zone; unknown
+      // values fall back to the campaign zone (with a per-row note).
+      sourceRows = boardRows.map((row) => ({
+        ...row,
+        ...zoneOf(row.rawTimezone),
+      }));
     } catch (err) {
       if (err instanceof MondayConfigError) {
         return Response.json({ error: "monday-not-configured" }, { status: 503 });
@@ -151,12 +166,15 @@ export async function POST(req: Request): Promise<Response> {
     }
   } else {
     // Uploaded sheet: the parsed, already-classified members ARE the audience.
+    // Member timezone cells are stored VERBATIM — normalized here, at
+    // campaign time, exactly like the Monday path.
     const members = await getSendableMembers(list.id, db);
     sourceRows = members.map((m) => ({
       name: m.name,
       firstName: m.first_name,
       phoneE164: m.phone_e164,
       rawPhone: m.raw_phone,
+      ...zoneOf(m.timezone),
     }));
   }
 
@@ -165,6 +183,24 @@ export async function POST(req: Request): Promise<Response> {
     db,
   );
   let prepared = prepareRecipients(sourceRows, template.body, suppressed);
+
+  // Past-slot check, against the EARLIEST instant among the audience's
+  // zones (a fallback-only audience reduces to the campaign zone) — a
+  // multi-zone audience's first sends can precede the fallback zone's slot.
+  const earliest = earliestZonedSendAt(
+    input.sendDate,
+    input.sendTime,
+    input.sendTimezone,
+    prepared
+      .filter((row) => row.status === "pending")
+      .map((row) => row.send_timezone ?? null),
+  );
+  if (earliest.getTime() <= Date.now()) {
+    return Response.json(
+      { error: "The chosen send slot is already in the past" },
+      { status: 400 },
+    );
+  }
 
   // Tracked short links: rewrite URLs in every pending row's rendered_text to
   // `<base>/l/<slug>` so clicks are attributable per recipient. Env-gated —

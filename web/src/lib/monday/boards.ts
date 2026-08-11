@@ -35,6 +35,13 @@ export interface BoardRecipient {
   phoneE164: string | null;
   /** The raw cell value, kept for audit (`last_error` on skipped rows). */
   rawPhone: string;
+  /**
+   * Raw timezone cell text (trimmed) when the list configures a Monday
+   * timezone column; null when unconfigured or blank. Normalized app-side at
+   * campaign creation (`normalizeRecipientZone`) — unknown values fall back
+   * to the campaign zone, never a hard reject.
+   */
+  rawTimezone: string | null;
 }
 
 interface ColumnValueNode {
@@ -72,9 +79,11 @@ const BOARD_META_QUERY = `
 `;
 
 /**
- * Shared item selection: only the chosen phone column travels ($columnIds),
- * with the PhoneValue fragment for real phone columns and `text` as the raw
- * fallback for text-type columns.
+ * Shared item selection: only the chosen columns travel ($columnIds — the
+ * phone column, plus the timezone column when configured), with the
+ * PhoneValue fragment for real phone columns and `text` as the raw fallback
+ * for text-type columns. Non-phone columns (timezone: text/status/dropdown)
+ * carry their display value in `text`.
  */
 const ITEM_FIELDS = `
         id
@@ -140,11 +149,18 @@ export async function getBoardMeta(boardId: string): Promise<BoardMeta | null> {
 }
 
 /** Map one Monday item to recipient shape via normalizeUsPhone + firstNameOf. */
-function toRecipient(item: ItemNode, phoneColumnId: string): BoardRecipient {
+function toRecipient(
+  item: ItemNode,
+  phoneColumnId: string,
+  timezoneColumnId?: string | null,
+): BoardRecipient {
   const cell = (item.column_values ?? []).find((c) => c.id === phoneColumnId);
   // PhoneValue's raw `phone` when present; `text` is the raw-string fallback
   // for text-type phone columns (or a blank phone cell's empty display text).
   const rawPhone = (cell?.phone ?? cell?.text ?? "").trim();
+  const tzCell = timezoneColumnId
+    ? (item.column_values ?? []).find((c) => c.id === timezoneColumnId)
+    : undefined;
   return {
     mondayItemId: String(item.id),
     name: item.name,
@@ -153,6 +169,7 @@ function toRecipient(item: ItemNode, phoneColumnId: string): BoardRecipient {
       ? normalizeUsPhone(rawPhone, cell?.country_short_name ?? undefined)
       : null,
     rawPhone,
+    rawTimezone: (tzCell?.text ?? "").trim() || null,
   };
 }
 
@@ -160,13 +177,18 @@ function toRecipient(item: ItemNode, phoneColumnId: string): BoardRecipient {
  * Fetch EVERY item on a board (items_page → next_items_page(cursor) until the
  * cursor comes back null) and map each to recipient shape. Order is Monday's
  * board order, preserved across page boundaries. Returns [] for an unknown
- * board — routes distinguish that via getBoardMeta.
+ * board — routes distinguish that via getBoardMeta. `timezoneColumnId` (the
+ * list's optional Monday timezone column) adds that column to the fetch and
+ * fills `rawTimezone`.
  */
 export async function fetchBoardRecipients(
   boardId: string,
   phoneColumnId: string,
+  timezoneColumnId?: string | null,
 ): Promise<BoardRecipient[]> {
-  const columnIds = [phoneColumnId];
+  const columnIds = timezoneColumnId
+    ? [phoneColumnId, timezoneColumnId]
+    : [phoneColumnId];
   const first = await mondayGraphQL<{
     boards?: Array<{ items_page: ItemsPageNode }> | null;
   }>(FIRST_PAGE_QUERY, { boardIds: [boardId], columnIds });
@@ -176,7 +198,7 @@ export async function fetchBoardRecipients(
 
   const recipients: BoardRecipient[] = [];
   for (const item of firstPage.items ?? []) {
-    recipients.push(toRecipient(item, phoneColumnId));
+    recipients.push(toRecipient(item, phoneColumnId, timezoneColumnId));
   }
 
   let cursor = firstPage.cursor;
@@ -187,7 +209,7 @@ export async function fetchBoardRecipients(
     );
     const page = next.next_items_page;
     for (const item of page?.items ?? []) {
-      recipients.push(toRecipient(item, phoneColumnId));
+      recipients.push(toRecipient(item, phoneColumnId, timezoneColumnId));
     }
     cursor = page?.cursor ?? null;
   }

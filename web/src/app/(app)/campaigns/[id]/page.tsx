@@ -21,6 +21,11 @@ import { RecipientsTable } from "@/components/campaigns/RecipientsTable";
 import { RescheduleControl } from "@/components/campaigns/RescheduleControl";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
+import {
+  foldZoneCounts,
+  getExplicitZoneCounts,
+  zoneChip,
+} from "@/lib/sms/zoneStats";
 
 // Reads request-time identity + live outbox rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -28,7 +33,8 @@ export const dynamic = "force-dynamic";
 /**
  * Single-campaign view. Server component: it loads the (server-only) repo
  * rows and 404s via `notFound()` for an unknown id. Renders the lifecycle
- * header (status badge, the 11:30 AM ET send instant, template/board
+ * header (status badge, the send slot + zone — plus an "N zones" chip when
+ * recipients span more than one — and template/board
  * provenance), the per-status recipient StatCards, the pause/resume/cancel
  * controls, and the full outbox table with the failed_ambiguous review lane.
  */
@@ -46,15 +52,17 @@ export default async function CampaignDetailPage({
   const campaign = await getCampaign(id, db);
   if (!campaign) notFound();
 
-  const [counts, recipients, list, engagement, replies] = await Promise.all([
-    getCampaignCounts(id, db),
-    getCampaignRecipients(id, db),
-    campaign.contact_list_id
-      ? getContactList(campaign.contact_list_id, db)
-      : Promise.resolve(null),
-    getCampaignEngagement(id, db),
-    listInboundMessages({ campaignId: id, limit: 50 }, db),
-  ]);
+  const [counts, recipients, list, engagement, replies, explicitZones] =
+    await Promise.all([
+      getCampaignCounts(id, db),
+      getCampaignRecipients(id, db),
+      campaign.contact_list_id
+        ? getContactList(campaign.contact_list_id, db)
+        : Promise.resolve(null),
+      getCampaignEngagement(id, db),
+      listInboundMessages({ campaignId: id, limit: 50 }, db),
+      getExplicitZoneCounts([id], db),
+    ]);
 
   // Click-through denominator: rows that reached a phone. `sent` rows may
   // still settle either way; `undelivered` provably never arrived.
@@ -63,6 +71,14 @@ export default async function CampaignDetailPage({
     engagement.tracked_links > 0 && reached > 0
       ? `${((engagement.recipients_clicked / reached) * 100).toFixed(1)}%`
       : "—";
+
+  // Multi-zone audience chip — the same view-backed source the /campaigns and
+  // /schedule chips use (getCampaignRecipients caps at 2000 rows, so deriving
+  // the chip from it would disagree with those pages on large campaigns).
+  const totalRows = Object.values(counts).reduce((sum, n) => sum + n, 0);
+  const zones = zoneChip(
+    foldZoneCounts(explicitZones.get(id), campaign.send_timezone, totalRows),
+  );
 
   return (
     <>
@@ -78,6 +94,12 @@ export default async function CampaignDetailPage({
               {campaign.send_date}, {formatSlot(campaign.send_time)}{" "}
               {zoneAbbr(campaign.send_timezone)}
             </span>
+            {zones ? (
+              <>
+                {" "}
+                <Badge title={zones.title}>{zones.label}</Badge>
+              </>
+            ) : null}
             {" · template "}
             <span className="mono">{campaign.template_id}</span>
             {list ? (

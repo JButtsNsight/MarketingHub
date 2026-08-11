@@ -11,6 +11,11 @@ import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
+import {
+  foldZoneCounts,
+  getExplicitZoneCounts,
+  zoneChip,
+} from "@/lib/sms/zoneStats";
 
 // Reads request-time identity + live campaign rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -24,7 +29,12 @@ function totalRecipients(c: CampaignWithCounts): number {
   return Object.values(c.counts).reduce((sum, n) => sum + n, 0);
 }
 
-const COLUMNS: Column<CampaignWithCounts>[] = [
+/** A table row: campaign + its multi-zone chip (null = single zone). */
+type CampaignRow = CampaignWithCounts & {
+  zones: ReturnType<typeof zoneChip>;
+};
+
+const COLUMNS: Column<CampaignRow>[] = [
   {
     key: "name",
     header: "name",
@@ -43,8 +53,17 @@ const COLUMNS: Column<CampaignWithCounts>[] = [
     header: "sends",
     mono: true,
     width: "220px",
-    render: (c) =>
-      `${c.send_date} · ${formatSlot(c.send_time)} ${zoneAbbr(c.send_timezone)}`,
+    render: (c) => (
+      <>
+        {`${c.send_date} · ${formatSlot(c.send_time)} ${zoneAbbr(c.send_timezone)}`}
+        {c.zones ? (
+          <>
+            {" "}
+            <Badge title={c.zones.title}>{c.zones.label}</Badge>
+          </>
+        ) : null}
+      </>
+    ),
   },
   {
     key: "total",
@@ -93,6 +112,18 @@ export default async function CampaignsPage() {
   const db = await getUserClient(user);
 
   const campaigns = await listCampaignsWithCounts(db);
+  // Per-recipient zones: fold explicit send_timezone rows + the campaign-zone
+  // fallback into one "N zones" chip per multi-zone campaign.
+  const explicitZones = await getExplicitZoneCounts(
+    campaigns.map((c) => c.id),
+    db,
+  );
+  const rows: CampaignRow[] = campaigns.map((c) => ({
+    ...c,
+    zones: zoneChip(
+      foldZoneCounts(explicitZones.get(c.id), c.send_timezone, totalRecipients(c)),
+    ),
+  }));
 
   return (
     <>
@@ -118,7 +149,7 @@ export default async function CampaignsPage() {
       {campaigns.length > 0 ? (
         <DataTable
           columns={COLUMNS}
-          rows={campaigns}
+          rows={rows}
           getRowKey={(c) => c.id}
           empty="No campaigns."
         />

@@ -8,6 +8,7 @@ import {
   getCampaign,
   getCampaignCounts,
   getCampaignRecipients,
+  getPendingRecipientZones,
   pauseCampaign,
   rescheduleCampaign,
   resumeCampaign,
@@ -16,7 +17,7 @@ import {
   CampaignRescheduleInputSchema,
   type SmsCampaign,
 } from "@/lib/sms/schema";
-import { sendAtForZonedSlot } from "@/lib/sms/schedule";
+import { earliestZonedSendAt } from "@/lib/sms/schedule";
 
 /**
  * Single-campaign API. Group-gated server-side on the Cognito `marketing`
@@ -124,8 +125,12 @@ export async function PATCH(
 
   if (parsed.data.action === "reschedule") {
     const { sendDate, sendTime, sendTimezone } = parsed.data;
+    // Past-slot check, against the EARLIEST instant among the still-pending
+    // rows' zones (null = the campaign zone; none pending = the campaign
+    // zone alone) — the first sends can precede the fallback zone's slot.
+    const zones = await getPendingRecipientZones(id, db);
     if (
-      sendAtForZonedSlot(sendDate, sendTime, sendTimezone).getTime() <=
+      earliestZonedSendAt(sendDate, sendTime, sendTimezone, zones).getTime() <=
       Date.now()
     ) {
       return Response.json(

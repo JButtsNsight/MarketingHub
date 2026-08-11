@@ -188,10 +188,126 @@ describe("POST /api/contact-lists (monday)", () => {
     expect(h.getBoardMeta).toHaveBeenCalledWith("123456");
     expect(h.createMondayList).toHaveBeenCalledWith(
       "Patient board",
-      { id: "123456", name: "Patients", phoneColumnId: "phone_col" },
+      {
+        id: "123456",
+        name: "Patients",
+        phoneColumnId: "phone_col",
+        timezoneColumnId: null,
+        outcomeColumnId: null,
+      },
       { email: "amy@nsight.example" },
       userDb,
     );
+  });
+
+  test("201: optional timezone + outcome column picks travel to the repo", async () => {
+    h.getBoardMeta.mockResolvedValue({
+      id: "123456",
+      name: "Patients",
+      columns: [
+        { id: "phone_col", title: "Phone", type: "phone" },
+        { id: "tz_col", title: "Timezone", type: "text" },
+        { id: "outcome_col", title: "Outreach result", type: "text" },
+      ],
+    });
+    h.createMondayList.mockResolvedValue({ id: "list-3" });
+
+    const res = await POST(
+      postReq({
+        ...mondayBody,
+        mondayTimezoneColumnId: "tz_col",
+        mondayOutcomeColumnId: "outcome_col",
+      }),
+    );
+    expect(res.status).toBe(201);
+    expect(h.createMondayList).toHaveBeenCalledWith(
+      "Patient board",
+      {
+        id: "123456",
+        name: "Patients",
+        phoneColumnId: "phone_col",
+        timezoneColumnId: "tz_col",
+        outcomeColumnId: "outcome_col",
+      },
+      { email: "amy@nsight.example" },
+      userDb,
+    );
+  });
+
+  test("400 when the outcome column is not a writable text type (status/formula would fail every write forever)", async () => {
+    for (const type of ["status", "formula", "mirror", "date"]) {
+      h.getBoardMeta.mockResolvedValue({
+        id: "123456",
+        name: "Patients",
+        columns: [
+          { id: "phone_col", title: "Phone", type: "phone" },
+          { id: "bad_col", title: "Outreach", type },
+        ],
+      });
+      const res = await POST(
+        postReq({ ...mondayBody, mondayOutcomeColumnId: "bad_col" }),
+      );
+      expect(res.status).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatch(/mondayOutcomeColumnId must be a text column/);
+      expect(json.error).toContain(type);
+    }
+    expect(h.createMondayList).not.toHaveBeenCalled();
+  });
+
+  test("long_text outcome columns are accepted (change_simple_column_value writes them)", async () => {
+    h.getBoardMeta.mockResolvedValue({
+      id: "123456",
+      name: "Patients",
+      columns: [
+        { id: "phone_col", title: "Phone", type: "phone" },
+        { id: "notes_col", title: "Notes", type: "long_text" },
+      ],
+    });
+    h.createMondayList.mockResolvedValue({ id: "list-4" });
+    const res = await POST(
+      postReq({ ...mondayBody, mondayOutcomeColumnId: "notes_col" }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  test("400 when the timezone column is not on the board", async () => {
+    h.getBoardMeta.mockResolvedValue({
+      id: "123456",
+      name: "Patients",
+      columns: [{ id: "phone_col", title: "Phone", type: "phone" }],
+    });
+    const res = await POST(
+      postReq({ ...mondayBody, mondayTimezoneColumnId: "ghost_col" }),
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/mondayTimezoneColumnId/);
+    expect(h.createMondayList).not.toHaveBeenCalled();
+  });
+
+  test("400 when the outcome column is not on the board", async () => {
+    h.getBoardMeta.mockResolvedValue({
+      id: "123456",
+      name: "Patients",
+      columns: [{ id: "phone_col", title: "Phone", type: "phone" }],
+    });
+    const res = await POST(
+      postReq({ ...mondayBody, mondayOutcomeColumnId: "ghost_col" }),
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error).toMatch(/mondayOutcomeColumnId/);
+    expect(h.createMondayList).not.toHaveBeenCalled();
+  });
+
+  test("400 on a blank timezone pick (form must omit unset pickers)", async () => {
+    const res = await POST(
+      postReq({ ...mondayBody, mondayTimezoneColumnId: "" }),
+    );
+    expect(res.status).toBe(400);
+    expect(h.getBoardMeta).not.toHaveBeenCalled();
+    expect(h.createMondayList).not.toHaveBeenCalled();
   });
 
   test("404 when the board does not resolve", async () => {

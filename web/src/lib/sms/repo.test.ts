@@ -26,6 +26,7 @@ import {
   getCampaignStatuses,
   getEngagementForCampaigns,
   getLinkTarget,
+  getPendingRecipientZones,
   getSuppressedSet,
   getSuppression,
   isSuppressed,
@@ -49,6 +50,7 @@ import {
   releaseClaim,
   releaseForConfigError,
   removeManualSuppression,
+  rescheduleCampaign,
   resolveRecipientSent,
   resumeCampaign,
   retryRecipient,
@@ -388,6 +390,47 @@ describe("prepareRecipients", () => {
     expect(rows[0].first_name).toBe("Jane");
     expect(rows[0].rendered_text).toBe("Hi Jane");
   });
+
+  test("passes each row's normalized zone through as send_timezone (null when absent)", () => {
+    const rows = prepareRecipients(
+      [
+        mondayRow({ zone: "Pacific/Honolulu" }),
+        mondayRow({
+          mondayItemId: "m2",
+          phoneE164: "+15551230002",
+          rawPhone: "555-123-0002",
+        }),
+      ],
+      "Hi {{firstName}}",
+      new Set(),
+    );
+    expect(rows[0].send_timezone).toBe("Pacific/Honolulu");
+    expect(rows[1].send_timezone).toBeNull();
+  });
+
+  test("a zoneNote (unrecognized zone value) lands in last_error on pending rows; skip/suppress reasons outrank it", () => {
+    const note = 'unrecognized timezone, campaign zone used (raw: EST)';
+    const rows = prepareRecipients(
+      [
+        mondayRow({ zone: null, zoneNote: note }),
+        mondayRow({
+          mondayItemId: "m2",
+          phoneE164: null,
+          rawPhone: "not-a-phone",
+          zone: null,
+          zoneNote: note,
+        }),
+      ],
+      "Hi {{firstName}}",
+      new Set(),
+    );
+    // The fallback is never silent — audit trail per the Track B decision log.
+    expect(rows[0].status).toBe("pending");
+    expect(rows[0].last_error).toBe(note);
+    // A skipped row's reason wins; the zone note never masks it.
+    expect(rows[1].status).toBe("skipped");
+    expect(rows[1].last_error).toContain("not-a-phone");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -508,6 +551,8 @@ describe("createCampaign", () => {
     const firstRow = (chunks[0].insert as Record<string, unknown>[])[0];
     expect(firstRow.campaign_id).toBe("c1");
     expect(firstRow.send_after).toBe("2026-08-05T15:30:00.000Z");
+    // zoneless row: null send_timezone MEANS the campaign zone
+    expect(firstRow.send_timezone).toBeNull();
     expect(firstRow.status).toBe("pending");
     expect(firstRow.rendered_text).toBe("Hi Person 0");
 
@@ -554,6 +599,126 @@ describe("createCampaign", () => {
     expect(insert.monday_board_id).toBeNull();
     expect(insert.monday_phone_column_id).toBeNull();
     expect(insert.contact_list_id).toBe(validInput.contactListId);
+  });
+
+  test("mixed-zone audience: per-row send_after in each row's zone, explicit zones stamped, send_at = the EARLIEST row instant", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    // validInput slot: 11:30 on 2026-08-05 → 15:30Z in ET, 21:30Z in HT.
+    const rows = prepared(3);
+    const zoned = [
+      rows[0], // zoneless → campaign zone (ET)
+      { ...rows[1], send_timezone: "Pacific/Honolulu" as const },
+      { ...rows[2], send_timezone: "America/New_York" as const },
+    ];
+    await createCampaign(validInput, mondaySource, "Hi {{firstName}}", zoned, user);
+
+    // the campaign fires with its EARLIEST row
+    expect((queries[0].insert as Record<string, unknown>).send_at).toBe(
+      "2026-08-05T15:30:00.000Z",
+    );
+
+    const chunk = queries[1].insert as Array<Record<string, unknown>>;
+    expect(chunk.map((r) => r.send_after)).toEqual([
+      "2026-08-05T15:30:00.000Z",
+      "2026-08-05T21:30:00.000Z",
+      "2026-08-05T15:30:00.000Z",
+    ]);
+    // only EXPLICIT zones are stamped; null = the campaign zone
+    expect(chunk.map((r) => r.send_timezone)).toEqual([
+      null,
+      "Pacific/Honolulu",
+      "America/New_York",
+    ]);
+  });
+
+  test("an audience entirely in a LATER zone pulls send_at to that zone, not the campaign zone (min is over ROW instants)", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    const zoned = prepared(2).map((r) => ({
+      ...r,
+      send_timezone: "Pacific/Honolulu" as const,
+    }));
+    await createCampaign(validInput, mondaySource, "Hi {{firstName}}", zoned, user);
+
+    expect((queries[0].insert as Record<string, unknown>).send_at).toBe(
+      "2026-08-05T21:30:00.000Z",
+    );
+  });
+
+  test("send_at mins over PENDING rows ONLY — a suppressed/skipped row's earlier zone cannot drag the campaign earlier", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    // Whole pending audience is HT (21:30Z); one never-sendable row per
+    // non-dispatch status sits in ET (15:30Z). The route's past-slot gate
+    // validates pending zones only — send_at must agree with it, or the
+    // campaign promotes to 'sending' hours before any real row is due.
+    const rows = prepared(3);
+    const zoned = [
+      { ...rows[0], send_timezone: "Pacific/Honolulu" as const },
+      {
+        ...rows[1],
+        send_timezone: "America/New_York" as const,
+        status: "suppressed" as const,
+        last_error: "suppressed: phone is on the STOP list",
+      },
+      {
+        ...rows[2],
+        phone_e164: null,
+        send_timezone: "America/New_York" as const,
+        status: "skipped" as const,
+        last_error: "skipped: no usable US phone (raw: n/a)",
+      },
+    ];
+    await createCampaign(validInput, mondaySource, "Hi {{firstName}}", zoned, user);
+
+    expect((queries[0].insert as Record<string, unknown>).send_at).toBe(
+      "2026-08-05T21:30:00.000Z",
+    );
+    // The non-pending rows still snapshot their zone + instant for audit.
+    const chunk = queries[1].insert as Array<Record<string, unknown>>;
+    expect(chunk.map((r) => r.send_after)).toEqual([
+      "2026-08-05T21:30:00.000Z",
+      "2026-08-05T15:30:00.000Z",
+      "2026-08-05T15:30:00.000Z",
+    ]);
+  });
+
+  test("nothing pending at all: send_at falls back to the campaign-zone instant", async () => {
+    const { client, queries } = buildClient([
+      ok({ ...campaignRow, status: "paused" }),
+      ok(null),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    const zoned = prepared(1).map((r) => ({
+      ...r,
+      send_timezone: "Pacific/Honolulu" as const,
+      status: "suppressed" as const,
+      last_error: "suppressed: phone is on the STOP list",
+    }));
+    await createCampaign(validInput, mondaySource, "Hi {{firstName}}", zoned, user);
+
+    // campaign zone (ET) instant, NOT the suppressed row's HT instant
+    expect((queries[0].insert as Record<string, unknown>).send_at).toBe(
+      "2026-08-05T15:30:00.000Z",
+    );
   });
 
   test("chunk-insert failure best-effort cancels the campaign, then fails loud", async () => {
@@ -952,6 +1117,188 @@ describe("campaign transitions", () => {
     const { client } = buildClient([ok(null)]);
     h.client = client;
     expect(await markRecipientFailed("r1")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-recipient timezones — zone groups + the per-zone reschedule sweep
+// ---------------------------------------------------------------------------
+describe("getPendingRecipientZones", () => {
+  test("probes one HEAD count per candidate zone (5 ids + null) and returns only the present groups", async () => {
+    const { client, queries } = buildClient([
+      okCount(2), // America/New_York
+      okCount(0), // America/Chicago
+      okCount(0), // America/Denver
+      okCount(0), // America/Los_Angeles
+      okCount(1), // Pacific/Honolulu
+      okCount(3), // null → the campaign zone
+    ]);
+    h.client = client;
+
+    const zones = await getPendingRecipientZones("c1");
+
+    expect(zones).toEqual(["America/New_York", "Pacific/Honolulu", null]);
+    expect(queries).toHaveLength(6);
+    for (const q of queries) {
+      expect(q.source).toBe("sms_campaign_recipients");
+      expect(q.selectOptions).toEqual({ count: "exact", head: true });
+      expect(q.eq).toContainEqual(["campaign_id", "c1"]);
+      expect(q.eq).toContainEqual(["status", "pending"]);
+    }
+    expect(queries[0].eq).toContainEqual(["send_timezone", "America/New_York"]);
+    expect(queries[4].eq).toContainEqual(["send_timezone", "Pacific/Honolulu"]);
+    // the campaign-zone group filters on send_timezone IS NULL
+    expect(queries[5].is).toContainEqual(["send_timezone", null]);
+  });
+
+  test("fails loud when a count errors", async () => {
+    const { client } = buildClient([okCount(0), err("db down")]);
+    h.client = client;
+    await expect(getPendingRecipientZones("c1")).rejects.toThrow(
+      /\[sms\] pending-zones failed: db down/,
+    );
+  });
+});
+
+describe("rescheduleCampaign", () => {
+  // 2026-08-06 is a Thursday; 09:00 CDT = 14:00Z, 09:00 HST = 19:00Z.
+  const rescheduleInput = {
+    sendDate: "2026-08-06",
+    sendTime: "09:00" as const,
+    sendTimezone: "America/Chicago" as const,
+  };
+
+  test("sweeps the FULL closed zone set; explicit zones keep THEIR slot, null zones follow the NEW campaign zone; send_at = the earliest PENDING-group instant", async () => {
+    const { client, queries } = buildClient([
+      okCount(0), // America/New_York
+      okCount(0), // America/Chicago
+      okCount(0), // America/Denver
+      okCount(0), // America/Los_Angeles
+      okCount(1), // Pacific/Honolulu
+      okCount(2), // null → campaign zone
+      ok({ ...campaignRow, send_timezone: "America/Chicago" }),
+      ok(null), // ET sweep
+      ok(null), // CT sweep
+      ok(null), // MT sweep
+      ok(null), // PT sweep
+      ok(null), // HT sweep
+      ok(null), // campaign-zone (null) sweep
+    ]);
+    h.client = client;
+
+    const updated = await rescheduleCampaign("c1", rescheduleInput);
+
+    expect(updated?.id).toBe("c1");
+    const campaignUpdate = queries[6];
+    expect(campaignUpdate.source).toBe("sms_campaigns");
+    expect(campaignUpdate.update).toMatchObject({
+      send_date: "2026-08-06",
+      send_time: "09:00",
+      send_timezone: "America/Chicago",
+      // min over PENDING groups only: min(HT 19:00Z, CT 14:00Z)
+      send_at: "2026-08-06T14:00:00.000Z",
+    });
+    expect(campaignUpdate.eq).toContainEqual(["id", "c1"]);
+    expect(campaignUpdate.in).toContainEqual([
+      "status",
+      ["scheduled", "paused"],
+    ]);
+    expect(campaignUpdate.maybeSingle).toBe(true);
+
+    // Every candidate zone is swept — NOT just the snapshotted groups: a row
+    // can turn pending between the probe and the sweeps (retryRecipient /
+    // markRetry), and a snapshot-filtered sweep would strand it due-now in a
+    // never-iterated group.
+    const sweeps = queries.slice(7);
+    expect(sweeps).toHaveLength(6);
+    for (const sweep of sweeps) {
+      expect(sweep.source).toBe("sms_campaign_recipients");
+      expect(sweep.eq).toContainEqual(["campaign_id", "c1"]);
+      // the durability guard, exactly as-is — zone filters only NARROW it
+      expect(sweep.eq).toContainEqual(["status", "pending"]);
+    }
+    // explicit rows get the new date + slot in THEIR zone (east → west)…
+    expect(sweeps.slice(0, 5).map((q) => q.update?.send_after)).toEqual([
+      "2026-08-06T13:00:00.000Z", // ET
+      "2026-08-06T14:00:00.000Z", // CT
+      "2026-08-06T15:00:00.000Z", // MT
+      "2026-08-06T16:00:00.000Z", // PT
+      "2026-08-06T19:00:00.000Z", // HT
+    ]);
+    expect(sweeps[4].eq).toContainEqual(["send_timezone", "Pacific/Honolulu"]);
+    // …and null-zone rows follow the campaign zone — including a CHANGED one
+    const fallbackSweep = sweeps[5];
+    expect(fallbackSweep.update?.send_after).toBe("2026-08-06T14:00:00.000Z");
+    expect(fallbackSweep.is).toContainEqual(["send_timezone", null]);
+    expect(queries).toHaveLength(13);
+  });
+
+  test("zoneless campaign: every pending row is caught by the null-group sweep at the campaign-zone instant", async () => {
+    const { client, queries } = buildClient([
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(4), // every pending row is campaign-zone
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    const updated = await rescheduleCampaign("c1", rescheduleInput);
+
+    expect(updated?.id).toBe("c1");
+    expect(queries[6].update?.send_at).toBe("2026-08-06T14:00:00.000Z");
+    const sweep = queries[12]; // the null group sweeps LAST
+    expect(sweep.update?.send_after).toBe("2026-08-06T14:00:00.000Z");
+    expect(sweep.is).toContainEqual(["send_timezone", null]);
+    expectRecentIso(sweep.update?.updated_at);
+    // send_after + updated_at only — no restamp; null still MEANS campaign zone
+    expect(Object.keys(sweep.update ?? {}).sort()).toEqual([
+      "send_after",
+      "updated_at",
+    ]);
+    expect(queries).toHaveLength(13);
+  });
+
+  test("returns null (409) after the zone probes, without sweeping, when the guard loses", async () => {
+    const { client, queries } = buildClient([
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(1),
+      ok(null), // campaign no longer scheduled|paused
+    ]);
+    h.client = client;
+
+    expect(await rescheduleCampaign("c1", rescheduleInput)).toBeNull();
+    expect(queries).toHaveLength(7);
+  });
+
+  test("no pending rows: send_at falls back to the campaign-zone instant; the catch-all sweeps still run", async () => {
+    const { client, queries } = buildClient([
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      okCount(0),
+      ok(campaignRow),
+    ]);
+    h.client = client;
+
+    const updated = await rescheduleCampaign("c1", rescheduleInput);
+
+    expect(updated?.id).toBe("c1");
+    expect(queries[6].update?.send_at).toBe("2026-08-06T14:00:00.000Z");
+    // 6 probes + campaign update + 6 catch-all sweeps (0-row updates when
+    // nothing raced in — cheap insurance against a mid-request retry).
+    expect(queries).toHaveLength(13);
+    for (const sweep of queries.slice(7)) {
+      expect(sweep.eq).toContainEqual(["status", "pending"]);
+    }
   });
 });
 

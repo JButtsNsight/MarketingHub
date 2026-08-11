@@ -15,7 +15,9 @@ import { AppStack } from '../lib/app-stack';
 //       has ever had) — never the execution roles;
 //     * NO new secret anywhere, and the WORKER task-def stays secret-frozen
 //       (runbook §9.4 — the w6 test guards JWT/anon/logflare; this one guards
-//       the whole worker Secrets list under the W8 flag).
+//       the whole worker Secrets list under the W8 flag). The frozen baseline
+//       is THREE secrets since 2026-08-11: MONDAY_API_TOKEN joined as the one
+//       documented §9.4 exception (Monday write-back consumer).
 //
 // The DEFAULT state must synthesize a template byte-identical to Wave 7 —
 // asserted below via flag-absent === flag-'false' === flag-false identity plus
@@ -218,10 +220,11 @@ for (const [mode, makeOn] of ON_MODES) {
     expect(onCount).toBe(defaultCount + 2);
   });
 
-  test(`flag on (${mode}): the WORKER task-def stays secret-frozen — EXACTLY its two pre-W8 secrets, none added`, () => {
+  test(`flag on (${mode}): the WORKER task-def stays secret-frozen — EXACTLY the three baseline secrets, none added by the flag`, () => {
     const template = makeOn();
     const worker = container(findTaskDef(template, 'worker'), 'worker');
     expect(((worker.Secrets ?? []) as any[]).map((s) => s.Name).sort()).toEqual([
+      'MONDAY_API_TOKEN',
       'SIMPLETEXTING_API_TOKEN',
       'SUPABASE_SERVICE_ROLE_KEY',
     ]);
@@ -270,9 +273,10 @@ test('the full W8 preview activation shape (W5 flags + bedrock) synthesizes ever
     ).toHaveLength(1);
   }
   // The W6 rule still holds under the combined flags: app-config secrets on
-  // the APP container only, the worker keeps exactly its two.
+  // the APP container only, the worker keeps exactly its three baseline.
   const worker = container(findTaskDef(template, 'worker'), 'worker');
   expect(((worker.Secrets ?? []) as any[]).map((s) => s.Name).sort()).toEqual([
+    'MONDAY_API_TOKEN',
     'SIMPLETEXTING_API_TOKEN',
     'SUPABASE_SERVICE_ROLE_KEY',
   ]);

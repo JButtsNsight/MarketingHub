@@ -26,6 +26,15 @@ const MARKETING_GROUP = "marketing";
 /** Uploaded sheet text cap (~5 MB) — patient lists are thousands of rows. */
 const MAX_SHEET_CHARS = 5 * 1024 * 1024;
 
+/**
+ * Column types the outcome write-back can actually write. The worker uses
+ * `change_simple_column_value` with a dated outcome string and deliberately
+ * never `create_labels_if_missing` (lib/monday/writes.ts) — a status/formula/
+ * mirror pick would fail EVERY write forever while the list looks configured,
+ * so it is rejected here (and filtered out of the picker).
+ */
+const OUTCOME_COLUMN_TYPES = new Set(["text", "long_text"]);
+
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
     return Response.json({ error: err.message }, { status: err.status });
@@ -120,10 +129,46 @@ export async function POST(req: Request): Promise<Response> {
       { status: 400 },
     );
   }
+  // Optional column picks (recipient timezone, outcome write-back) must be
+  // real board columns too.
+  for (const [field, columnId] of [
+    ["mondayTimezoneColumnId", input.mondayTimezoneColumnId],
+    ["mondayOutcomeColumnId", input.mondayOutcomeColumnId],
+  ] as const) {
+    if (columnId && !board.columns.some((c) => c.id === columnId)) {
+      return Response.json(
+        { error: `${field} is not a column of that board` },
+        { status: 400 },
+      );
+    }
+  }
+  // The outcome column must be WRITABLE by the worker's plain-text mutation.
+  if (input.mondayOutcomeColumnId) {
+    const outcome = board.columns.find(
+      (c) => c.id === input.mondayOutcomeColumnId,
+    );
+    if (outcome && !OUTCOME_COLUMN_TYPES.has(outcome.type)) {
+      return Response.json(
+        {
+          error:
+            `mondayOutcomeColumnId must be a text column ` +
+            `(got type "${outcome.type}" — dated outcome strings cannot be ` +
+            `written to it)`,
+        },
+        { status: 400 },
+      );
+    }
+  }
 
   const list = await createMondayList(
     input.name,
-    { id: board.id, name: board.name, phoneColumnId: input.phoneColumnId },
+    {
+      id: board.id,
+      name: board.name,
+      phoneColumnId: input.phoneColumnId,
+      timezoneColumnId: input.mondayTimezoneColumnId ?? null,
+      outcomeColumnId: input.mondayOutcomeColumnId ?? null,
+    },
     { email: user.email },
     db,
   );

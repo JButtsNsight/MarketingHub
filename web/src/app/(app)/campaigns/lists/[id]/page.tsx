@@ -88,6 +88,12 @@ export default async function ContactListDetailPage({
                 {list.monday_board_name}{" "}
                 <span className="mono">
                   #{list.monday_board_id} · column {list.monday_phone_column_id}
+                  {list.monday_timezone_column_id
+                    ? <> · tz {list.monday_timezone_column_id}</>
+                    : null}
+                  {list.monday_outcome_column_id
+                    ? <> · outcome {list.monday_outcome_column_id}</>
+                    : null}
                 </span>
               </>
             ) : (

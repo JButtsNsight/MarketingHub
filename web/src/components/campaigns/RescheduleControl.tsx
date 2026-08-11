@@ -14,7 +14,8 @@ import { Surface } from "../Surface";
 /**
  * Reschedule control for a campaign that has not started sending. Collapsed
  * to a button; expanded it PATCHes `{action: "reschedule"}` with the new
- * weekday date + 30-minute slot + US zone and refreshes the server page. A
+ * weekday date + 30-minute slot + fallback US zone (recipients with their own
+ * zone recompute server-side) and refreshes the server page. A
  * 409 means the dispatcher promoted the campaign mid-edit — refresh shows
  * the real state.
  */
@@ -107,7 +108,7 @@ export function RescheduleControl({
         />
       </div>
       <div className="field">
-        <label htmlFor="resch-zone">Time zone</label>
+        <label htmlFor="resch-zone">Fallback zone</label>
         <select
           id="resch-zone"
           className="surface control"
@@ -120,6 +121,7 @@ export function RescheduleControl({
             </option>
           ))}
         </select>
+        <p className="note">Fallback for contacts without a timezone.</p>
       </div>
       <div className="field">
         <label htmlFor="resch-time">Send time</label>

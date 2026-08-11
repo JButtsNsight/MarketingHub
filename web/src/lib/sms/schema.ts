@@ -151,14 +151,31 @@ export interface SmsCampaignRecipient {
   attempts: number;
   /** Due instant; starts at the campaign's send_at, bumped by retry backoff. */
   send_after: string;
+  /** Zone this row's send_after was computed in; null = the campaign zone. */
+  send_timezone: string | null;
   claimed_at: string | null;
   claim_expires_at: string | null;
   st_message_id: string | null;
   st_credits: number | null;
   last_error: string | null;
+  /** Monday write-back watermark: last sync instant + outcome written then. */
+  monday_synced_at: string | null;
+  monday_synced_status: string | null;
   created_at: string;
   updated_at: string;
 }
+
+/** Generated row type for `marketinghub.sms_campaign_recipients` (scripts/gen-db-types.sh). */
+type GeneratedSmsCampaignRecipientRow = Tables<
+  { schema: "marketinghub" },
+  "sms_campaign_recipients"
+>;
+
+// Same compile-time drift checks as SmsCampaign above.
+const _smsCampaignRecipientSatisfiesGeneratedRow = {} as SmsCampaignRecipient satisfies GeneratedSmsCampaignRecipientRow;
+const _smsCampaignRecipientKeysExistInGeneratedRow = {} as keyof SmsCampaignRecipient satisfies keyof GeneratedSmsCampaignRecipientRow;
+void _smsCampaignRecipientSatisfiesGeneratedRow;
+void _smsCampaignRecipientKeysExistInGeneratedRow;
 
 /** A row of the `sms_campaign_recipient_counts` view: campaign × status × n. */
 export interface CampaignCounts {

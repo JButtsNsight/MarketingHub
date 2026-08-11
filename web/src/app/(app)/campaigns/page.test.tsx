@@ -5,6 +5,7 @@ import { RECIPIENT_STATUSES, type CampaignStatus } from "@/lib/sms/schema";
 
 const h = vi.hoisted(() => ({
   listCampaignsWithCounts: vi.fn(),
+  getExplicitZoneCounts: vi.fn(),
   requireMarketingUser: vi.fn(),
   // Sentinel client threaded by the page into every repo call (Wave 4).
   userDb: {},
@@ -15,6 +16,11 @@ vi.mock("@/lib/supabase", () => ({
 }));
 vi.mock("@/lib/sms/repo", () => ({
   listCampaignsWithCounts: h.listCampaignsWithCounts,
+}));
+// Only the DB aggregate is stubbed — the fold/chip helpers stay real.
+vi.mock("@/lib/sms/zoneStats", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sms/zoneStats")>()),
+  getExplicitZoneCounts: h.getExplicitZoneCounts,
 }));
 // Gated server-side on the marketing group; stub the gate (unit-tested in
 // requireMarketingUser.test.ts) so these tests focus on the page body.
@@ -60,6 +66,7 @@ function campaign(
 describe("campaigns/page.tsx (server component)", () => {
   beforeEach(() => {
     h.listCampaignsWithCounts.mockReset();
+    h.getExplicitZoneCounts.mockReset().mockResolvedValue(new Map());
     h.requireMarketingUser.mockReset();
     h.requireMarketingUser.mockResolvedValue({
       email: "amy@nsight.example",
@@ -115,6 +122,24 @@ describe("campaigns/page.tsx (server component)", () => {
     expect(cells).toContain("5"); // sent
     expect(cells).toContain("4"); // delivered
     expect(cells).toContain("3"); // failed = failed + failed_ambiguous
+  });
+
+  test("a multi-zone campaign gets one N-zones chip in the sends column", async () => {
+    h.listCampaignsWithCounts.mockResolvedValue([
+      campaign("c1", "August recall", "scheduled", { pending: 12, skipped: 4 }),
+      campaign("c2", "Single zone", "scheduled", { pending: 5 }),
+    ]);
+    // c1: 4 explicit CT rows + 12 fallback rows in the campaign zone (ET).
+    h.getExplicitZoneCounts.mockResolvedValue(
+      new Map([["c1", new Map([["America/Chicago", 4]])]]),
+    );
+    render(await CampaignsPage());
+
+    expect(h.getExplicitZoneCounts).toHaveBeenCalledWith(["c1", "c2"], h.userDb);
+    const chip = screen.getByText("2 zones");
+    expect(chip).toHaveAttribute("title", "ET 12 · CT 4");
+    // The single-zone campaign gets none.
+    expect(screen.getAllByText(/\d+ zones/)).toHaveLength(1);
   });
 
   test("header count and a New campaign action link", async () => {

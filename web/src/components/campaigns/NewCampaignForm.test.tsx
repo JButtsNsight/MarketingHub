@@ -15,6 +15,7 @@ const CLEAN_ID = "11111111-1111-4111-8111-111111111111";
 const DIRTY_ID = "22222222-2222-4222-8222-222222222222";
 const CSV_LIST_ID = "33333333-3333-4333-8333-333333333333";
 const MONDAY_LIST_ID = "44444444-4444-4444-8444-444444444444";
+const MONDAY_TZ_LIST_ID = "55555555-5555-4555-8555-555555555555";
 
 function tpl(id: string, name: string, body: string): Template {
   return {
@@ -47,6 +48,8 @@ const LISTS: ContactList[] = [
     monday_board_id: null,
     monday_board_name: null,
     monday_phone_column_id: null,
+    monday_timezone_column_id: null,
+    monday_outcome_column_id: null,
     contact_count: 42,
     invalid_count: 3,
     duplicate_count: 1,
@@ -63,6 +66,26 @@ const LISTS: ContactList[] = [
     monday_board_id: "4567890123",
     monday_board_name: "Patient list",
     monday_phone_column_id: "phone_col",
+    monday_timezone_column_id: null,
+    monday_outcome_column_id: null,
+    contact_count: 0,
+    invalid_count: 0,
+    duplicate_count: 0,
+    created_by: "amy@nsight.example",
+    created_at: "2026-07-28T12:00:00Z",
+    updated_at: "2026-07-28T12:00:00Z",
+  },
+  {
+    id: MONDAY_TZ_LIST_ID,
+    name: "Zoned board",
+    source: "monday",
+    storage_path: null,
+    original_filename: null,
+    monday_board_id: "7890123456",
+    monday_board_name: "Zoned patients",
+    monday_phone_column_id: "phone_col",
+    monday_timezone_column_id: "tz_col",
+    monday_outcome_column_id: null,
     contact_count: 0,
     invalid_count: 0,
     duplicate_count: 0,
@@ -228,6 +251,42 @@ describe("NewCampaignForm", () => {
     expect(
       screen.getAllByText(/only go out monday–friday/i).length,
     ).toBeGreaterThan(0);
+  });
+
+  test("the zone picker hints fallback behavior for csv lists (member zones unknowable)", async () => {
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    const hint = /fallback for contacts without a timezone/i;
+    expect(screen.getByText(hint)).toBeInTheDocument(); // nothing selected yet
+    await user.selectOptions(
+      screen.getByLabelText(/contact list/i),
+      CSV_LIST_ID,
+    );
+    expect(screen.getByText(hint)).toBeInTheDocument();
+  });
+
+  test("a monday list without a timezone column hides the fallback hint", async () => {
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    await user.selectOptions(
+      screen.getByLabelText(/contact list/i),
+      MONDAY_LIST_ID,
+    );
+    expect(
+      screen.queryByText(/fallback for contacts without a timezone/i),
+    ).not.toBeInTheDocument();
+  });
+
+  test("a monday list with a timezone column shows the fallback hint", async () => {
+    const user = userEvent.setup();
+    render(<NewCampaignForm templates={TEMPLATES} lists={LISTS} />);
+    await user.selectOptions(
+      screen.getByLabelText(/contact list/i),
+      MONDAY_TZ_LIST_ID,
+    );
+    expect(
+      screen.getByText(/fallback for contacts without a timezone/i),
+    ).toBeInTheDocument();
   });
 
   test("offers exactly the eleven 30-minute slots from 8:00 AM to 1:00 PM", () => {

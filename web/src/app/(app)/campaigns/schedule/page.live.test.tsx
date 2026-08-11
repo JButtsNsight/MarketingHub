@@ -12,6 +12,7 @@ import { RECIPIENT_STATUSES } from "@/lib/sms/schema";
  */
 const h = vi.hoisted(() => ({
   listCampaignsWithCounts: vi.fn(),
+  getExplicitZoneCounts: vi.fn(),
   requireMarketingUser: vi.fn(),
   // Sentinel client threaded by the page into every repo call (Wave 4).
   userDb: {},
@@ -34,6 +35,11 @@ vi.mock("@/lib/supabase", () => ({
 }));
 vi.mock("@/lib/sms/repo", () => ({
   listCampaignsWithCounts: h.listCampaignsWithCounts,
+}));
+// Only the DB aggregate is stubbed — the fold/chip helpers stay real.
+vi.mock("@/lib/sms/zoneStats", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/sms/zoneStats")>()),
+  getExplicitZoneCounts: h.getExplicitZoneCounts,
 }));
 vi.mock("@/lib/requireMarketingUser", () => ({
   requireMarketingUser: h.requireMarketingUser,
@@ -85,6 +91,7 @@ async function renderPage() {
 describe("campaigns/schedule/page.tsx (live view)", () => {
   beforeEach(() => {
     h.listCampaignsWithCounts.mockReset().mockResolvedValue([scheduled]);
+    h.getExplicitZoneCounts.mockReset().mockResolvedValue(new Map());
     h.requireMarketingUser.mockReset().mockResolvedValue({
       email: "amy@nsight.example",
       groups: ["marketing"],
@@ -118,6 +125,21 @@ describe("campaigns/schedule/page.tsx (live view)", () => {
       vi.advanceTimersByTime(1);
     });
     expect(h.refresh).toHaveBeenCalledTimes(1); // live update applied
+  });
+
+  test("a multi-zone campaign shows one N-zones chip beside its slot", async () => {
+    // 5 explicit CT rows + 7 fallback rows in the campaign zone (ET).
+    h.getExplicitZoneCounts.mockResolvedValue(
+      new Map([["c-sched-1", new Map([["America/Chicago", 5]])]]),
+    );
+    await renderPage();
+
+    expect(h.getExplicitZoneCounts).toHaveBeenCalledWith(
+      ["c-sched-1"],
+      h.userDb,
+    );
+    const chip = screen.getByText("2 zones");
+    expect(chip).toHaveAttribute("title", "ET 7 · CT 5");
   });
 
   test("fallback: realtime unavailable preserves today's render and behavior", async () => {

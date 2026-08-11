@@ -140,6 +140,12 @@ export async function createCsvList(
     reason: c.reason,
     consent_source: c.consentSource ?? null,
     consent_date: c.consentDate ?? null,
+    // VERBATIM as uploaded (blank → null) — the member row is the audit
+    // record of what the sheet claimed. Normalization to a send zone happens
+    // at CAMPAIGN time (api/campaigns route, like the Monday path); an
+    // unknown value falls back to the campaign zone with a per-row note
+    // instead of being destroyed here.
+    timezone: c.timezone ?? null,
   }));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);
@@ -156,7 +162,14 @@ export async function createCsvList(
 /** Create a Monday-linked list (members are fetched live at campaign time). */
 export async function createMondayList(
   name: string,
-  board: { id: string; name: string; phoneColumnId: string },
+  board: {
+    id: string;
+    name: string;
+    phoneColumnId: string;
+    /** Optional board columns: recipient timezone + outcome write-back. */
+    timezoneColumnId?: string | null;
+    outcomeColumnId?: string | null;
+  },
   user: ListCreator,
   db?: SupabaseClient,
 ): Promise<ContactList> {
@@ -167,6 +180,8 @@ export async function createMondayList(
       monday_board_id: board.id,
       monday_board_name: board.name,
       monday_phone_column_id: board.phoneColumnId,
+      monday_timezone_column_id: board.timezoneColumnId ?? null,
+      monday_outcome_column_id: board.outcomeColumnId ?? null,
       created_by: user.email,
     })
     .select()

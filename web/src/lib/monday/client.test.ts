@@ -165,6 +165,42 @@ describe("mondayGraphQL error classification", () => {
     );
   });
 
+  test("a numeric Retry-After header rides the MondayApiError (the rate-limit 429 carries no body hint)", async () => {
+    stubFetch(
+      async () =>
+        new Response("rate limited", {
+          status: 429,
+          headers: { "Retry-After": "60" },
+        }),
+    );
+
+    const err = await mondayGraphQL("query { boards { id } }").then(
+      () => {
+        throw new Error("expected mondayGraphQL to reject");
+      },
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(MondayApiError);
+    expect((err as MondayApiError).retryAfterSeconds).toBe(60);
+  });
+
+  test("a missing or non-numeric Retry-After leaves retryAfterSeconds undefined", async () => {
+    for (const headers of [
+      undefined,
+      { "Retry-After": "Wed, 12 Aug 2026 07:28:00 GMT" },
+    ]) {
+      stubFetch(async () => new Response("denied", { status: 429, headers }));
+      const err = await mondayGraphQL("query { boards { id } }").then(
+        () => {
+          throw new Error("expected mondayGraphQL to reject");
+        },
+        (e: unknown) => e,
+      );
+      expect((err as MondayApiError).retryAfterSeconds).toBeUndefined();
+    }
+  });
+
   test("200 with a GraphQL errors[] array → MondayApiError with the first message and the errors attached", async () => {
     stubFetch(async () =>
       jsonResponse(200, {

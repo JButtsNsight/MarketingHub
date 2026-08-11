@@ -149,7 +149,10 @@ test('secret arn on: APP container gets the key as the api_key JSON-field valueF
 test('secret arn on: the WORKER container NEVER gets the key (secret-frozen, runbook §9.4)', () => {
   const template = make(gatewayContext);
   const worker = container(findTaskDef(template, 'worker'), 'worker');
+  // Exactly the three baseline secrets (MONDAY_API_TOKEN is the one
+  // documented §9.4 exception, 2026-08-11) — the gateway key never joins.
   expect(((worker.Secrets ?? []) as any[]).map((s) => s.Name).sort()).toEqual([
+    'MONDAY_API_TOKEN',
     'SIMPLETEXTING_API_TOKEN',
     'SUPABASE_SERVICE_ROLE_KEY',
   ]);
