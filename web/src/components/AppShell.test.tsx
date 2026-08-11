@@ -15,15 +15,17 @@ function appCss(): string {
 }
 
 describe("AppShell", () => {
-  it("renders the Nsight wordmark in the display face (Marcellus)", () => {
+  it("renders the MARKETING HUB wordmark in the display face, with no Nsight element", () => {
     render(
       <AppShell>
         <p>body</p>
       </AppShell>,
     );
-    const mark = screen.getByText(/nsight/i);
-    // The wordmark uses the .word class, which maps to var(--fd) = Marcellus.
+    const mark = screen.getByText(/marketing hub/i);
+    // The wordmark uses the .word class, which maps to var(--fd) = Geist Sans
+    // (letterspaced all-caps via CSS).
     expect(mark.closest(".word")).not.toBeNull();
+    expect(screen.queryByText(/nsight/i)).toBeNull();
   });
 
   it("renders a left nav containing a Templates link to /templates", () => {

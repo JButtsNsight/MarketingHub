@@ -62,13 +62,29 @@ describe("tokens.css", () => {
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
   });
 
-  it("DARK is Supabase-styled — green accent + Geist Sans, departing from the language", () => {
+  it("DARK is Supabase-styled — green accent + Geist Sans", () => {
     const dark = ruleBody('html[data-theme="dark"]');
     expect(dark).toContain("--accent:#3ecf8e"); // Supabase brand green
     expect(dark).toContain('--fd:"GeistSans"'); // no serif — a modern grotesque (whitespace collapsed by `flat`)
     expect(dark).toContain('--fu:"GeistSans"');
     // Retired dark-theme face — comments stripped (they legitimately record the swap).
     expect(dark.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("Inter");
+  });
+
+  it("unifies type on Geist Sans across BOTH themes; mono stays IBM Plex Mono", () => {
+    // Per product direction (2026-08): one sans everywhere. The display face
+    // (--fd) may only differentiate via weight/size, never family.
+    for (const sel of [":root", 'html[data-theme="dark"]']) {
+      const body = ruleBody(sel);
+      expect(body, `${sel} --fd`).toContain('--fd:"GeistSans"');
+      expect(body, `${sel} --fu`).toContain('--fu:"GeistSans"');
+      expect(body, `${sel} --fm`).toContain('--fm:"IBMPlexMono"');
+    }
+    // Retired light-theme faces — comments stripped (they legitimately record
+    // the swap).
+    const noComments = flat.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(noComments).not.toContain("Marcellus");
+    expect(noComments).not.toContain("DMSans");
   });
 
   it("resolves --status-failed to #D24747 (light) and Supabase red #ef4444 (dark)", () => {

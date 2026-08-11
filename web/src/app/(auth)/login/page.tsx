@@ -1,6 +1,6 @@
 /**
  * Pre-auth landing — a faithful mirror of the standalone Socrates (NCore) sign-in
- * screen: a centered dark card with a Marcellus wordmark, a muted subtitle, a
+ * screen: a centered dark card with a letterspaced Geist wordmark, a muted subtitle, a
  * single white "Sign in with Google" control, and a status line.
  *
  * Unlike Socrates it does NOT run a client-side PKCE flow. MarketingHub auth is
@@ -37,18 +37,15 @@ export default function LoginPage() {
   return (
     <div className="sso-screen">
       <div className="sso-card">
-        <h1 className="sso-wordmark">
-          MarketingHub
-          <em>Nsight Console</em>
-        </h1>
-        <p className="sso-sub">Sign in with your Nsight account</p>
+        <h1 className="sso-wordmark">Marketing Hub</h1>
+        <p className="sso-sub">Sign in with your work account</p>
         <a className="sso-btn" href="/">
           <GoogleGlyph />
           Sign in with Google
         </a>
         <p className="sso-status">
-          Access is managed through Nsight single sign-on — you&apos;ll be
-          redirected to your Google Workspace account.
+          Access is managed through single sign-on — you&apos;ll be redirected
+          to your Google Workspace account.
         </p>
       </div>
     </div>

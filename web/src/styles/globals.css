@@ -43,7 +43,9 @@ h1,
 h2,
 h3 {
   font-family: var(--fd);
-  font-weight: 400;
+  /* Geist carries hierarchy by weight (the retired serif display did it by
+     family alone at 400). */
+  font-weight: 600;
   color: var(--ink);
   margin: 0;
   line-height: 1.15;
@@ -121,19 +123,14 @@ a:hover {
   gap: 16px;
 }
 .word {
+  /* Single letterspaced all-caps wordmark: MARKETING HUB. */
   font-family: var(--fd);
-  font-size: 23px;
-  color: var(--ink);
-  display: inline-flex;
-  align-items: baseline;
-  gap: 9px;
-}
-.word em {
-  font-style: normal;
-  font-size: 10.5px;
-  letter-spacing: 2.6px;
+  font-size: 15px;
+  font-weight: 500;
   text-transform: uppercase;
-  color: var(--muted);
+  letter-spacing: 0.3em;
+  margin-right: -0.3em; /* trim the trailing letter-space */
+  color: var(--ink);
 }
 .app-body {
   flex: 1;
@@ -515,6 +512,7 @@ input[type="file"].control {
 .tpl-name {
   font-family: var(--fd);
   font-size: 18px;
+  font-weight: 500;
   color: var(--ink);
   line-height: 1.2;
 }
@@ -818,6 +816,7 @@ input[type="file"].control {
 .stat-value {
   font-family: var(--fd); /* display face — big figures, not mechanical mono */
   font-size: 32px;
+  font-weight: 600;
   line-height: 1;
   color: var(--ink);
   letter-spacing: 0;
@@ -1538,6 +1537,7 @@ html[data-theme="dark"] .sqled .tok-invalid {
 .link-card-title {
   font-family: var(--fd);
   font-size: 16px;
+  font-weight: 500;
   color: var(--ink);
 }
 .link-card-desc {
@@ -1594,6 +1594,7 @@ html[data-theme="dark"] .sqled .tok-invalid {
 .chart-title {
   font-family: var(--fd);
   font-size: 15px;
+  font-weight: 500;
   color: var(--ink);
   line-height: 1.2;
 }
@@ -1696,7 +1697,7 @@ html[data-theme="dark"] .chart-line {
 }
 
 /* ── SSO login — a faithful mirror of the standalone Socrates (NCore) auth
-   screen: full-viewport, flat, dark, centered card, Marcellus wordmark, a
+   screen: full-viewport, flat, dark, centered card, letterspaced Geist wordmark, a
    single white Google SSO control, status line. Intentionally self-contained
    (as the Socrates auth pages are) so it renders identically regardless of the
    console's theme/skin. ── */
@@ -1722,20 +1723,15 @@ html[data-theme="dark"] .chart-line {
   width: 100%;
 }
 .sso-wordmark {
+  /* Single letterspaced all-caps wordmark: MARKETING HUB. The negative right
+     margin trims the trailing letter-space so centering holds. */
   font-family: var(--fd);
-  font-size: 1.9rem;
-  color: #f4f4f4;
-  margin: 0 0 0.4rem;
-}
-.sso-wordmark em {
-  font-style: normal;
-  display: block;
-  font-family: var(--fu);
-  font-size: 0.72rem;
-  letter-spacing: 2.6px;
+  font-size: 1.15rem;
+  font-weight: 500;
   text-transform: uppercase;
-  color: #6f7891;
-  margin-top: 0.55rem;
+  letter-spacing: 0.3em;
+  color: #f4f4f4;
+  margin: 0 -0.3em 0.4rem 0;
 }
 .sso-sub {
   color: #888;

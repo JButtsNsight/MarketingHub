@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 /**
- * Console page header: an optional uppercase eyebrow, the page title (Marcellus
- * via the h1 rule), an optional subtitle, and a right-aligned slot for a count
+ * Console page header: an optional uppercase eyebrow, the page title (Geist
+ * 600 via the h1 rule), an optional subtitle, and a right-aligned slot for a count
  * (mono) and/or action controls. Purely presentational — safe in server
  * components.
  */

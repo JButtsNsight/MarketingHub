@@ -5,13 +5,17 @@
  * Every color / surface value is a token. No freehand hex.
  * LIGHT carries the NSight design language; DARK is Supabase-styled (per
  * product direction) and is the one theme that departs from the language.
+ * Type is unified across BOTH themes (per product direction, 2026-08): Geist
+ * Sans for UI and display — the display face differentiates via weight/size,
+ * never family — with IBM Plex Mono for data.
  */
 
 /* ── LIGHT (warm sand) — base palette + type ── */
 :root {
-  /* Type (fonts loaded via @fontsource imports; see globals.css) */
-  --fd: "Marcellus", Georgia, serif; /* display / headlines / big figures */
-  --fu: "DM Sans", system-ui, sans-serif; /* UI / body */
+  /* Type (fonts loaded via @fontsource imports; see layout.tsx). One family
+   * everywhere: Geist Sans (replaced Marcellus display + DM Sans UI). */
+  --fd: "Geist Sans", system-ui, sans-serif; /* display / headlines / big figures — hierarchy via weight/size */
+  --fu: "Geist Sans", system-ui, sans-serif; /* UI / body */
   --fm: "IBM Plex Mono", ui-monospace, monospace; /* data / IDs / timestamps */
   --r: 12px; /* default surface radius */
 
@@ -86,9 +90,9 @@
  * --teal token, so this is the one theme that departs from the language. ── */
 html[data-theme="dark"] {
   /* Type — Geist Sans stands in for Supabase's proprietary Circular (a modern
-   * grotesque; replaced Inter per product direction); the display face is the
-   * same sans as UI (no serif — the biggest visual tell vs. the NSight
-   * Marcellus headers). */
+   * grotesque; replaced Inter per product direction). Both themes now share
+   * this exact type stack — the bindings are kept explicit here so DARK never
+   * drifts if the light base changes. */
   --fd: "Geist Sans", system-ui, sans-serif;
   --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;

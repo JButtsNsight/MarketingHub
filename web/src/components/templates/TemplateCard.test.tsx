@@ -24,7 +24,7 @@ describe("TemplateCard", () => {
     expect(link).toHaveAttribute("href", "/templates/t1");
   });
 
-  test("shows the name in the display face (Marcellus .tpl-name)", () => {
+  test("shows the name in the display face (.tpl-name)", () => {
     render(<TemplateCard template={base} />);
     expect(screen.getByText("Spring Promo").closest(".tpl-name")).not.toBeNull();
   });

@@ -1,13 +1,9 @@
 import type { ReactNode } from "react";
 // Fonts bundled locally via @fontsource (the CDN is blocked on the network).
-import "@fontsource/marcellus/400.css";
-import "@fontsource/dm-sans/400.css";
-import "@fontsource/dm-sans/500.css";
-import "@fontsource/dm-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
-// Geist Sans — only used by the opt-in Supabase-styled dark theme (a modern
-// grotesque standing in for Circular; replaced Inter per product direction).
+// Geist Sans — the one UI + display family across BOTH themes (replaced the
+// Marcellus/DM Sans light stack; hierarchy differentiates via weight/size).
 import "@fontsource/geist-sans/400.css";
 import "@fontsource/geist-sans/500.css";
 import "@fontsource/geist-sans/600.css";

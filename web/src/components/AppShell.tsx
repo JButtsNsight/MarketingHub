@@ -4,7 +4,7 @@ import { Nav } from "./Nav";
 import { ThemeToggle } from "./ThemeToggle";
 
 /**
- * The console shell: a masthead with the Nsight wordmark (links home) and the
+ * The console shell: a masthead with the MARKETING HUB wordmark (links home) and the
  * global theme toggle; a left nav rail; and the main content region. No banned
  * "Claude look" patterns — no centered floating three-card hero, no violet
  * gradients, no frosted glass.
@@ -20,7 +20,7 @@ export function AppShell({
     <div className="app-shell">
       <header className="masthead">
         <Link href="/overview" className="word word-link">
-          Nsight <em>MarketingHub</em>
+          Marketing Hub
         </Link>
         <div className="masthead-right">
           <ThemeToggle />

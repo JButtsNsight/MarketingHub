@@ -10,7 +10,7 @@ function isoDate(ts: string): string {
 }
 
 /**
- * A single template in the browse grid. Name in the display face (Marcellus),
+ * A single template in the browse grid. Name in the display face (Geist medium),
  * a position-colored category chip (from the data pool — never red), tag chips,
  * a type badge, and the created date in IBM Plex Mono. Built on `.surface`.
  */
