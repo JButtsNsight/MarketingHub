@@ -5,9 +5,11 @@ import { Section } from "@/components/ui/Section";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
+import { formatBytes } from "@/components/storage/resumable";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getUserClient } from "@/lib/supabase";
 import { getTemplateStats } from "@/lib/console/stats";
+import { listBucket } from "@/lib/console/storage";
 import {
   countSuppressions,
   countUnhandledInbound,
@@ -91,17 +93,31 @@ const RECENT_COLUMNS: Column<CampaignRow>[] = [
   },
 ];
 
+/**
+ * The admin jump-to cards (moved here from the retired /admin landing page).
+ * Posture and the backend-services reference render on /infrastructure — one
+ * card points there; no page duplicates another's content.
+ */
+const EXPLORE = [
+  { href: "/admin/auth", title: "Authentication", desc: "Cognito session, GoTrue users, SSO, impersonation." },
+  { href: "/admin/advisors", title: "Advisors", desc: "Security and performance lints." },
+  { href: "/admin/cloud", title: "Cloud", desc: "Cloud-platform features and their status here." },
+  { href: "/infrastructure", title: "Infrastructure", desc: "Services, security posture, backups, and observability." },
+];
+
 export default async function OverviewPage() {
   const user = await requireMarketingUser();
   // Per-user client (RLS `authenticated` role) when SUPABASE_JWT_SECRET is
   // set; the service-role fallback otherwise — identical to before.
   const db = await getUserClient(user);
 
-  const [stats, campaigns, unhandled, suppressed] = await Promise.all([
+  // Storage listing rides the same fan-out; a failure is shown, never faked.
+  const [stats, campaigns, unhandled, suppressed, objects] = await Promise.all([
     getTemplateStats(db),
     listCampaignsWithCounts(db),
     countUnhandledInbound(db),
     countSuppressions(db),
+    listBucket("").catch(() => null),
   ]);
   const engagement = await getEngagementForCampaigns(
     campaigns.map((c) => c.id),
@@ -141,6 +157,10 @@ export default async function OverviewPage() {
   const optOuts30 = sum((c) => c.engagement.opt_outs);
 
   const recent = withEngagement.slice(0, RECENT_LIMIT);
+
+  const folders = objects?.filter((o) => o.isFolder).length ?? 0;
+  const files = objects?.filter((o) => !o.isFolder).length ?? 0;
+  const totalSize = objects?.reduce((sum, o) => sum + (o.size ?? 0), 0) ?? 0;
 
   return (
     <>
@@ -226,6 +246,36 @@ export default async function OverviewPage() {
             getRowKey={(c) => c.id}
             empty="No campaigns yet."
           />
+        </Section>
+
+        {/* Admin surfaces sit below the marketing numbers — marketing users
+            see their stats first. */}
+        <Section eyebrow="Explore" title="Jump to a section">
+          <div className="card-grid">
+            {EXPLORE.map((c) => (
+              <Link key={c.href} href={c.href} className="surface glint link-card">
+                <span className="link-card-title">{c.title}</span>
+                <span className="link-card-desc">{c.desc}</span>
+              </Link>
+            ))}
+          </div>
+        </Section>
+
+        <Section
+          eyebrow="Object storage"
+          title="Storage"
+          description="The private campaign-templates bucket."
+          actions={<Link href="/storage">Open</Link>}
+        >
+          {objects == null ? (
+            <p className="note">Storage listing is currently unavailable.</p>
+          ) : (
+            <p className="note">
+              <span className="mono">{folders}</span> folders ·{" "}
+              <span className="mono">{files}</span> files ·{" "}
+              <span className="mono">{formatBytes(totalSize)}</span>
+            </p>
+          )}
         </Section>
       </div>
     </>

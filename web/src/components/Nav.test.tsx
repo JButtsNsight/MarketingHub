@@ -22,7 +22,6 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Edge Functions",
       "Realtime",
       "API Docs",
-      "Advisors",
       "Reports",
       "Logs",
     ]);
@@ -51,13 +50,32 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("slots Cloud Features under Project, right after Admin", () => {
+  it("lists the admin pages in their own Admin group — no /admin landing item", () => {
+    const admin = NAV_GROUPS.find((g) => g.label === "Admin");
+    expect(admin).toBeDefined();
+    expect(admin!.items.map((i) => [i.label, i.href])).toEqual([
+      ["Authentication", "/admin/auth"],
+      ["Advisors", "/admin/advisors"],
+      ["Cloud", "/admin/cloud"],
+    ]);
+  });
+
+  it("orders the groups Overview → Platform → Integrations → Marketing → Admin → Project", () => {
+    expect(NAV_GROUPS.map((g) => g.label)).toEqual([
+      undefined,
+      "Platform",
+      "Integrations",
+      "Marketing",
+      "Admin",
+      "Project",
+    ]);
+  });
+
+  it("keeps Project down to Infrastructure and Settings", () => {
     const project = NAV_GROUPS.find((g) => g.label === "Project");
     expect(project).toBeDefined();
     expect(project!.items.map((i) => [i.label, i.href])).toEqual([
       ["Infrastructure", "/infrastructure"],
-      ["Admin", "/admin"],
-      ["Cloud", "/admin/cloud"],
       ["Settings", "/settings"],
     ]);
   });
@@ -146,26 +164,32 @@ describe("Nav active state — most-specific match wins", () => {
     expect(activeLabels()).toEqual(["Vault"]);
   });
 
-  it("lights ONLY Admin on /admin (not the nested Cloud item)", () => {
+  it("lights nothing on /admin itself (redirect stub, no nav item)", () => {
     h.pathname = "/admin";
     render(<Nav />);
-    expect(activeLabels()).toEqual(["Admin"]);
+    expect(activeLabels()).toEqual([]);
   });
 
-  it("lights ONLY Cloud on /admin/cloud (the longer matching href)", () => {
+  it("lights ONLY Cloud on /admin/cloud", () => {
     h.pathname = "/admin/cloud";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Cloud"]);
   });
 
-  it("keeps Admin lit across the folded-in /admin/auth subtree", () => {
+  it("lights Authentication across the /admin/auth subtree", () => {
     h.pathname = "/admin/auth";
     render(<Nav />);
-    expect(activeLabels()).toEqual(["Admin"]);
+    expect(activeLabels()).toEqual(["Authentication"]);
     cleanup();
     h.pathname = "/admin/auth/providers";
     render(<Nav />);
-    expect(activeLabels()).toEqual(["Admin"]);
+    expect(activeLabels()).toEqual(["Authentication"]);
+  });
+
+  it("lights Advisors at its new /admin/advisors home", () => {
+    h.pathname = "/admin/advisors";
+    render(<Nav />);
+    expect(activeLabels()).toEqual(["Advisors"]);
   });
 
   it("lights Competitor Intel on /intel", () => {

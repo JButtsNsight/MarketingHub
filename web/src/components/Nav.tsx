@@ -27,7 +27,7 @@ export type IconKey =
   | "queues"
   | "vault"
   | "infra"
-  | "admin"
+  | "auth"
   | "cloud"
   | "settings";
 
@@ -54,9 +54,10 @@ export interface NavGroup {
  * Studio's nav — same item names, same order (Table Editor, SQL Editor,
  * Database, Storage, Edge Functions, Realtime, API Docs) — so it reads 1:1
  * to anyone who knows Studio, with ONE deliberate deviation: Authentication
- * lives under the Admin area (/admin/auth), not in the platform group. The
- * marketing product and project/ops items follow in their own groups (Studio
- * has no equivalent).
+ * and Advisors live in their own Admin group (/admin/*), not in the platform
+ * group. The marketing product and project/ops items follow in their own
+ * groups (Studio has no equivalent). /admin itself is a redirect, not a
+ * destination — the Admin group lists its pages directly.
  */
 export const NAV_GROUPS: NavGroup[] = [
   { items: [{ href: "/overview", label: "Overview", icon: "overview" }] },
@@ -79,9 +80,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/functions", label: "Edge Functions", icon: "edgeFunctions" },
       { href: "/realtime", label: "Realtime", icon: "realtime" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
-      { href: "/advisors", label: "Advisors", icon: "advisors" },
-      // Wave 6: Studio's observability pair follows Advisors — Reports
-      // (canned Logflare metrics) then Logs (explorer + drains subtree).
+      // Wave 6: Studio's observability pair — Reports (canned Logflare
+      // metrics) then Logs (explorer + drains subtree).
       { href: "/reports", label: "Reports", icon: "reports" },
       { href: "/logs", label: "Logs", icon: "logs" },
     ],
@@ -110,16 +110,20 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    // The admin pages listed directly — /admin has no landing page (it 308s
+    // to /overview), so each item owns its own /admin/* subtree via plain
+    // prefix matching; no `match`/`exact` rules needed.
+    label: "Admin",
+    items: [
+      { href: "/admin/auth", label: "Authentication", icon: "auth" },
+      { href: "/admin/advisors", label: "Advisors", icon: "advisors" },
+      { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
+    ],
+  },
+  {
     label: "Project",
     items: [
       { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
-      // /admin is the ops landing page and also owns the Authentication
-      // section folded beneath it (/admin/auth/*) — hence `match` instead of
-      // `exact`. Cloud Features (/admin/cloud) stays its own nav item, so it
-      // is deliberately OUTSIDE Admin's match scope — same
-      // most-specific-match treatment as Table Editor vs. Database.
-      { href: "/admin", label: "Admin", icon: "admin", match: "/admin/auth" },
-      { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
       { href: "/settings", label: "Settings", icon: "settings" },
     ],
   },
@@ -281,12 +285,10 @@ const ICONS: Record<IconKey, ReactNode> = {
       <path d="M7 7h.01M7 17h.01" />
     </>
   ),
-  admin: (
+  auth: (
     <>
-      <path d="M4 6h16M4 12h16M4 18h16" />
-      <circle cx="9" cy="6" r="2" />
-      <circle cx="15" cy="12" r="2" />
-      <circle cx="7" cy="18" r="2" />
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5" />
     </>
   ),
   cloud: (

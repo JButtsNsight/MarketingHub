@@ -34,7 +34,7 @@ export default async function AdvisorsPage() {
   if (!report) {
     return (
       <>
-        <PageHeader eyebrow="Database" title="Advisors" />
+        <PageHeader eyebrow="Admin" title="Advisors" />
         <Surface className="empty-state" glint>
           <h2>Introspection unavailable</h2>
           <p>
@@ -48,7 +48,7 @@ export default async function AdvisorsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Advisors" />
+      <PageHeader eyebrow="Admin" title="Advisors" />
       <AdvisorsClient initialReport={report} />
     </>
   );
