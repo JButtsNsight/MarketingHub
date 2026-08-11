@@ -4,6 +4,8 @@ import { useEffect, useRef } from "react";
 import { basicSetup, EditorView } from "codemirror";
 import { keymap } from "@codemirror/view";
 import { Prec } from "@codemirror/state";
+import { syntaxHighlighting } from "@codemirror/language";
+import { classHighlighter } from "@lezer/highlight";
 import { PostgreSQL, sql } from "@codemirror/lang-sql";
 
 /**
@@ -13,7 +15,11 @@ import { PostgreSQL, sql } from "@codemirror/lang-sql";
  * `onChange`. Mod-Enter (⌘/Ctrl+Enter) fires `onRun` — the Studio keybinding.
  *
  * Visual theming lives in globals.css under `.sqled` (design tokens), not a
- * JS theme, so light/dark follow the app's data-theme axis for free.
+ * JS theme, so light/dark follow the app's data-theme axis for free. Syntax
+ * colors included: `classHighlighter` tags tokens with stable `.tok-*`
+ * classes (supplanting basicSetup's fallback defaultHighlightStyle, whose
+ * fixed light-mode hex was illegible on the dark chrome), and globals.css
+ * binds the palette per theme.
  */
 export function SqlEditor({
   value,
@@ -54,6 +60,10 @@ export function SqlEditor({
           ]),
         ),
         basicSetup,
+        // Class-based highlighting (`.tok-*`) so the palette lives in
+        // globals.css and follows data-theme; being a non-fallback highlighter
+        // it disables basicSetup's built-in defaultHighlightStyle.
+        syntaxHighlighting(classHighlighter),
         sql({ dialect: PostgreSQL }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

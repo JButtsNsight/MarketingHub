@@ -10,10 +10,17 @@ import {
 
 // The browser imports ResumableUploader, which pulls in uppy — stub the uppy
 // modules so tests exercise our UI, not the upload engine (which has its own
-// suite in components/storage/ResumableUploader.test.tsx).
+// suite in components/storage/ResumableUploader.test.tsx). The stub records
+// addFile calls so tests can assert which transport an upload routed through.
 const h = vi.hoisted(() => {
   class MockTus {}
   class MockUppy {
+    static instances: MockUppy[] = [];
+    added: File[] = [];
+
+    constructor() {
+      MockUppy.instances.push(this);
+    }
     use() {
       return this;
     }
@@ -23,7 +30,9 @@ const h = vi.hoisted(() => {
     getFiles() {
       return [];
     }
-    addFile() {}
+    addFile(file: File) {
+      this.added.push(file);
+    }
     removeFile() {}
     setFileMeta() {}
     pauseResume() {}
@@ -137,7 +146,14 @@ function renderBrowser() {
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
+  h.MockUppy.instances = [];
 });
+
+function lastUppy() {
+  const instance = h.MockUppy.instances.at(-1);
+  if (!instance) throw new Error("no uppy instance created");
+  return instance;
+}
 
 describe("StorageBrowser", () => {
   test("renders entries with type badges, sizes, and a download link", () => {
@@ -218,7 +234,7 @@ describe("StorageBrowser", () => {
     });
   });
 
-  test("uploading a file POSTs multipart form data for the current location", async () => {
+  test("small files POST multipart form data for the current location", async () => {
     const { calls } = mockFetchRoutes();
     const user = userEvent.setup();
     renderBrowser();
@@ -233,6 +249,27 @@ describe("StorageBrowser", () => {
       expect(form.get("bucket")).toBe("campaign-templates");
       expect((form.get("file") as File).name).toBe("up.bin");
     });
+    // Small files never touch the TUS engine.
+    expect(lastUppy().added).toHaveLength(0);
+  });
+
+  test("files past one TUS chunk route through the resumable path automatically", async () => {
+    const { calls } = mockFetchRoutes();
+    const user = userEvent.setup();
+    renderBrowser();
+
+    // There is exactly one upload control — no "Large files" mode to pick.
+    expect(
+      screen.queryByRole("button", { name: "Large files" }),
+    ).not.toBeInTheDocument();
+
+    const big = new File(["x"], "video.mp4", { type: "video/mp4" });
+    Object.defineProperty(big, "size", { value: 7 * 1024 * 1024 });
+    await user.upload(screen.getByLabelText("Choose file to upload"), big);
+
+    // The file went to the TUS engine, not the classic POST.
+    expect(lastUppy().added.map((f) => f.name)).toEqual(["video.mp4"]);
+    expect(calls.some((c) => c.init?.method === "POST")).toBe(false);
   });
 
   test("image preview mounts the transform preview against the render proxy", async () => {
@@ -310,15 +347,28 @@ describe("StorageBrowser", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
-  test("Large files toggles the resumable uploader without losing the classic path", async () => {
+  test("the breadcrumb reads as a path: ancestor links, current segment plain", async () => {
     mockFetchRoutes();
     const user = userEvent.setup();
     renderBrowser();
 
-    expect(screen.queryByRole("button", { name: "Add files" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Large files" }));
+    const nav = screen.getByRole("navigation", { name: "Breadcrumb" });
+    // At the bucket root the single segment is plain text — nothing to click.
+    expect(within(nav).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(nav).getByText("campaign-templates")).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
 
-    expect(screen.getByRole("button", { name: "Add files" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Upload file" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "folder-1/" }));
+    await waitFor(() => expect(screen.getByText("notes.txt")).toBeInTheDocument());
+
+    // Drilled in: the bucket is a link back up, the folder is the plain current segment.
+    const current = within(nav).getByText("folder-1");
+    expect(current).toHaveAttribute("aria-current", "page");
+    expect(current.tagName).not.toBe("BUTTON");
+    await user.click(within(nav).getByRole("button", { name: "campaign-templates" }));
+
+    await waitFor(() => expect(screen.getByText("logo.png")).toBeInTheDocument());
   });
 });

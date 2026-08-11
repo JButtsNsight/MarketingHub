@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createRef, type RefObject } from "react";
 
 import {
   RESUMABLE_CHUNK_BYTES,
@@ -136,10 +137,27 @@ const h = vi.hoisted(() => {
 vi.mock("@uppy/core", () => ({ default: h.MockUppy }));
 vi.mock("@uppy/tus", () => ({ default: h.MockTus }));
 
-import { ResumableUploader, type ResumableUploaderProps } from "./ResumableUploader";
+import {
+  ResumableUploader,
+  type ResumableUploaderHandle,
+  type ResumableUploaderProps,
+} from "./ResumableUploader";
 
+// There is no picker of its own anymore — the owning view (StorageBrowser's
+// single Upload button) pushes files in through the ref handle, exactly as
+// these tests do.
 function renderUploader(props?: Partial<ResumableUploaderProps>) {
-  return render(<ResumableUploader bucket="assets" prefix="brand" {...props} />);
+  const handle = createRef<ResumableUploaderHandle>();
+  const utils = render(
+    <ResumableUploader ref={handle} bucket="assets" prefix="brand" {...props} />,
+  );
+  return { ...utils, handle };
+}
+
+function queueFiles(handle: RefObject<ResumableUploaderHandle | null>, ...files: File[]) {
+  act(() => {
+    handle.current!.addFiles(files);
+  });
 }
 
 function lastUppy() {
@@ -147,9 +165,6 @@ function lastUppy() {
   if (!instance) throw new Error("no uppy instance created");
   return instance;
 }
-
-const chooseInput = () =>
-  screen.getByLabelText("Choose files for resumable upload");
 
 beforeEach(() => {
   h.MockUppy.instances = [];
@@ -190,12 +205,11 @@ describe("ResumableUploader", () => {
     expect(headers()).toEqual({ "x-upsert": "true" });
   });
 
-  test("adding a file sets Supabase Upload-Metadata from bucket + prefix", async () => {
-    const user = userEvent.setup();
-    renderUploader();
+  test("adding a file sets Supabase Upload-Metadata from bucket + prefix", () => {
+    const { handle } = renderUploader();
 
     const file = new File(["data"], "logo bits.png", { type: "image/png" });
-    await user.upload(chooseInput(), file);
+    queueFiles(handle, file);
 
     expect(screen.getByText("brand/logo bits.png")).toBeInTheDocument();
     expect(screen.getByText("queued")).toBeInTheDocument();
@@ -207,11 +221,10 @@ describe("ResumableUploader", () => {
     });
   });
 
-  test("root uploads use the bare file name", async () => {
-    const user = userEvent.setup();
-    renderUploader({ prefix: "" });
+  test("root uploads use the bare file name", () => {
+    const { handle } = renderUploader({ prefix: "" });
 
-    await user.upload(chooseInput(), new File(["x"], "a.bin", { type: "" }));
+    queueFiles(handle, new File(["x"], "a.bin", { type: "" }));
 
     expect(lastUppy().getFiles()[0].meta).toMatchObject({
       objectName: "a.bin",
@@ -221,9 +234,9 @@ describe("ResumableUploader", () => {
 
   test("rejects unsafe file names before any bytes move", async () => {
     const user = userEvent.setup();
-    renderUploader();
+    const { handle } = renderUploader();
 
-    await user.upload(chooseInput(), new File(["x"], "bad%name.bin"));
+    queueFiles(handle, new File(["x"], "bad%name.bin"));
 
     expect(lastUppy().getFiles()).toHaveLength(0);
     const alert = screen.getByRole("alert");
@@ -234,13 +247,12 @@ describe("ResumableUploader", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  test("files over the TUS cap are refused client-side", async () => {
-    const user = userEvent.setup();
-    renderUploader();
+  test("files over the TUS cap are refused client-side", () => {
+    const { handle } = renderUploader();
 
     const big = new File(["x"], "big.bin", { type: "application/octet-stream" });
     Object.defineProperty(big, "size", { value: RESUMABLE_MAX_BYTES + 1 });
-    await user.upload(chooseInput(), big);
+    queueFiles(handle, big);
 
     expect(lastUppy().getFiles()).toHaveLength(0);
     expect(screen.getByRole("alert")).toHaveTextContent(
@@ -250,9 +262,9 @@ describe("ResumableUploader", () => {
 
   test("shows progress and supports pause/resume", async () => {
     const user = userEvent.setup();
-    renderUploader();
+    const { handle } = renderUploader();
 
-    await user.upload(chooseInput(), new File(["chunk"], "video.mp4", { type: "video/mp4" }));
+    queueFiles(handle, new File(["chunk"], "video.mp4", { type: "video/mp4" }));
     const uppy = lastUppy();
     const file = uppy.getFiles()[0];
 
@@ -280,12 +292,11 @@ describe("ResumableUploader", () => {
     expect(screen.getByText("uploading")).toBeInTheDocument();
   });
 
-  test("upload-success marks the row done and fires onUploaded with the object key", async () => {
-    const user = userEvent.setup();
+  test("upload-success marks the row done and fires onUploaded with the object key", () => {
     const onUploaded = vi.fn();
-    renderUploader({ onUploaded });
+    const { handle } = renderUploader({ onUploaded });
 
-    await user.upload(chooseInput(), new File(["data"], "logo.png", { type: "image/png" }));
+    queueFiles(handle, new File(["data"], "logo.png", { type: "image/png" }));
     const uppy = lastUppy();
     const file = uppy.getFiles()[0];
 
@@ -308,9 +319,9 @@ describe("ResumableUploader", () => {
 
   test("upload-error shows a per-file error and Retry re-queues it", async () => {
     const user = userEvent.setup();
-    renderUploader();
+    const { handle } = renderUploader();
 
-    await user.upload(chooseInput(), new File(["data"], "logo.png", { type: "image/png" }));
+    queueFiles(handle, new File(["data"], "logo.png", { type: "image/png" }));
     const uppy = lastUppy();
     const file = uppy.getFiles()[0];
 
@@ -331,22 +342,30 @@ describe("ResumableUploader", () => {
 
   test("remove drops the row and the uppy file", async () => {
     const user = userEvent.setup();
-    renderUploader();
+    const { handle } = renderUploader();
 
-    await user.upload(chooseInput(), new File(["data"], "logo.png", { type: "image/png" }));
+    queueFiles(handle, new File(["data"], "logo.png", { type: "image/png" }));
     await user.click(screen.getByRole("button", { name: "Remove brand/logo.png" }));
 
     expect(lastUppy().getFiles()).toHaveLength(0);
     expect(screen.queryByText("brand/logo.png")).not.toBeInTheDocument();
   });
 
-  test("add button is disabled without a bucket or when disabled", () => {
-    renderUploader({ bucket: "" });
-    expect(screen.getByRole("button", { name: "Add files" })).toBeDisabled();
+  test("renders nothing while idle — the panel exists only during uploads", () => {
+    const { container, handle } = renderUploader();
+    expect(container).toBeEmptyDOMElement();
 
-    renderUploader({ disabled: true });
-    const buttons = screen.getAllByRole("button", { name: "Add files" });
-    expect(buttons[buttons.length - 1]).toBeDisabled();
+    queueFiles(handle, new File(["data"], "logo.png", { type: "image/png" }));
+    expect(container).not.toBeEmptyDOMElement();
+  });
+
+  test("addFiles is a no-op without a bucket", () => {
+    const { container, handle } = renderUploader({ bucket: "" });
+
+    queueFiles(handle, new File(["x"], "a.bin"));
+
+    expect(lastUppy().getFiles()).toHaveLength(0);
+    expect(container).toBeEmptyDOMElement();
   });
 
   test("destroys the uppy instance on unmount", () => {

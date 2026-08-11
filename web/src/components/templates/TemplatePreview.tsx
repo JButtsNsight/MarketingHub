@@ -10,7 +10,9 @@ import type { Template } from "@/lib/templates/schema";
  * - `email`: the subject line plus an HTML preview rendered in a **sandboxed**
  *   `<iframe srcDoc>`. The sandbox attribute is EMPTY — every capability
  *   (scripts, forms, top-navigation, same-origin) is withheld — so campaign HTML
- *   is shown but never executed. A "Source" toggle swaps to the raw HTML.
+ *   is shown but never executed. A "View source" action swaps to the raw HTML
+ *   (and back) — an action button whose label names what it shows next, not a
+ *   pressed-state toggle.
  */
 export function TemplatePreview({ template }: { template: Template }) {
   const [showSource, setShowSource] = useState(false);
@@ -29,10 +31,9 @@ export function TemplatePreview({ template }: { template: Template }) {
         <button
           type="button"
           className="type-chip"
-          aria-pressed={showSource}
           onClick={() => setShowSource((s) => !s)}
         >
-          {showSource ? "Preview" : "Source"}
+          {showSource ? "View preview" : "View source"}
         </button>
       </div>
 

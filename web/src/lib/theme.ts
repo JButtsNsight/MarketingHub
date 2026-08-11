@@ -3,7 +3,7 @@
  * One axis lives on <html>: data-theme (light|dark). Surfaces are always flat
  * (the glass skin is gone). The choice persists to localStorage so it sticks.
  * LIGHT is the NSight design language; DARK is Supabase-styled (dark chrome +
- * green + Inter) per product direction.
+ * green + Geist Sans) per product direction.
  */
 
 export type Theme = "light" | "dark";

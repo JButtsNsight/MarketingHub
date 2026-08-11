@@ -291,9 +291,31 @@ textarea.control {
   line-height: 1.5;
   font-family: var(--fm);
 }
+/* Selects: appearance is stripped, so restore a real dropdown affordance —
+   a themed chevron (data-URI per theme; the background-image longhand outlives
+   the .surface `background:` shorthand on specificity) plus right padding so
+   text never runs under it, and a hover/focus border echoing .sqled's accent
+   treatment. Every <select> in the app carries .control (audited 2026-08-11). */
 select.control {
   appearance: none;
   cursor: pointer;
+  padding-right: 34px;
+  /* chevron — light: NSight ink-2 #36505C */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.25 8 9.75l3.5-3.5' fill='none' stroke='%2336505C' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 14px 14px;
+  transition: border-color 0.12s ease;
+}
+select.control:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--hair));
+}
+select.control:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--hair));
+}
+/* chevron — dark: Supabase muted gray on the #1c1c1c chrome */
+html[data-theme="dark"] select.control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.25 8 9.75l3.5-3.5' fill='none' stroke='%23a0a0a0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 input[type="file"].control {
   padding: 9px 12px;
@@ -1132,6 +1154,115 @@ input[type="file"].control {
   border-left-color: var(--accent);
 }
 
+/* Syntax palette — SqlEditor registers @lezer/highlight's classHighlighter,
+   so tokens carry stable .tok-* classes and the colors bind HERE, per theme.
+   LIGHT reproduces CodeMirror's defaultHighlightStyle hex verbatim (visually
+   identical to before); DARK rebinds every colored slot for legibility on the
+   #1c1c1c chrome — keywords go bright lime per product direction, everything
+   else holds ≥4.5:1 (comments) / ≥7:1 (code) contrast. */
+.sqled .tok-keyword {
+  color: #708;
+}
+.sqled .tok-atom,
+.sqled .tok-bool,
+.sqled .tok-url,
+.sqled .tok-labelName {
+  color: #219;
+}
+.sqled .tok-literal,
+.sqled .tok-inserted,
+.sqled .tok-number {
+  color: #164;
+}
+.sqled .tok-string,
+.sqled .tok-deleted {
+  color: #a11;
+}
+.sqled .tok-string2 {
+  color: #e40;
+}
+.sqled .tok-variableName.tok-definition {
+  color: #00f;
+}
+.sqled .tok-variableName.tok-local {
+  color: #30a;
+}
+.sqled .tok-typeName,
+.sqled .tok-namespace {
+  color: #085;
+}
+.sqled .tok-className {
+  color: #167;
+}
+.sqled .tok-variableName2,
+.sqled .tok-macroName {
+  color: #256;
+}
+.sqled .tok-propertyName.tok-definition {
+  color: #00c;
+}
+.sqled .tok-comment {
+  color: #940;
+}
+.sqled .tok-meta {
+  color: #404740;
+}
+.sqled .tok-invalid {
+  color: #f00;
+}
+
+/* DARK syntax palette — every slot colored above is re-bound (nothing may
+   inherit the light hex onto #1c1c1c). */
+html[data-theme="dark"] .sqled .tok-keyword {
+  color: #a3e635; /* bright lime — the old near-invisible dark purple, fixed */
+}
+html[data-theme="dark"] .sqled .tok-atom,
+html[data-theme="dark"] .sqled .tok-bool,
+html[data-theme="dark"] .sqled .tok-url,
+html[data-theme="dark"] .sqled .tok-labelName {
+  color: #fb923c;
+}
+html[data-theme="dark"] .sqled .tok-literal,
+html[data-theme="dark"] .sqled .tok-inserted,
+html[data-theme="dark"] .sqled .tok-number {
+  color: #fbbf24;
+}
+html[data-theme="dark"] .sqled .tok-string,
+html[data-theme="dark"] .sqled .tok-deleted {
+  color: #7dd3fc;
+}
+html[data-theme="dark"] .sqled .tok-string2 {
+  color: #38bdf8;
+}
+html[data-theme="dark"] .sqled .tok-variableName.tok-definition,
+html[data-theme="dark"] .sqled .tok-propertyName.tok-definition {
+  color: #6ee7b7;
+}
+html[data-theme="dark"] .sqled .tok-variableName.tok-local {
+  color: var(--ink);
+}
+html[data-theme="dark"] .sqled .tok-typeName,
+html[data-theme="dark"] .sqled .tok-namespace,
+html[data-theme="dark"] .sqled .tok-className {
+  color: #c4b5fd;
+}
+html[data-theme="dark"] .sqled .tok-variableName2,
+html[data-theme="dark"] .sqled .tok-macroName {
+  color: #f0abfc;
+}
+html[data-theme="dark"] .sqled .tok-operator {
+  color: var(--ink-2);
+}
+html[data-theme="dark"] .sqled .tok-comment {
+  color: var(--muted);
+}
+html[data-theme="dark"] .sqled .tok-meta {
+  color: var(--muted);
+}
+html[data-theme="dark"] .sqled .tok-invalid {
+  color: var(--fail);
+}
+
 /* ── Storage browser ── */
 .storage-folder {
   all: unset;
@@ -1142,8 +1273,9 @@ input[type="file"].control {
 .storage-folder:hover {
   text-decoration: underline;
 }
-.storage-crumbs {
-  margin-bottom: 0;
+.storage-path button:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 .storage-file-input {
   display: none;

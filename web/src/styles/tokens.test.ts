@@ -62,10 +62,13 @@ describe("tokens.css", () => {
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
   });
 
-  it("DARK is Supabase-styled — green accent + Inter, departing from the language", () => {
+  it("DARK is Supabase-styled — green accent + Geist Sans, departing from the language", () => {
     const dark = ruleBody('html[data-theme="dark"]');
     expect(dark).toContain("--accent:#3ecf8e"); // Supabase brand green
-    expect(dark).toContain('--fd:"Inter"'); // no serif — Studio's sans
+    expect(dark).toContain('--fd:"GeistSans"'); // no serif — a modern grotesque (whitespace collapsed by `flat`)
+    expect(dark).toContain('--fu:"GeistSans"');
+    // Retired dark-theme face — comments stripped (they legitimately record the swap).
+    expect(dark.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("Inter");
   });
 
   it("resolves --status-failed to #D24747 (light) and Supabase red #ef4444 (dark)", () => {
@@ -91,5 +94,60 @@ describe("tokens.css", () => {
 
   it("ships exactly two themes — the retired 'supabase' block is gone", () => {
     expect(css).not.toContain('data-theme="supabase"');
+  });
+});
+
+/* globals.css carries the theme-bound chrome that tokens.css deliberately
+ * does not: the select dropdown affordance and the SQL editor syntax palette.
+ * Both must resolve in BOTH themes (a light-only chevron or a light-only
+ * token color silently vanishes / goes illegible on the dark chrome). */
+const gcss = readFileSync(
+  join(process.cwd(), "src/styles/globals.css"),
+  "utf8",
+);
+const gflat = gcss.replace(/\s+/g, "");
+
+/** Body of the first rule in globals.css whose (whitespace-collapsed) selector matches. */
+function globalsRuleBody(selector: string): string {
+  const idx = gflat.indexOf(selector + "{");
+  if (idx === -1) return "";
+  const start = idx + selector.length + 1;
+  const end = gflat.indexOf("}", start);
+  return gflat.slice(start, end);
+}
+
+describe("globals.css — select affordance", () => {
+  it("gives styled selects a chevron + clearance in LIGHT (appearance is stripped)", () => {
+    const body = globalsRuleBody("select.control");
+    expect(body).toContain("appearance:none");
+    expect(body).toContain("background-image:url(\"data:image/svg+xml");
+    expect(body).toContain("stroke='%2336505C'"); // NSight ink-2
+    expect(body).toContain("padding-right:34px");
+  });
+
+  it("re-binds the chevron for DARK (a dark glyph would vanish on #1c1c1c)", () => {
+    const body = globalsRuleBody('html[data-theme="dark"]select.control');
+    expect(body).toContain("background-image:url(\"data:image/svg+xml");
+    expect(body).toContain("stroke='%23a0a0a0'"); // Supabase muted gray
+  });
+});
+
+describe("globals.css — SQL editor syntax palette (.tok-*)", () => {
+  it("LIGHT keeps CodeMirror's default keyword color (visually unchanged)", () => {
+    expect(globalsRuleBody(".sqled.tok-keyword")).toContain("color:#708");
+  });
+
+  it("DARK re-binds keywords to bright lime (the dark purple was illegible)", () => {
+    expect(
+      globalsRuleBody('html[data-theme="dark"].sqled.tok-keyword'),
+    ).toContain("color:#a3e635");
+  });
+
+  it("DARK re-binds strings, numbers and comments off the light hex", () => {
+    const darkStart = gflat.indexOf('html[data-theme="dark"].sqled.tok-keyword');
+    const dark = gflat.slice(darkStart);
+    expect(dark).toContain("color:#7dd3fc"); // strings
+    expect(dark).toContain("color:#fbbf24"); // numbers/literals
+    expect(dark).toContain(".tok-comment{color:var(--muted)");
   });
 });

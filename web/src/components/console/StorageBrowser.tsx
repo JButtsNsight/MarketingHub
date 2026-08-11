@@ -5,24 +5,30 @@ import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { BucketManager } from "../storage/BucketManager";
 import { BucketFormDialog, type BucketRow } from "../storage/BucketFormDialog";
-import { ResumableUploader } from "../storage/ResumableUploader";
+import {
+  ResumableUploader,
+  type ResumableUploaderHandle,
+} from "../storage/ResumableUploader";
+import { RESUMABLE_CHUNK_BYTES } from "../storage/resumable";
 import {
   TransformPreview,
   isTransformableType,
 } from "../storage/TransformPreview";
 
 /**
- * The Storage browser (Studio parity): bucket picker, breadcrumb folder tree,
+ * The Storage browser (Studio parity): bucket picker, breadcrumb folder path,
  * upload, rename/move, delete (two-step), download, and transform-aware
  * preview — everything through the group-gated /api/console/storage/* routes,
  * which proxy bytes server-side because the signed URLs point at the private
  * internal data API.
  *
  * Classic uploads never overwrite (the server enforces it) — replacing a file
- * is an explicit delete-then-upload. The "Large files" toggle mounts the
- * resumable TUS uploader for anything past the classic 25MB cap, and the
- * BucketManager section below the listing owns bucket create/edit/empty/
- * delete (the rail's "New bucket" chip opens the same create dialog).
+ * is an explicit delete-then-upload. There is exactly one upload control:
+ * files past a single TUS chunk (6MB) route through the resumable uploader
+ * automatically (its progress rows appear inline while running), smaller
+ * files take the classic POST. The BucketManager section below the listing
+ * owns bucket create/edit/empty/delete (the rail's "New bucket" chip opens
+ * the same create dialog).
  */
 
 export type { BucketRow } from "../storage/BucketFormDialog";
@@ -71,8 +77,8 @@ export function StorageBrowser({
   const [uploading, setUploading] = useState(false);
   const [creatingBucket, setCreatingBucket] = useState(false);
   const [managerEpoch, setManagerEpoch] = useState(0);
-  const [showResumable, setShowResumable] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
+  const resumable = useRef<ResumableUploaderHandle>(null);
   const fetchSeq = useRef(0);
 
   const load = async (nextBucket: string, nextPrefix: string) => {
@@ -147,8 +153,16 @@ export function StorageBrowser({
   };
 
   const upload = async (file: File) => {
-    setUploading(true);
     setError(null);
+    // One Upload button, two transports: anything past a single TUS chunk
+    // goes resumable (survives blips, clears the classic 25MB cap) with its
+    // progress rows shown inline; small files take the plain POST.
+    if (file.size > RESUMABLE_CHUNK_BYTES) {
+      resumable.current?.addFiles([file]);
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
+    setUploading(true);
     try {
       const form = new FormData();
       form.set("bucket", bucket);
@@ -370,17 +384,61 @@ export function StorageBrowser({
           New bucket
         </button>
 
-        <nav className="tabs storage-crumbs" aria-label="Breadcrumb">
-          {crumbs.map((c, i) => (
-            <button
-              key={`${c.prefix}-${i}`}
-              type="button"
-              className={i === crumbs.length - 1 ? "tab on" : "tab"}
-              onClick={() => setPrefix(c.prefix)}
-            >
-              {c.label}
-            </button>
-          ))}
+        {/* A location, not controls: muted path with ancestor links and the
+            current segment as plain text. Styles are inline (component-scoped);
+            the storage-path class is only a hook for optional theme polish. */}
+        <nav
+          className="storage-path"
+          aria-label="Breadcrumb"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            minWidth: 0,
+            fontFamily: "var(--fm)",
+            fontSize: "13px",
+            color: "var(--muted)",
+          }}
+        >
+          {crumbs.map((c, i) => {
+            const current = i === crumbs.length - 1;
+            return (
+              <span
+                key={`${c.prefix}-${i}`}
+                style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}
+              >
+                {i > 0 ? (
+                  <span aria-hidden="true" style={{ color: "var(--faint)" }}>
+                    /
+                  </span>
+                ) : null}
+                {current ? (
+                  <span aria-current="page" style={{ color: "var(--ink)" }}>
+                    {c.label}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPrefix(c.prefix)}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      margin: 0,
+                      padding: 0,
+                      font: "inherit",
+                      color: "inherit",
+                      cursor: "pointer",
+                      textDecoration: "underline",
+                      textUnderlineOffset: "3px",
+                      textDecorationColor: "var(--faint)",
+                    }}
+                  >
+                    {c.label}
+                  </button>
+                )}
+              </span>
+            );
+          })}
         </nav>
 
         <span className="spacer" />
@@ -394,14 +452,6 @@ export function StorageBrowser({
             if (file) void upload(file);
           }}
         />
-        <button
-          type="button"
-          className={showResumable ? "type-chip on" : "type-chip"}
-          aria-pressed={showResumable}
-          onClick={() => setShowResumable((v) => !v)}
-        >
-          Large files
-        </button>
         <button
           type="button"
           className="btn-primary"
@@ -418,15 +468,15 @@ export function StorageBrowser({
         </p>
       ) : null}
 
-      {showResumable ? (
-        // TUS through the same-origin proxy — survives pauses/network blips
-        // and takes files past the classic route's 25MB cap (up to 1 GiB).
-        <ResumableUploader
-          bucket={bucket}
-          prefix={prefix}
-          onUploaded={() => void load(bucket, prefix)}
-        />
-      ) : null}
+      {/* TUS through the same-origin proxy — always mounted so in-flight
+          uploads survive folder moves, renders nothing while idle. Big files
+          from the Upload button land here via the ref. */}
+      <ResumableUploader
+        ref={resumable}
+        bucket={bucket}
+        prefix={prefix}
+        onUploaded={() => void load(bucket, prefix)}
+      />
 
       {preview ? (
         // Keyed per object so the transform controls reset on selection change.

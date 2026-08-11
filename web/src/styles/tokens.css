@@ -69,16 +69,17 @@
 
 /* ── DARK — Supabase-styled. This IS the app's dark theme: a faithful
  * reproduction of Supabase Studio's dark chrome (#1c1c1c), #3ECF8E green
- * accent, and Inter type. It replaced the earlier inky-blue NSight dark per
+ * accent, and Geist Sans type. It replaced the earlier inky-blue NSight dark per
  * product direction; LIGHT still carries the NSight design language. The
  * accent binds directly to the Supabase green rather than the governed
  * --teal token, so this is the one theme that departs from the language. ── */
 html[data-theme="dark"] {
-  /* Type — Inter stands in for Supabase's proprietary Circular (near-identical
-   * on screen); the display face is the same sans as UI (no serif — the
-   * biggest visual tell vs. the NSight Marcellus headers). */
-  --fd: "Inter", system-ui, sans-serif;
-  --fu: "Inter", system-ui, sans-serif;
+  /* Type — Geist Sans stands in for Supabase's proprietary Circular (a modern
+   * grotesque; replaced Inter per product direction); the display face is the
+   * same sans as UI (no serif — the biggest visual tell vs. the NSight
+   * Marcellus headers). */
+  --fd: "Geist Sans", system-ui, sans-serif;
+  --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
   --r: 6px; /* Studio's tighter corner radius */
 

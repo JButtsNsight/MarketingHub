@@ -43,6 +43,26 @@ describe("SqlEditor", () => {
     expect(host.textContent).not.toContain("select 1");
   });
 
+  test("tokens carry stable .tok-* classes so the globals.css theme palette binds", () => {
+    // classHighlighter replaces basicSetup's fallback defaultHighlightStyle
+    // (fixed light-mode hex, illegible on the dark chrome); the per-theme
+    // colors live in globals.css keyed on these classes.
+    render(
+      <SqlEditor
+        value="select 'txt', 1 from t -- note"
+        onChange={vi.fn()}
+        onRun={vi.fn()}
+      />,
+    );
+    const host = screen.getByRole("textbox", { name: "SQL editor" });
+    const keyword = host.querySelector(".tok-keyword");
+    expect(keyword).not.toBeNull();
+    expect(keyword!.textContent).toBe("select");
+    expect(host.querySelector(".tok-string")).not.toBeNull();
+    expect(host.querySelector(".tok-number")).not.toBeNull();
+    expect(host.querySelector(".tok-comment")).not.toBeNull();
+  });
+
   test("custom aria label lands on the host", () => {
     render(
       <SqlEditor

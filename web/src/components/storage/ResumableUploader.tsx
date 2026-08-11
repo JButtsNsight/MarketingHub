@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import Uppy, { type Body, type Meta, type UppyFile } from "@uppy/core";
 import Tus from "@uppy/tus";
 
@@ -21,6 +28,11 @@ import {
  * Supabase directly. Uploads survive pause/resume and transient network
  * failures (6MB chunks, retry backoff); files above the 1 GiB proxy cap are
  * refused before any bytes move.
+ *
+ * There is no picker of its own: the owner pushes files in through the
+ * `ref` handle's `addFiles` (StorageBrowser routes anything past one TUS
+ * chunk here automatically), and the component renders nothing while idle —
+ * progress rows and rejections appear inline only while uploads are queued.
  *
  * Uploads never overwrite unless the caller opts in via `allowOverwrite`
  * (mirror of the classic path's upsert:false).
@@ -53,6 +65,12 @@ interface Rejection {
   reason: string;
 }
 
+/** Imperative surface the owning view uses to queue files for TUS upload. */
+export interface ResumableUploaderHandle {
+  /** Queue files — uploads start immediately (autoProceed). */
+  addFiles: (files: ArrayLike<File>) => void;
+}
+
 export interface ResumableUploaderProps {
   /** Bucket new files upload into (in-flight files keep the bucket they started with). */
   bucket: string;
@@ -60,9 +78,10 @@ export interface ResumableUploaderProps {
   prefix?: string;
   /** Send x-upsert so uploads may replace existing objects. Default: never overwrite. */
   allowOverwrite?: boolean;
-  disabled?: boolean;
   /** Fires per completed file with the final object key — refresh listings here. */
   onUploaded?: (objectName: string) => void;
+  /** Handle for pushing files in — the component has no file picker of its own. */
+  ref?: Ref<ResumableUploaderHandle>;
 }
 
 function toRow(file: ResumableFile): ResumableRow {
@@ -105,11 +124,10 @@ export function ResumableUploader({
   bucket,
   prefix = "",
   allowOverwrite = false,
-  disabled = false,
   onUploaded,
+  ref,
 }: ResumableUploaderProps) {
   const uppyRef = useRef<Uppy<ResumableMeta, Body> | null>(null);
-  const fileInput = useRef<HTMLInputElement>(null);
   const [rows, setRows] = useState<ResumableRow[]>([]);
   const [rejections, setRejections] = useState<Rejection[]>([]);
 
@@ -193,18 +211,19 @@ export function ResumableUploader({
     };
   }, [refresh]);
 
-  const addFiles = (list: FileList | null) => {
+  const addFiles = useCallback((files: ArrayLike<File>) => {
     const uppy = uppyRef.current;
-    if (!uppy || !list) return;
-    for (const file of Array.from(list)) {
+    if (!uppy || !bucketRef.current) return;
+    for (const file of Array.from(files)) {
       try {
         uppy.addFile(file);
       } catch {
         // Restriction failures already surface via the restriction-failed listener.
       }
     }
-    if (fileInput.current) fileInput.current.value = "";
-  };
+  }, []);
+
+  useImperativeHandle(ref, () => ({ addFiles }), [addFiles]);
 
   const pauseResume = (id: string) => {
     uppyRef.current?.pauseResume(id);
@@ -221,32 +240,11 @@ export function ResumableUploader({
     refresh();
   };
 
+  // Nothing queued, nothing to say — the panel exists only while uploads run.
+  if (rows.length === 0 && rejections.length === 0) return null;
+
   return (
     <div className="stack">
-      <div className="dgrid-toolbar">
-        <span className="eyebrow">Resumable upload</span>
-        <span className="spacer" />
-        <span className="mono" style={{ color: "var(--muted)", fontSize: "12px" }}>
-          up to {formatBytes(RESUMABLE_MAX_BYTES)}/file
-        </span>
-        <input
-          ref={fileInput}
-          type="file"
-          multiple
-          className="storage-file-input"
-          aria-label="Choose files for resumable upload"
-          onChange={(e) => addFiles(e.target.files)}
-        />
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={disabled || !bucket}
-          onClick={() => fileInput.current?.click()}
-        >
-          Add files
-        </button>
-      </div>
-
       {rejections.map((r, i) => (
         <p key={`${r.name}-${i}`} className="form-error" role="alert">
           {r.name}: {r.reason}{" "}

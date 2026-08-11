@@ -236,9 +236,9 @@ describe("LogsClient — tail polling", () => {
     });
     expect(fn).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Tail: off" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tail", pressed: false }));
     expect(
-      screen.getByRole("button", { name: "Tail: on" }),
+      screen.getByRole("button", { name: "Tail", pressed: true }),
     ).toBeInTheDocument();
 
     await act(async () => {
@@ -268,7 +268,7 @@ describe("LogsClient — tail polling", () => {
     expect(fn).toHaveBeenCalledTimes(2);
 
     // Toggling off stops the interval.
-    fireEvent.click(screen.getByRole("button", { name: "Tail: on" }));
+    fireEvent.click(screen.getByRole("button", { name: "Tail", pressed: true }));
     await act(async () => {
       vi.advanceTimersByTime(30_000);
     });

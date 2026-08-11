@@ -290,7 +290,7 @@ export function LogsClient({
           title="Poll for new entries every 10 seconds (pauses while the tab is hidden)"
           onClick={() => setTail((prev) => !prev)}
         >
-          {tail ? "Tail: on" : "Tail: off"}
+          Tail
         </button>
         <button
           type="button"
