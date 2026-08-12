@@ -6,7 +6,8 @@ import { Badge } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { SchemaTableList } from "@/components/console/SchemaTableList";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables, type EditorTable } from "@/lib/console/tables";
 import { listExtensions, type PgExtension } from "@/lib/console/pgmeta";
 import { DB_TABS } from "@/lib/console/tabs";
@@ -48,8 +49,9 @@ const EXTENSION_COLUMNS: Column<PgExtension>[] = [
  * data itself lives.
  */
 export default async function SchemaPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let tables: EditorTable[] | null = null;
   let extensions: PgExtension[] = [];

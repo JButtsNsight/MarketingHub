@@ -39,7 +39,9 @@ vi.mock("@/lib/console/pgmeta", () => ({
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 const TYPES = [
@@ -50,9 +52,17 @@ const TYPES = [
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -71,21 +81,21 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   };
 }
 
-function getReq(headers: HeadersInit = marketingHeaders()) {
+function getReq(headers: HeadersInit = sectionHeaders()) {
   return new Request("http://x/api/console/types", { headers });
 }
 
 function bodyReq(
   method: string,
   body: unknown,
-  headers: HeadersInit = marketingHeaders(),
+  headers: HeadersInit = sectionHeaders(),
 ) {
   return new Request("http://x/api/console/types", {
     method,
@@ -106,6 +116,16 @@ describe("GET /api/console/types", () => {
       (await GET(getReq({ "x-amzn-oidc-data": viewersToken }))).status,
     ).toBe(403);
     expect(h.listEnumTypes).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": marketingToken }))).status,
+    ).toBe(403);
+    expect(h.listEnumTypes).not.toHaveBeenCalled();
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": adminToken }))).status,
+    ).toBe(200);
   });
 
   test("returns the enum type list", async () => {
@@ -219,7 +239,7 @@ describe("PATCH /api/console/types (add value)", () => {
     );
   });
 
-  test("403 for a non-marketing user before any write", async () => {
+  test("403 for a user without the section before any write", async () => {
     const res = await PATCH(
       bodyReq(
         "PATCH",

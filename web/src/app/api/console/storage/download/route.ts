@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   bucketExists,
   isSafePath,
@@ -30,7 +30,7 @@ const INLINE_SAFE = new Set([
  * Stream a Storage object to the browser. The Supabase signed URL points at
  * the PRIVATE internal data API (unreachable from a browser), so this server
  * — which lives inside the VPC — fetches the bytes and proxies them, keeping
- * the internal host private. Gated on the `marketing` Cognito group.
+ * the internal host private. Gated on the platform section.
  *
  * `?bucket=` selects any live bucket (validated against listBuckets; default
  * stays campaign-templates for legacy links). `?inline=1` requests inline
@@ -38,7 +38,7 @@ const INLINE_SAFE = new Set([
  */
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return NextResponse.json({ error: err.message }, { status: err.status });

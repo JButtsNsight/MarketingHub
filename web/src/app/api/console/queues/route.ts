@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { isValidIdentifier, quoteIdent } from "@/lib/console/identifiers";
 import { runQuery } from "@/lib/console/pgmeta";
 import {
@@ -17,7 +17,7 @@ import {
 
 /**
  * pgmq Queues surface (Studio → Integrations → Queues), gated on the Cognito
- * `marketing` group. All reads (queue overview, live peek, archive listing)
+ * platform section. All reads (queue overview, live peek, archive listing)
  * are non-destructive; the destructive verbs (send/archive/pop/delete) are
  * additionally guarded by the confirm modal on the client.
  *
@@ -114,7 +114,7 @@ async function overview(): Promise<Response> {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -149,7 +149,7 @@ const SendBodySchema = z.object({
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -182,7 +182,7 @@ const ArchiveBodySchema = z.object({
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -221,7 +221,7 @@ const DeleteBodySchema = z.union([
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

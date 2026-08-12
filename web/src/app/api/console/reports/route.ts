@@ -1,4 +1,5 @@
 import { AuthError, requireUser } from "@/lib/auth";
+import { MARKETING_GROUP } from "@/lib/authGroups";
 import {
   AnalyticsUnavailableError,
   apiErrorRates,
@@ -12,7 +13,8 @@ import {
 /**
  * Supabase-parity Reports metrics: serves the five CANNED Logflare metrics
  * (edge request volume, edge error rates, top routes, auth events,
- * realtime/storage log volume), gated on the `marketing` Cognito group.
+ * realtime/storage log volume), gated on the base `marketing` group (the
+ * Wave D role model keeps Reports in the marketing tier, not `platform`).
  *
  * READ-ONLY — the only verb is GET, and there are NO user-defined queries:
  * `metric` must be one of the allowlisted names below and `preset` one of the
@@ -28,8 +30,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Fixed windows; each carries its bucket interval. Mirrored in ReportsClient. */
 const PRESETS: Record<string, { ms: number; interval: MetricInterval }> = {

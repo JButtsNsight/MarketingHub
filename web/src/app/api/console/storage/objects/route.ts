@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   bucketExists,
   deleteObjects,
@@ -14,7 +14,7 @@ import {
 } from "@/lib/console/storage";
 
 /**
- * Storage browser object operations, gated on the `marketing` group:
+ * Storage browser object operations, gated on the platform section:
  *
  * - GET    ?bucket&prefix          → one level of the tree (+ bucket list)
  * - POST   multipart {bucket, prefix, file} → upload (never overwrites —
@@ -52,7 +52,7 @@ async function storageAttempt<T>(work: () => Promise<T>): Promise<T | Response> 
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -80,7 +80,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -135,7 +135,7 @@ const MoveBodySchema = z.object({
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -173,7 +173,7 @@ const DeleteBodySchema = z.object({
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

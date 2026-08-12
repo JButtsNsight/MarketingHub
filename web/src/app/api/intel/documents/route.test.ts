@@ -47,14 +47,24 @@ import { GET, POST } from "./route";
 
 const SOURCE_ID = "5f5e8c2a-9d1b-4f3a-8a51-51e6dd2e1a01";
 
+let intelToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  intelToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-intel"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -72,14 +82,14 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": intelToken,
     "content-type": "application/json",
   };
 }
 
-function postReq(body: unknown, headers: HeadersInit = marketingHeaders()) {
+function postReq(body: unknown, headers: HeadersInit = sectionHeaders()) {
   return new Request("http://x/api/intel/documents", {
     method: "POST",
     headers,
@@ -102,7 +112,7 @@ describe("POST /api/intel/documents (paste-text only)", () => {
     expect(h.createDocument).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the intel section", async () => {
     const res = await POST(
       postReq(validBody, {
         "x-amzn-oidc-data": viewersToken,
@@ -111,6 +121,31 @@ describe("POST /api/intel/documents (paste-text only)", () => {
     );
     expect(res.status).toBe(403);
     expect(h.createDocument).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await POST(
+      postReq(validBody, {
+        "x-amzn-oidc-data": marketingToken,
+        "content-type": "application/json",
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.createDocument).not.toHaveBeenCalled();
+
+    h.getSource.mockResolvedValue({ id: SOURCE_ID, name: "Acme" });
+    h.createDocument.mockResolvedValue({
+      id: "d1",
+      source_id: SOURCE_ID,
+      status: "pending",
+    });
+    const admin = await POST(
+      postReq(validBody, {
+        "x-amzn-oidc-data": adminToken,
+        "content-type": "application/json",
+      }),
+    );
+    expect(admin.status).toBe(201);
   });
 
   test("400 when sourceId is not a UUID", async () => {
@@ -210,7 +245,7 @@ describe("GET /api/intel/documents", () => {
     for (const qs of ["", "?sourceId=nope"]) {
       const res = await GET(
         new Request(`http://x/api/intel/documents${qs}`, {
-          headers: marketingHeaders(),
+          headers: sectionHeaders(),
         }),
       );
       expect(res.status).toBe(400);
@@ -223,7 +258,7 @@ describe("GET /api/intel/documents", () => {
     h.listDocumentsBySource.mockResolvedValue(docs);
     const res = await GET(
       new Request(`http://x/api/intel/documents?sourceId=${SOURCE_ID}`, {
-        headers: marketingHeaders(),
+        headers: sectionHeaders(),
       }),
     );
     expect(res.status).toBe(200);

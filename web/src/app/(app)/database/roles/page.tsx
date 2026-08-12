@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listRoles } from "@/lib/console/dbobjects";
 import { runQuery } from "@/lib/console/pgmeta";
 import { DB_TABS } from "@/lib/console/tabs";
@@ -51,9 +52,10 @@ async function listRoleMemberships(): Promise<RoleMembership[]> {
  * card — never a blank console.
  */
 export default async function RolesPage() {
-  // Server-side group gate: mirrors the API handlers so this page can't be
-  // browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers so this page can't be
+  // browsed by an authenticated employee outside the platform section.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let data: { roles: Awaited<ReturnType<typeof listRoles>>; memberships: RoleMembership[] } | null;
   try {

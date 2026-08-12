@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { ADMIN_GROUP } from "@/lib/authGroups";
+import { AuthError } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/requireAdminUser";
 import {
   ImpersonationAuditError,
   runImpersonatedQuery,
@@ -9,7 +9,8 @@ import {
 
 /**
  * User Impersonation execution, gated on the Cognito `marketinghub-admins`
- * group (Admin nav surface; non-admins get a 403 `admin-only`).
+ * group with the live pool check (`requireAdminApi` — Admin nav surface;
+ * non-admins and just-revoked admins get a 403 `admin-only`).
  *
  * The handler mints a bounded user JWT (role `authenticated` ONLY — the body
  * schema is strict, so a smuggled `role` key is a 400, and the lib re-verifies
@@ -59,7 +60,10 @@ const PostBodySchema = z
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, ADMIN_GROUP);
+    // Token gate + live pool check — impersonation is the highest-value
+    // admin API, so a revoked admin must lose it with the pages, not with
+    // the token's expiry.
+    user = await requireAdminApi(req.headers);
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -32,14 +32,24 @@ vi.mock("@/lib/console/storage", async (importOriginal) => {
 
 import { GET } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
 });
 
@@ -83,11 +93,29 @@ function stubUpstream(contentType: string) {
 function req(path: string, extra = "") {
   return new Request(
     `http://x/api/console/storage/download?path=${encodeURIComponent(path)}${extra}`,
-    { headers: { "x-amzn-oidc-data": marketingToken } },
+    { headers: { "x-amzn-oidc-data": platformToken } },
   );
 }
 
 describe("GET /api/console/storage/download — content-type safety", () => {
+  test("403 for base marketing without the section; admins pass", async () => {
+    stubUpstream("image/png");
+    const forbidden = await GET(
+      new Request("http://x/api/console/storage/download?path=logo.png", {
+        headers: { "x-amzn-oidc-data": marketingToken },
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.signObject).not.toHaveBeenCalled();
+
+    const admin = await GET(
+      new Request("http://x/api/console/storage/download?path=logo.png", {
+        headers: { "x-amzn-oidc-data": adminToken },
+      }),
+    );
+    expect(admin.status).toBe(200);
+  });
+
   test("an inline-requested SVG is forced to attachment with nosniff + CSP", async () => {
     stubUpstream("image/svg+xml");
     const res = await GET(req("evil.svg", "&inline=1"));

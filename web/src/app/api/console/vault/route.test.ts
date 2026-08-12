@@ -49,15 +49,25 @@ const META = {
 // A sentinel plaintext that must NEVER appear in list responses or audit args.
 const PLAINTEXT = "sk_live_SENTINEL_hunter2";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -81,7 +91,7 @@ function req(
   method: string,
   body?: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   },
 ) {
@@ -107,6 +117,20 @@ describe("GET /api/console/vault (list)", () => {
     ).toBe(403);
     expect(h.listSecrets).not.toHaveBeenCalled();
     expect(h.revealSecret).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (
+        await GET(req("GET", undefined, { "x-amzn-oidc-data": marketingToken }))
+      ).status,
+    ).toBe(403);
+    expect(h.listSecrets).not.toHaveBeenCalled();
+    expect(
+      (
+        await GET(req("GET", undefined, { "x-amzn-oidc-data": adminToken }))
+      ).status,
+    ).toBe(200);
   });
 
   test("returns metadata only, never calls the reveal path, no-store", async () => {

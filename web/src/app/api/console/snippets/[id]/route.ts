@@ -1,13 +1,12 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { deleteSnippet, updateSnippet } from "@/lib/console/sql";
 
 /** Rename/update/delete one saved snippet. */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -36,7 +35,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -72,7 +71,7 @@ export async function DELETE(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

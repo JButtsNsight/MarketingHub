@@ -34,15 +34,25 @@ vi.mock("@/lib/console/cron", () => ({
 
 import { DELETE, GET, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -66,7 +76,7 @@ function req(
   method: string,
   body?: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   },
   url = "http://x/api/console/cron",
@@ -95,6 +105,19 @@ describe("GET /api/console/cron", () => {
     ).toBe(403);
     expect(h.listCronJobs).not.toHaveBeenCalled();
     expect(h.listCronRuns).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      req("GET", undefined, { "x-amzn-oidc-data": marketingToken }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.listCronJobs).not.toHaveBeenCalled();
+
+    const admin = await GET(
+      req("GET", undefined, { "x-amzn-oidc-data": adminToken }),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("returns jobs + runs for the group", async () => {

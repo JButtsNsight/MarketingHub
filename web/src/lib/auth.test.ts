@@ -51,6 +51,14 @@ vi.mock("next/headers", () => ({
 }));
 vi.mock("next/navigation", () => ({ redirect: nextMocks.redirect }));
 
+// requireAdminUser consults the live pool through cognitoAdmin; mock the module
+// so the block stays a unit test (no AWS SDK). Default null = live check
+// unavailable (the preview/e2e reality), i.e. the token verdict stands.
+const cognitoMocks = vi.hoisted(() => ({
+  liveGroupsFor: vi.fn(async (_email: string): Promise<string[] | null> => null),
+}));
+vi.mock("./cognitoAdmin", () => ({ liveGroupsFor: cognitoMocks.liveGroupsFor }));
+
 import { requireAdminUser } from "./requireAdminUser";
 
 function headersWith(token?: string): Headers {
@@ -398,6 +406,11 @@ describe("authGroups", () => {
 });
 
 describe("requireAdminUser (admin page gate)", () => {
+  beforeEach(() => {
+    cognitoMocks.liveGroupsFor.mockClear();
+    cognitoMocks.liveGroupsFor.mockResolvedValue(null); // live check unavailable
+  });
+
   it("returns ok + the user for a signed-in admin", async () => {
     nextMocks.headerValue = await signAlbToken({
       email: "admin@nsightcare.com",
@@ -432,6 +445,60 @@ describe("requireAdminUser (admin page gate)", () => {
     nextMocks.cookieValue = "mh-preview-persona=member";
     expect(await requireAdminUser()).toEqual({ ok: false });
     expect(nextMocks.redirect).not.toHaveBeenCalled();
+  });
+
+  // Live pool check (near-instant revocation) — REVOCATION-ONLY semantics.
+  it("consults live groups for the token's email and stays ok when admin persists", async () => {
+    cognitoMocks.liveGroupsFor.mockResolvedValue(["marketing", ADMIN_GROUP]);
+    nextMocks.headerValue = await signAlbToken({
+      email: "admin@nsightcare.com",
+      "cognito:groups": [ADMIN_GROUP],
+    });
+    expect(await requireAdminUser()).toMatchObject({ ok: true });
+    // Page renders ride the cached (60s) live check; only writes force fresh.
+    expect(cognitoMocks.liveGroupsFor).toHaveBeenCalledWith(
+      "admin@nsightcare.com",
+      undefined,
+      { fresh: false },
+    );
+  });
+
+  it("REVOKES a valid admin token when the live pool no longer grants ADMIN_GROUP", async () => {
+    cognitoMocks.liveGroupsFor.mockResolvedValue(["marketing"]); // demoted
+    nextMocks.headerValue = await signAlbToken({
+      email: "revoked@nsightcare.com",
+      "cognito:groups": [ADMIN_GROUP],
+    });
+    expect(await requireAdminUser()).toEqual({ ok: false });
+    expect(nextMocks.redirect).not.toHaveBeenCalled();
+  });
+
+  it("treats a deleted pool user (live []) as revoked", async () => {
+    cognitoMocks.liveGroupsFor.mockResolvedValue([]);
+    nextMocks.headerValue = await signAlbToken({
+      email: "gone@nsightcare.com",
+      "cognito:groups": [ADMIN_GROUP],
+    });
+    expect(await requireAdminUser()).toEqual({ ok: false });
+  });
+
+  it("fails OPEN: a live-check failure (null) leaves the token verdict standing", async () => {
+    cognitoMocks.liveGroupsFor.mockResolvedValue(null); // Cognito blip
+    nextMocks.headerValue = await signAlbToken({
+      email: "admin@nsightcare.com",
+      "cognito:groups": [ADMIN_GROUP],
+    });
+    expect(await requireAdminUser()).toMatchObject({ ok: true });
+  });
+
+  it("NEVER grants from live groups: a non-admin token stays ok:false without a pool call", async () => {
+    cognitoMocks.liveGroupsFor.mockResolvedValue([ADMIN_GROUP]); // pool says admin
+    nextMocks.headerValue = await signAlbToken({
+      email: "casey@nsightcare.com",
+      "cognito:groups": ["marketing"], // token does not
+    });
+    expect(await requireAdminUser()).toEqual({ ok: false });
+    expect(cognitoMocks.liveGroupsFor).not.toHaveBeenCalled();
   });
 });
 

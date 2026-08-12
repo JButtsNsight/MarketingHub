@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { getUserClient } from "@/lib/supabase";
 import { NotProvisionedError, searchChunksFts } from "@/lib/intel/repo";
 import {
@@ -31,8 +32,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Identical queries reuse the in-flight synthesis task for 5 minutes. */
 const IN_FLIGHT_TTL_MS = 5 * 60_000;
@@ -183,7 +182,7 @@ function orFallbackQuery(q: string): string | null {
 export async function GET(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }

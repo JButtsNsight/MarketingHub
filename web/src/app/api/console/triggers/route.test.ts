@@ -36,15 +36,25 @@ vi.mock("@/lib/console/dbobjects", async (importOriginal) => {
 
 import { DELETE, GET, PATCH } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -75,21 +85,21 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   };
 }
 
-function getReq(headers: HeadersInit = marketingHeaders()) {
+function getReq(headers: HeadersInit = sectionHeaders()) {
   return new Request("http://x/api/console/triggers", { headers });
 }
 
 function bodyReq(
   method: string,
   body: unknown,
-  headers: HeadersInit = marketingHeaders(),
+  headers: HeadersInit = sectionHeaders(),
 ) {
   return new Request("http://x/api/console/triggers", {
     method,
@@ -107,6 +117,16 @@ describe("GET /api/console/triggers", () => {
     expect(h.listTriggers).not.toHaveBeenCalled();
   });
 
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": marketingToken }))).status,
+    ).toBe(403);
+    expect(h.listTriggers).not.toHaveBeenCalled();
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": adminToken }))).status,
+    ).toBe(200);
+  });
+
   test("200 returns the live trigger list", async () => {
     const res = await GET(getReq());
     expect(res.status).toBe(200);
@@ -115,7 +135,7 @@ describe("GET /api/console/triggers", () => {
 });
 
 describe("PATCH /api/console/triggers", () => {
-  test("403 for a non-marketing user before any write", async () => {
+  test("403 for a user without the section before any write", async () => {
     const res = await PATCH(
       bodyReq(
         "PATCH",

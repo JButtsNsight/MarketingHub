@@ -22,7 +22,6 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       "Edge Functions",
       "Realtime",
       "API Docs",
-      "Reports",
     ]);
   });
 
@@ -36,7 +35,7 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("slots Competitor Intel in the Marketing group, after Suppressions", () => {
+  it("orders the Marketing group per the Wave D role model — Reports after Suppressions, intel last", () => {
     const marketing = NAV_GROUPS.find((g) => g.label === "Marketing");
     expect(marketing).toBeDefined();
     expect(marketing!.items.map((i) => [i.label, i.href])).toEqual([
@@ -45,6 +44,7 @@ describe("NAV_GROUPS — Studio IA parity", () => {
       ["Inbox", "/inbox"],
       ["Review queue", "/review"],
       ["Suppressions", "/suppressions"],
+      ["Reports", "/reports"],
       ["Competitor Intel", "/intel"],
     ]);
   });
@@ -54,6 +54,7 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     expect(admin).toBeDefined();
     expect(admin!.items.map((i) => [i.label, i.href])).toEqual([
       ["Authentication", "/admin/auth"],
+      ["Users", "/admin/users"],
       ["Advisors", "/admin/advisors"],
       ["Cloud", "/admin/cloud"],
       ["Logs", "/logs"],
@@ -99,11 +100,11 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     expect(byLabel["Realtime"]).toBe("/realtime");
   });
 
-  it("routes Reports on Platform and Logs under Admin", () => {
-    const platform = NAV_GROUPS.find((g) => g.label === "Platform")!;
+  it("routes Reports in Marketing (its gate is the marketing group) and Logs under Admin", () => {
+    const marketing = NAV_GROUPS.find((g) => g.label === "Marketing")!;
     const admin = NAV_GROUPS.find((g) => g.label === "Admin")!;
     expect(
-      Object.fromEntries(platform.items.map((i) => [i.label, i.href]))["Reports"],
+      Object.fromEntries(marketing.items.map((i) => [i.label, i.href]))["Reports"],
     ).toBe("/reports");
     expect(
       Object.fromEntries(admin.items.map((i) => [i.label, i.href]))["Logs"],
@@ -256,5 +257,115 @@ describe("Nav admin visibility — display filter only (routes enforce)", () => 
     h.pathname = "/overview";
     render(<Nav groups={NAV_GROUPS} />);
     expect(screen.getByRole("link", { name: /authentication/i })).toBeInTheDocument();
+  });
+});
+
+describe("Nav section visibility — display filter only (routes enforce)", () => {
+  it("navGroupsFor(false, []) hides Platform, Integrations and the intel item", () => {
+    const groups = navGroupsFor(false, []);
+    expect(groups.map((g) => g.label)).toEqual([
+      undefined,
+      "Marketing",
+      "Project",
+    ]);
+    const marketing = groups.find((g) => g.label === "Marketing")!;
+    expect(marketing.items.map((i) => i.label)).not.toContain(
+      "Competitor Intel",
+    );
+  });
+
+  it("the platform section restores Platform + Integrations but not intel", () => {
+    const groups = navGroupsFor(false, ["platform"]);
+    expect(groups.map((g) => g.label)).toEqual([
+      undefined,
+      "Platform",
+      "Integrations",
+      "Marketing",
+      "Project",
+    ]);
+    const marketing = groups.find((g) => g.label === "Marketing")!;
+    expect(marketing.items.map((i) => i.label)).not.toContain(
+      "Competitor Intel",
+    );
+  });
+
+  it("the intel section keeps the intel item but not the platform groups", () => {
+    const groups = navGroupsFor(false, ["intel"]);
+    expect(groups.map((g) => g.label)).toEqual([
+      undefined,
+      "Marketing",
+      "Project",
+    ]);
+    const marketing = groups.find((g) => g.label === "Marketing")!;
+    expect(marketing.items.map((i) => i.label)).toContain("Competitor Intel");
+  });
+
+  it("admins see everything regardless of sections (god-mode implies all)", () => {
+    expect(navGroupsFor(true, [])).toEqual(NAV_GROUPS);
+  });
+
+  it("omitting sections keeps the pre-section behavior (admin filter only)", () => {
+    expect(navGroupsFor(false).map((g) => g.label)).toEqual([
+      undefined,
+      "Platform",
+      "Integrations",
+      "Marketing",
+      "Project",
+    ]);
+  });
+
+  it("renders the filtered rail from the sections prop", () => {
+    h.pathname = "/overview";
+    render(<Nav sections={[]} />);
+    expect(screen.queryByRole("link", { name: /table editor/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /competitor intel/i })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: /sms campaigns/i }),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("Nav marketing-tier visibility — display filter only (routes enforce)", () => {
+  it("marketing=false hides Overview, the marketing product items, and Settings", () => {
+    // These routes all enforce requireMarketingUser — the rail must not
+    // advertise them to a section-only user.
+    const groups = navGroupsFor(false, ["platform"], false);
+    expect(groups.map((g) => g.label)).toEqual(["Platform", "Integrations"]);
+  });
+
+  it("an intel-only user keeps ONLY the Competitor Intel item of the Marketing group", () => {
+    const groups = navGroupsFor(false, ["intel"], false);
+    expect(groups.map((g) => g.label)).toEqual(["Marketing"]);
+    expect(groups[0]!.items.map((i) => i.label)).toEqual(["Competitor Intel"]);
+  });
+
+  it("marketing=true keeps the base tier alongside the granted sections", () => {
+    const groups = navGroupsFor(false, ["intel"], true);
+    expect(groups.map((g) => g.label)).toEqual([
+      undefined,
+      "Marketing",
+      "Project",
+    ]);
+    const marketing = groups.find((g) => g.label === "Marketing")!;
+    expect(marketing.items.map((i) => i.label)).toContain("Reports");
+    expect(marketing.items.map((i) => i.label)).toContain("Competitor Intel");
+  });
+
+  it("omitting marketing keeps the pre-tier behavior (compat)", () => {
+    const groups = navGroupsFor(false, []);
+    expect(groups.map((g) => g.label)).toEqual([undefined, "Marketing", "Project"]);
+  });
+
+  it("admins see everything regardless of the marketing flag (god-mode)", () => {
+    expect(navGroupsFor(true, [], false)).toEqual(NAV_GROUPS);
+  });
+
+  it("renders the marketing-filtered rail from the prop", () => {
+    h.pathname = "/database";
+    render(<Nav sections={["platform"]} marketing={false} />);
+    expect(screen.getByRole("link", { name: /table editor/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /overview/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /sms campaigns/i })).toBeNull();
+    expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
   });
 });

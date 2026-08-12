@@ -155,12 +155,92 @@ test('exactly one of SAML metadata URL / file is required (production)', () => {
   ).toThrow(/exactly ONE/); // placeholder URL + no file = neither supplied
 });
 
-test('both an admin and a marketing Cognito group exist', () => {
+test('all four Cognito groups exist: admin, marketing, and the two Wave-D sections', () => {
   const { template } = makeApp();
-  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 2);
+  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 4);
   template.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'marketinghub-admins' });
   template.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'marketing' });
+  // Section group names are FIXED in code (web authGroups.ts registry), not context.
+  template.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'mh-section-platform' });
+  template.hasResourceProperties('AWS::Cognito::UserPoolGroup', { GroupName: 'mh-section-intel' });
 });
+
+// ---------------------------------------------------------------------------
+// Wave-D: the app TASK role's cognito-idp grant — the /admin/users surface and
+// the live requireAdminUser revocation check sign pool ops with task-role
+// SigV4 creds. Exists exactly when the pool does (prod always; preview only
+// under SAML prestage), scoped to THE pool ARN, never on the exec/worker roles.
+// ---------------------------------------------------------------------------
+
+/** The five pool ops the app's Cognito-admin surface uses — nothing more. */
+const COGNITO_ADMIN_ACTIONS = [
+  'cognito-idp:ListUsers',
+  'cognito-idp:ListGroups',
+  'cognito-idp:AdminListGroupsForUser',
+  'cognito-idp:AdminAddUserToGroup',
+  'cognito-idp:AdminRemoveUserFromGroup',
+];
+
+/** The task definition whose ContainerDefinitions include a container named `name`. */
+function findTaskDefByContainer(
+  template: ReturnType<typeof Template.fromStack>,
+  name: 'app' | 'worker',
+) {
+  const taskDefs = template.findResources('AWS::ECS::TaskDefinition');
+  return Object.values(taskDefs).find((td: any) =>
+    (td.Properties.ContainerDefinitions ?? []).some((c: any) => c.Name === name),
+  ) as any;
+}
+
+/** Every statement of every AWS::IAM::Policy attached to the given role logical id. */
+function statementsForRole(
+  template: ReturnType<typeof Template.fromStack>,
+  roleId: string,
+): any[] {
+  return Object.values(template.findResources('AWS::IAM::Policy'))
+    .filter((p: any) => (p.Properties.Roles ?? []).some((r: any) => r.Ref === roleId))
+    .flatMap((p: any) => p.Properties.PolicyDocument.Statement as any[]);
+}
+
+const cognitoIdpStatements = (statements: any[]): any[] =>
+  statements.filter((s) =>
+    (Array.isArray(s.Action) ? s.Action : [s.Action]).some((a: string) =>
+      String(a).startsWith('cognito-idp:'),
+    ),
+  );
+
+for (const [mode, makeMode] of [
+  ['production', makeApp],
+  ['preview prestage', () => makePreviewApp()],
+] as const) {
+  test(`the app TASK role (${mode}) gets EXACTLY the five cognito-idp admin ops, scoped to the pool ARN`, () => {
+    const { template } = makeMode();
+    const poolIds = Object.keys(template.findResources('AWS::Cognito::UserPool'));
+    expect(poolIds).toHaveLength(1);
+    const td = findTaskDefByContainer(template, 'app');
+    const stmts = cognitoIdpStatements(
+      statementsForRole(template, td.Properties.TaskRoleArn['Fn::GetAtt'][0]),
+    );
+    expect(stmts).toHaveLength(1);
+    expect([...stmts[0].Action].sort()).toEqual([...COGNITO_ADMIN_ACTIONS].sort());
+    // Pool-scoped: the resource is THE pool's Arn GetAtt — never a wildcard.
+    expect(stmts[0].Resource).toEqual({ 'Fn::GetAtt': [poolIds[0], 'Arn'] });
+    expect(stmts[0].Effect).toBe('Allow');
+  });
+
+  test(`no cognito-idp grant (${mode}) on the app EXECUTION role or either worker role`, () => {
+    const { template } = makeMode();
+    const appTd = findTaskDefByContainer(template, 'app');
+    const workerTd = findTaskDefByContainer(template, 'worker');
+    for (const roleId of [
+      appTd.Properties.ExecutionRoleArn['Fn::GetAtt'][0],
+      workerTd.Properties.TaskRoleArn['Fn::GetAtt'][0],
+      workerTd.Properties.ExecutionRoleArn['Fn::GetAtt'][0],
+    ]) {
+      expect(cognitoIdpStatements(statementsForRole(template, roleId))).toHaveLength(0);
+    }
+  });
+}
 
 test('app client uses OAuth code flow with the app idpresponse callback', () => {
   const { template } = makeApp();
@@ -642,6 +722,8 @@ test('preview WITHOUT SAML metadata context: ZERO Cognito user pool / SAML IdP /
   template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
   template.resourceCountIs('AWS::Cognito::UserPoolClient', 0);
   template.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
+  // No pool ⇒ no Wave-D cognito-idp task-role grant either.
+  expect(JSON.stringify(template.toJSON())).not.toContain('cognito-idp:');
 });
 
 test('preview WITH SAML metadata context: Cognito broker is PRESTAGED, front door untouched', () => {
@@ -650,7 +732,7 @@ test('preview WITH SAML metadata context: Cognito broker is PRESTAGED, front doo
   template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
   template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 1);
   template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
-  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 2);
+  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 4);
   // Still the PREVIEW front door: internal ALB, no cert / WAF / DNS.
   template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
     Scheme: 'internal',

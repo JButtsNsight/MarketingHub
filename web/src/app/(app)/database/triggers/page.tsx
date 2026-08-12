@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listTriggers } from "@/lib/console/dbobjects";
 import { DB_TABS } from "@/lib/console/tabs";
 import { TriggersClient } from "@/components/console/TriggersClient";
@@ -23,9 +24,10 @@ export const metadata = {
  * card — never a blank console.
  */
 export default async function TriggersPage() {
-  // Server-side group gate: mirrors the API handlers so this page can't be
-  // browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers so this page can't be
+  // browsed by an authenticated employee outside the platform section.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let triggers;
   try {

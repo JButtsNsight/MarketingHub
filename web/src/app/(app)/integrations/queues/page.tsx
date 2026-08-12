@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { allQueueMetrics, listQueues } from "@/lib/console/queues";
 import {
   QueuesClient,
@@ -29,8 +30,9 @@ const INTEGRATIONS_TABS: TabItem[] = [
  * per-queue message views + guarded send/archive/pop/delete actions.
  */
 export default async function QueuesPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let rows: QueueOverviewRow[] | null = null;
   try {

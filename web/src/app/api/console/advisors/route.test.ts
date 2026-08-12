@@ -19,9 +19,16 @@ import {
 } from "@/lib/__test__/albToken";
 
 // Mock the server-only advisors lib; the route is the unit under test.
-const h = vi.hoisted(() => ({ runAdvisors: vi.fn() }));
+const h = vi.hoisted(() => ({ runAdvisors: vi.fn(), liveGroupsFor: vi.fn() }));
 
 vi.mock("@/lib/console/advisors", () => ({ runAdvisors: h.runAdvisors }));
+
+// The admin gate consults the live pool through requireAdminApi; mock ONLY
+// liveGroupsFor (null = fail-open, token verdict stands — the default).
+vi.mock("@/lib/cognitoAdmin", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cognitoAdmin")>();
+  return { ...actual, liveGroupsFor: h.liveGroupsFor };
+});
 
 import { GET } from "./route";
 
@@ -61,6 +68,7 @@ beforeEach(() => {
   setAlbEnv();
   installAlbKeyFetch();
   h.runAdvisors.mockReset().mockResolvedValue(REPORT);
+  h.liveGroupsFor.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -83,6 +91,16 @@ describe("GET /api/console/advisors", () => {
       new Request("http://x/api/console/advisors", {
         headers: { "x-amzn-oidc-data": marketingToken },
       }),
+    );
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
+    expect(h.runAdvisors).not.toHaveBeenCalled();
+  });
+
+  test("403 admin-only when the LIVE pool no longer grants admin (revoked since sign-in)", async () => {
+    h.liveGroupsFor.mockResolvedValue(["marketing"]);
+    const res = await GET(
+      new Request("http://x/api/console/advisors", { headers: adminHeaders() }),
     );
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "admin-only" });

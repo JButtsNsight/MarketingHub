@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { DB_TABS } from "@/lib/console/tabs";
 import { listIndexes, OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { listColumns, runQuery } from "@/lib/console/pgmeta";
@@ -77,7 +78,8 @@ async function loadIndexTables(): Promise<IndexTableDto[]> {
  * introspection failure degrades to an explicit card, never a blank console.
  */
 export default async function IndexesPage() {
-  await requireMarketingUser();
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let indexes: IndexRow[] | null = null;
   let tables: IndexTableDto[] = [];

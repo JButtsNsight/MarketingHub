@@ -68,14 +68,24 @@ function store(): TestStore {
   return s;
 }
 
+let intelToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  intelToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-intel"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -97,7 +107,7 @@ afterEach(() => {
 
 function req(taskId: string, headers?: HeadersInit) {
   return new Request(`http://x/api/intel/search/answer/${taskId}`, {
-    headers: headers ?? { "x-amzn-oidc-data": marketingToken },
+    headers: headers ?? { "x-amzn-oidc-data": intelToken },
   });
 }
 
@@ -112,13 +122,29 @@ describe("GET /api/intel/search/answer/[taskId]", () => {
     expect(h.pollSynthesis).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the intel section", async () => {
     const res = await GET(
       req(TASK_ID, { "x-amzn-oidc-data": viewersToken }),
       params(TASK_ID),
     );
     expect(res.status).toBe(403);
     expect(h.pollSynthesis).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      req(TASK_ID, { "x-amzn-oidc-data": marketingToken }),
+      params(TASK_ID),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.pollSynthesis).not.toHaveBeenCalled();
+
+    h.gatewayFromEnv.mockReturnValue(null); // degraded body; the gate is the point
+    const admin = await GET(
+      req(TASK_ID, { "x-amzn-oidc-data": adminToken }),
+      params(TASK_ID),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("400 invalid-task-id outside the mh-intel namespace (oracle guard)", async () => {

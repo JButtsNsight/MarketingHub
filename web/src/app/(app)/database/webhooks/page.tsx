@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { quoteLiteral } from "@/lib/console/identifiers";
 import { listTables, runQuery } from "@/lib/console/pgmeta";
@@ -29,8 +30,9 @@ export const metadata = {
  * route. Introspection failure degrades to an explicit error card.
  */
 export default async function WebhooksPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let data: {
     webhooks: WebhookDto[];

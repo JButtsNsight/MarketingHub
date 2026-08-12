@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1106.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1109.0",
     "@codemirror/lang-sql": "^6.10.0",
     "@codemirror/language": "^6.12.4",
     "@codemirror/state": "^6.7.1",

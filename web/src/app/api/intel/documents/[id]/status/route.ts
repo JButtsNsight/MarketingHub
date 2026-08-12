@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { getUserClient } from "@/lib/supabase";
 import { chunkStatus, NotProvisionedError } from "@/lib/intel/repo";
 
@@ -10,8 +11,6 @@ import { chunkStatus, NotProvisionedError } from "@/lib/intel/repo";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 const UuidSchema = z.string().uuid();
 
@@ -36,7 +35,7 @@ export async function GET(
 ): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }

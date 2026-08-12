@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   listCronJobs,
   listCronRuns,
@@ -10,7 +11,7 @@ import {
 
 /**
  * pg_cron control surface (Studio → Integrations → Cron), gated on the Cognito
- * `marketing` group. GET reads the job catalog + recent run history (optionally
+ * platform section. GET reads the job catalog + recent run history (optionally
  * scoped to one job); POST schedules/replaces a job via `cron.schedule`; DELETE
  * unschedules via `cron.unschedule`.
  *
@@ -23,8 +24,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -62,7 +61,7 @@ const UnscheduleSchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -100,7 +99,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -126,7 +125,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

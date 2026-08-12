@@ -58,15 +58,25 @@ const UNNAMED = {
 
 const PLAINTEXT = "sk_live_SENTINEL_hunter2";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -96,7 +106,7 @@ function req(
   method: string,
   body?: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   },
 ) {
@@ -130,6 +140,27 @@ describe("PATCH /api/console/vault/[id]", () => {
     ).toBe(403);
     expect(h.updateSecret).not.toHaveBeenCalled();
     expect(h.auditVaultAction).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await PATCH(
+      req("PATCH", VALID_PATCH, {
+        "x-amzn-oidc-data": marketingToken,
+        "content-type": "application/json",
+      }),
+      ctx(ID),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.updateSecret).not.toHaveBeenCalled();
+
+    const admin = await PATCH(
+      req("PATCH", VALID_PATCH, {
+        "x-amzn-oidc-data": adminToken,
+        "content-type": "application/json",
+      }),
+      ctx(ID),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("404 on a non-uuid path id without touching the data layer", async () => {

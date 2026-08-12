@@ -11,8 +11,9 @@ import { AppStack } from '../lib/app-stack';
 //       (query embedding, /intel/search) AND the WORKER container (the
 //       ci_embed queue consumer) — plaintext env, neither value is a secret;
 //     * IAM  bedrock:InvokeModel on EXACTLY the pinned Titan V2 foundation-model
-//       ARN, on BOTH TASK roles (the first task-role policies either service
-//       has ever had) — never the execution roles;
+//       ARN, on BOTH TASK roles — never the execution roles. (Since Wave-D the
+//       APP task role also carries an always-on cognito-idp statement whenever
+//       the user pool exists; the WORKER task role stays bare by default.)
 //     * NO new secret anywhere, and the WORKER task-def stays secret-frozen
 //       (runbook §9.4 — the w6 test guards JWT/anon/logflare; this one guards
 //       the whole worker Secrets list under the W8 flag). The frozen baseline
@@ -158,12 +159,22 @@ test('default: NO container anywhere carries CI_EMBED_* env or secrets (both mod
   }
 });
 
-test('default: task roles have ZERO attached policies (worker task role stays bare)', () => {
+test('default: worker task role has ZERO policies; app task role carries ONLY the Wave-D cognito-idp statement', () => {
+  // CONTEXT carries SAML metadata, so the pool (and with it the Wave-D
+  // cognito-idp grant on the APP task role) exists in both modes. The flag
+  // being off must add nothing beyond that — and never touch the worker.
   for (const template of [prodDefault(), previewDefault()]) {
-    for (const name of ['app', 'worker'] as const) {
-      const td = findTaskDef(template, name);
-      expect(statementsForRole(template, roleLogicalId(td, 'TaskRoleArn'))).toHaveLength(0);
-    }
+    const workerTd = findTaskDef(template, 'worker');
+    expect(statementsForRole(template, roleLogicalId(workerTd, 'TaskRoleArn'))).toHaveLength(0);
+    const appStmts = statementsForRole(
+      template,
+      roleLogicalId(findTaskDef(template, 'app'), 'TaskRoleArn'),
+    );
+    expect(appStmts).toHaveLength(1);
+    expect(
+      asList(appStmts[0].Action).every((a) => String(a).startsWith('cognito-idp:')),
+    ).toBe(true);
+    expect(bedrockStatements(appStmts)).toHaveLength(0);
   }
 });
 
@@ -213,11 +224,14 @@ for (const [mode, makeOn] of ON_MODES) {
     }
   });
 
-  test(`flag on (${mode}): exactly TWO new IAM policies vs default (one per task role), nothing else`, () => {
+  test(`flag on (${mode}): exactly ONE new IAM policy vs default (the worker task role's), nothing else`, () => {
+    // The APP task role's DefaultPolicy already exists by default (the Wave-D
+    // cognito-idp grant) — the flag adds a statement there, not a policy; the
+    // only NEW policy resource is the worker task role's.
     const defaults = mode === 'production' ? prodDefault() : previewDefault();
     const defaultCount = Object.keys(defaults.findResources('AWS::IAM::Policy')).length;
     const onCount = Object.keys(makeOn().findResources('AWS::IAM::Policy')).length;
-    expect(onCount).toBe(defaultCount + 2);
+    expect(onCount).toBe(defaultCount + 1);
   });
 
   test(`flag on (${mode}): the WORKER task-def stays secret-frozen — EXACTLY the three baseline secrets, none added by the flag`, () => {

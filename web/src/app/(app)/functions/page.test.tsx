@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
-  requireMarketingUser: vi.fn(),
+  requireSectionUser: vi.fn(),
   order: vi.fn(),
   chainCalls: [] as Array<{ schema: string; table: string; columns: string }>,
   getUserClientCalls: [] as unknown[],
 }));
 
-vi.mock("@/lib/requireMarketingUser", () => ({
-  requireMarketingUser: h.requireMarketingUser,
+vi.mock("@/lib/requireSection", () => ({
+  requireSectionUser: h.requireSectionUser,
 }));
 vi.mock("@/lib/supabase", () => ({
   getUserClient: async (user: unknown) => {
@@ -38,20 +38,34 @@ const ROW = {
   source: 'serve(() => new Response("hi"))',
 };
 
-const AMY = { email: "amy@nsight.example", name: "Amy", groups: ["marketing"] };
+const AMY = {
+  email: "amy@nsight.example",
+  name: "Amy",
+  groups: ["mh-section-platform"],
+};
 
 describe("functions/page.tsx (server component)", () => {
   beforeEach(() => {
-    h.requireMarketingUser.mockReset().mockResolvedValue(AMY);
+    h.requireSectionUser.mockReset().mockResolvedValue({ ok: true, user: AMY });
     h.order.mockReset().mockResolvedValue({ data: [ROW], error: null });
     h.chainCalls.length = 0;
     h.getUserClientCalls.length = 0;
   });
 
-  test("enforces the marketing gate and preloads the registry as the user", async () => {
+  test("renders the terse 403 panel when the platform section is missing", async () => {
+    h.requireSectionUser.mockResolvedValue({ ok: false });
+    render(await FunctionsPage());
+    expect(h.requireSectionUser).toHaveBeenCalledWith("platform");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Platform access required.",
+    );
+    expect(h.getUserClientCalls).toEqual([]);
+  });
+
+  test("enforces the platform section gate and preloads the registry as the user", async () => {
     render(await FunctionsPage());
 
-    expect(h.requireMarketingUser).toHaveBeenCalled();
+    expect(h.requireSectionUser).toHaveBeenCalledWith("platform");
     // Wave-4 identity threading: the registry read runs as the viewer.
     expect(h.getUserClientCalls).toEqual([AMY]);
     expect(h.chainCalls).toEqual([

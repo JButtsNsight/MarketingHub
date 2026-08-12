@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listHistory, listSnippets } from "@/lib/console/sql";
 import { SqlConsole } from "@/components/console/SqlConsole";
 
@@ -12,13 +13,14 @@ export const metadata = {
 
 /**
  * The SQL editor (Studio parity). Queries run through postgres-meta as
- * supabase_admin behind the marketing group gate; statements that cannot be
+ * supabase_admin behind the platform section gate; statements that cannot be
  * proven read-only take an explicit confirm step, and every run is recorded
  * in console_query_history.
  */
 export default async function SqlPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   // Snippet/history tables may predate their migration on a fresh
   // environment — an empty editor beats a hard 500.

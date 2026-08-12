@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listEnumTypes, OBJECT_SCHEMAS, type PgEnumType } from "@/lib/console/dbobjects";
 import { DB_TABS } from "@/lib/console/tabs";
 import { TypesClient } from "@/components/console/TypesClient";
@@ -23,8 +24,9 @@ export const metadata = {
  * card — never a blank console.
  */
 export default async function TypesPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let types: PgEnumType[] | null = null;
   try {

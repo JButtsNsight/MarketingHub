@@ -86,14 +86,24 @@ function store(): TestStore {
   return s;
 }
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -119,7 +129,7 @@ function req(body: unknown, headers?: HeadersInit) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      ...(headers ?? { "x-amzn-oidc-data": marketingToken }),
+      ...(headers ?? { "x-amzn-oidc-data": platformToken }),
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
@@ -133,12 +143,26 @@ describe("POST /api/console/assistant", () => {
     expect(h.submitAssistant).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the platform section", async () => {
     const res = await POST(
       req({ question: "how many lists?" }, { "x-amzn-oidc-data": viewersToken }),
     );
     expect(res.status).toBe(403);
     expect(h.submitAssistant).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const res = await POST(
+      req({ question: "how many lists?" }, { "x-amzn-oidc-data": marketingToken }),
+    );
+    expect(res.status).toBe(403);
+    expect(h.submitAssistant).not.toHaveBeenCalled();
+
+    h.gatewayFromEnv.mockReturnValue(null); // degraded body; the gate is the point
+    const admin = await POST(
+      req({ question: "how many lists?" }, { "x-amzn-oidc-data": adminToken }),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("400 on a non-JSON body", async () => {

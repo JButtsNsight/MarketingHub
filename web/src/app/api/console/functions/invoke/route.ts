@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { readJsonBodyBounded } from "@/lib/jsonBody";
 import { getServiceClient } from "@/lib/supabase";
 
@@ -9,7 +10,7 @@ import { getServiceClient } from "@/lib/supabase";
  *
  * POSTing here runs one registered edge function through Kong
  * (`${SUPABASE_URL}/functions/v1/<name>`) from the SERVER — the browser can
- * never reach Kong directly. Gated on the Cognito `marketing` group like every
+ * never reach Kong directly. Gated on the platform section like every
  * console route.
  *
  * Containment:
@@ -34,7 +35,6 @@ import { getServiceClient } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
 const SCHEMA = "marketinghub";
 const REGISTRY_TABLE = "edge_functions";
 
@@ -142,7 +142,7 @@ async function readBodyCapped(
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -36,6 +36,10 @@ const MEMBER = {
   name: "Amy",
   groups: ["marketing"],
 };
+const PLATFORM_MEMBER = {
+  ...MEMBER,
+  groups: ["marketing", "mh-section-platform"],
+};
 const ADMIN = { ...MEMBER, groups: ["marketing", "marketinghub-admins"] };
 
 const ADMIN_CARDS = [
@@ -88,10 +92,32 @@ describe("overview/page.tsx (server component)", () => {
     for (const card of ADMIN_CARDS) {
       expect(screen.queryByText(card)).not.toBeInTheDocument();
     }
-    const links = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    const links = screen.queryAllByRole("link").map((a) => a.getAttribute("href"));
     expect(links).not.toContain("/admin/auth");
     expect(links).not.toContain("/admin/advisors");
     expect(links).not.toContain("/admin/cloud");
     expect(links).not.toContain("/infrastructure");
+  });
+
+  test("marketing-only user gets no Storage section — /storage is platform-gated now", async () => {
+    render(await OverviewPage());
+
+    expect(screen.queryByText("Storage")).not.toBeInTheDocument();
+    const links = screen.queryAllByRole("link").map((a) => a.getAttribute("href"));
+    expect(links).not.toContain("/storage");
+    // No bucket fan-out for a user whose role can't open the surface.
+    expect(h.listBucket).not.toHaveBeenCalled();
+  });
+
+  test("platform section restores the Storage section (admins too, via god-mode)", async () => {
+    h.requireMarketingUser.mockResolvedValue(PLATFORM_MEMBER);
+    render(await OverviewPage());
+
+    expect(screen.getByText("Storage")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open" })).toHaveAttribute(
+      "href",
+      "/storage",
+    );
+    expect(h.listBucket).toHaveBeenCalledTimes(1);
   });
 });

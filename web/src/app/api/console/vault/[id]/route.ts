@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser, type AppUser } from "@/lib/auth";
+import { AuthError, type AppUser } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   MAX_DESCRIPTION_LEN,
   MAX_NAME_LEN,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/console/vault";
 
 /**
- * Per-secret vault console route, gated on the Cognito `marketing` group.
+ * Per-secret vault console route, gated on the platform section.
  * PATCH replaces a secret's name/description/value via `vault.update_secret`
  * (the vault function REPLACES — all three fields are required, and the value
  * is re-encrypted); DELETE removes the row, but only when the body's `confirm`
@@ -29,14 +30,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 /** Group-gate the request; returns the user (audit actor) or the 401/403. */
 async function gate(req: Request): Promise<AppUser | Response> {
   try {
-    return await requireUser(req.headers, MARKETING_GROUP);
+    return await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return Response.json(

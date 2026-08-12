@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SECTIONS, type SectionId } from "@/lib/authGroups";
 import { Surface } from "./Surface";
 
 export type IconKey =
@@ -42,6 +43,14 @@ export interface NavItem {
    *  Database section lands on `/database/schema` but owns the whole
    *  `/database/` subtree (Schema + Policies). */
   match?: string;
+  /** Section gating this single item (whole nav groups gate via the SECTIONS
+   *  registry's `navGroups`; this is for a sectioned item inside an unrelated
+   *  group, like Competitor Intel inside Marketing). */
+  section?: SectionId;
+  /** Item gated by the base `marketing` tier (requireMarketingUser routes) —
+   *  hidden when the user lacks the group, so the rail never advertises a
+   *  marketing surface that would bounce a section-only user. */
+  marketing?: boolean;
 }
 
 export interface NavGroup {
@@ -60,7 +69,7 @@ export interface NavGroup {
  * destination — the Admin group lists its pages directly.
  */
 export const NAV_GROUPS: NavGroup[] = [
-  { items: [{ href: "/overview", label: "Overview", icon: "overview" }] },
+  { items: [{ href: "/overview", label: "Overview", icon: "overview", marketing: true }] },
   {
     label: "Platform",
     items: [
@@ -80,8 +89,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/functions", label: "Edge Functions", icon: "edgeFunctions" },
       { href: "/realtime", label: "Realtime", icon: "realtime" },
       { href: "/api-reference", label: "API Docs", icon: "api" },
-      // Wave 6: Studio's observability pair — Reports (canned Logflare
-      { href: "/reports", label: "Reports", icon: "reports" },
     ],
   },
   {
@@ -97,14 +104,17 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Marketing",
     items: [
-      { href: "/templates", label: "Templates", icon: "templates" },
-      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns" },
-      { href: "/inbox", label: "Inbox", icon: "inbox" },
-      { href: "/review", label: "Review queue", icon: "review" },
-      { href: "/suppressions", label: "Suppressions", icon: "suppressions" },
+      { href: "/templates", label: "Templates", icon: "templates", marketing: true },
+      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns", marketing: true },
+      { href: "/inbox", label: "Inbox", icon: "inbox", marketing: true },
+      { href: "/review", label: "Review queue", icon: "review", marketing: true },
+      { href: "/suppressions", label: "Suppressions", icon: "suppressions", marketing: true },
+      // Wave 6 observability, marketing-tier per the Wave D role model (the
+      // route enforces `marketing`, so it lives with the marketing items).
+      { href: "/reports", label: "Reports", icon: "reports", marketing: true },
       // Wave 8: competitor-intel RAG module — default prefix matching keeps it
       // lit across /intel/search, /intel/sources/*, /intel/documents/*.
-      { href: "/intel", label: "Competitor Intel", icon: "intel" },
+      { href: "/intel", label: "Competitor Intel", icon: "intel", section: "intel" },
     ],
   },
   {
@@ -114,6 +124,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Admin",
     items: [
       { href: "/admin/auth", label: "Authentication", icon: "auth" },
+      { href: "/admin/users", label: "Users", icon: "auth" },
       { href: "/admin/advisors", label: "Advisors", icon: "advisors" },
       { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
       // Logs (explorer + drains subtree) and Infrastructure are ops surfaces —
@@ -125,18 +136,51 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: "Project",
     items: [
-      { href: "/settings", label: "Settings", icon: "settings" },
+      { href: "/settings", label: "Settings", icon: "settings", marketing: true },
     ],
   },
 ];
 
+/** Nav-group label → owning section id, from the SECTIONS registry. */
+const GROUP_SECTION = new Map<string, SectionId>(
+  SECTIONS.flatMap((s) => s.navGroups.map((label) => [label, s.id] as const)),
+);
+
 /**
- * Nav groups visible to a user: non-admins lose the Admin group. Display
- * filtering ONLY — the /admin/*, /logs and /infrastructure routes are the
- * enforcement (`requireAdminUser`).
+ * Nav groups visible to a user: non-admins lose the Admin group; when
+ * `sections` is passed, every group/item owned by a section they lack
+ * (Platform + Integrations → `platform`; the Competitor Intel item → `intel`);
+ * when `marketing` is explicitly false, every base-tier item too (Overview,
+ * the marketing product items, Settings — all requireMarketingUser routes).
+ * Omitting `sections`/`marketing` keeps the pre-tier behavior for that filter.
+ * Display filtering ONLY — the routes are the enforcement (`requireAdminUser`,
+ * `requireSection*`, `requireMarketingUser`); admins see everything (god-mode
+ * implies every section; an admin without `marketing` is not a real persona).
  */
-export function navGroupsFor(admin: boolean): NavGroup[] {
-  return admin ? NAV_GROUPS : NAV_GROUPS.filter((g) => g.label !== "Admin");
+export function navGroupsFor(
+  admin: boolean,
+  sections?: readonly SectionId[],
+  marketing?: boolean,
+): NavGroup[] {
+  if (admin) return NAV_GROUPS;
+  const groups = NAV_GROUPS.filter((g) => g.label !== "Admin");
+  if (sections === undefined && marketing === undefined) return groups;
+  const has = (id: SectionId) => sections === undefined || sections.includes(id);
+  const base = marketing !== false;
+  return groups
+    .filter((g) => {
+      const section = g.label ? GROUP_SECTION.get(g.label) : undefined;
+      return section === undefined || has(section);
+    })
+    .map((g) => ({
+      ...g,
+      items: g.items.filter(
+        (i) =>
+          (i.section === undefined || has(i.section)) &&
+          (i.marketing === undefined || base),
+      ),
+    }))
+    .filter((g) => g.items.length > 0);
 }
 
 /**
@@ -333,19 +377,24 @@ function NavIcon({ icon }: { icon: IconKey }) {
  * Left navigation rail. Built from the .surface primitive so it honors the
  * surface tokens. Highlights the active section from the pathname. `admin`
  * defaults false (fail-closed display: no Admin group unless threaded in);
+ * `sections`/`marketing` filter the tiered groups/items (see navGroupsFor);
  * an explicit `groups` prop overrides the filter entirely.
  */
 export function Nav({
   groups,
   admin = false,
+  sections,
+  marketing,
 }: {
   groups?: NavGroup[];
   admin?: boolean;
+  sections?: readonly SectionId[];
+  marketing?: boolean;
 }) {
   // usePathname() is null outside the App Router context (e.g. in unit tests);
   // fall back to "" so isActive() never calls .startsWith on null.
   const pathname = usePathname() ?? "";
-  const visible = groups ?? navGroupsFor(admin);
+  const visible = groups ?? navGroupsFor(admin, sections, marketing);
   return (
     <Surface as="nav" aria-label="Primary" className="nav" glint>
       {visible.map((group, gi) => (

@@ -4,16 +4,16 @@ import { render, screen } from "@testing-library/react";
 import type { BackupSnapshot } from "@/lib/console/backups";
 
 const h = vi.hoisted(() => ({
-  requireMarketingUser: vi.fn(),
+  requireSectionUser: vi.fn(),
   getBackupSnapshot: vi.fn(),
   getLastArchivedAt: vi.fn(),
 }));
 
-// The page is gated server-side on the marketing group; stub the gate so the
+// The page is gated server-side on the platform section; stub the gate so the
 // render tests focus on the page body (the gate itself is unit-tested in
-// requireMarketingUser.test.ts).
-vi.mock("@/lib/requireMarketingUser", () => ({
-  requireMarketingUser: h.requireMarketingUser,
+// requireSection.test.ts).
+vi.mock("@/lib/requireSection", () => ({
+  requireSectionUser: h.requireSectionUser,
 }));
 // Mock the server-only backups lib; the page's honest-degradation branches
 // are the unit under test.
@@ -25,7 +25,11 @@ vi.mock("@/lib/console/backups", () => ({
 
 import BackupsPage from "./page";
 
-const AMY = { email: "amy@nsight.example", name: "Amy", groups: ["marketing"] };
+const AMY = {
+  email: "amy@nsight.example",
+  name: "Amy",
+  groups: ["mh-section-platform"],
+};
 
 /** A fresh (captured moments ago) healthy snapshot fixture. */
 function freshSnapshot(): BackupSnapshot {
@@ -58,17 +62,27 @@ function freshSnapshot(): BackupSnapshot {
 
 describe("database/backups/page.tsx (server component)", () => {
   beforeEach(() => {
-    h.requireMarketingUser.mockReset().mockResolvedValue(AMY);
+    h.requireSectionUser.mockReset().mockResolvedValue({ ok: true, user: AMY });
     h.getBackupSnapshot.mockReset().mockResolvedValue(freshSnapshot());
     h.getLastArchivedAt
       .mockReset()
       .mockResolvedValue("2026-08-08T14:00:00.000Z");
   });
 
-  test("enforces the marketing gate and renders a fresh snapshot", async () => {
+  test("renders the terse 403 panel when the platform section is missing", async () => {
+    h.requireSectionUser.mockResolvedValue({ ok: false });
+    render(await BackupsPage());
+    expect(h.requireSectionUser).toHaveBeenCalledWith("platform");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Platform access required.",
+    );
+    expect(h.getBackupSnapshot).not.toHaveBeenCalled();
+  });
+
+  test("enforces the platform section gate and renders a fresh snapshot", async () => {
     render(await BackupsPage());
 
-    expect(h.requireMarketingUser).toHaveBeenCalledTimes(1);
+    expect(h.requireSectionUser).toHaveBeenCalledWith("platform");
     expect(
       screen.getByRole("heading", { name: "Backups", level: 1 }),
     ).toBeInTheDocument();

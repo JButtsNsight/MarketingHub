@@ -1,5 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   TUS_FORWARD_REQUEST_HEADERS,
   TUS_FORWARD_RESPONSE_HEADERS,
@@ -10,7 +10,7 @@ import {
 } from "@/lib/console/storage";
 
 /**
- * TUS resumable-upload proxy, gated on the `marketing` group:
+ * TUS resumable-upload proxy, gated on the platform section:
  *
  * - POST    /api/console/storage/tus            → create an upload
  * - PATCH   /api/console/storage/tus/{uploadId} → append a chunk
@@ -142,7 +142,7 @@ type Method = "POST" | "PATCH" | "HEAD" | "DELETE" | "OPTIONS";
 
 async function proxy(req: Request, ctx: Ctx, method: Method): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

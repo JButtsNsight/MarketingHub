@@ -34,7 +34,9 @@ vi.mock("@/lib/console/pgmeta", () => ({
 
 import { DELETE, GET } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 const SAMPLE = [
@@ -54,9 +56,17 @@ const SAMPLE = [
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -75,14 +85,14 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function getReq(query = "", headers: HeadersInit = { "x-amzn-oidc-data": marketingToken }) {
+function getReq(query = "", headers: HeadersInit = { "x-amzn-oidc-data": platformToken }) {
   return new Request(`http://x/api/console/functions${query}`, { headers });
 }
 
 function deleteReq(
   body: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   },
 ) {
@@ -100,6 +110,16 @@ describe("GET /api/console/functions", () => {
       (await GET(getReq("", { "x-amzn-oidc-data": viewersToken }))).status,
     ).toBe(403);
     expect(h.listFunctions).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await GET(getReq("", { "x-amzn-oidc-data": marketingToken }))).status,
+    ).toBe(403);
+    expect(h.listFunctions).not.toHaveBeenCalled();
+    expect(
+      (await GET(getReq("", { "x-amzn-oidc-data": adminToken }))).status,
+    ).toBe(200);
   });
 
   test("lists routines across the marketinghub/public/pgmq_public schemas", async () => {

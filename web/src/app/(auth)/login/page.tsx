@@ -4,12 +4,25 @@
  * single white "Sign in with Google" control, and a status line.
  *
  * Unlike Socrates it does NOT run a client-side PKCE flow. MarketingHub auth is
- * delegated to the ALB's `authenticate-cognito` front door, so the control just
- * navigates to `/`; the ALB intercepts the unauthenticated request and redirects
- * through Google Workspace SSO. This page is only ever seen as a graceful
- * fallback (e.g. an expired session mid-navigation). Rendered as a fixed
- * full-screen layer so it reads as a standalone login over the app shell.
+ * delegated to the ALB's `authenticate-cognito` front door, so the page resolves
+ * its state SERVER-SIDE from the ALB headers and renders honestly:
+ *   - user with access    → redirect to their landing (`landingPathFor`:
+ *     marketing → /overview, else the first section home). NEVER keyed on
+ *     "has any group": /overview requires `marketing` and bounces 403s back
+ *     here, so a section-only user would ping-pong /login ↔ /overview forever.
+ *   - user with NO access → "awaiting access" + sign-out; NO sign-in button
+ *     (re-signing-in cannot grant a group — only an admin can)
+ *   - no user             → the SSO control, linking to /overview so the ALB
+ *     intercepts the unauthenticated request and redirects through Google
+ *     Workspace SSO (the old href="/" bounced straight back here).
+ * Rendered as a fixed full-screen layer so it reads as a standalone login over
+ * the app shell.
  */
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { getUser } from "@/lib/auth";
+import { landingPathFor } from "@/lib/authGroups";
+
 function GoogleGlyph() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -33,20 +46,37 @@ function GoogleGlyph() {
   );
 }
 
-export default function LoginPage() {
+export default async function LoginPage() {
+  const user = await getUser(await headers());
+  const landing = user ? landingPathFor(user) : null;
+  if (landing) redirect(landing);
+
   return (
     <div className="sso-screen">
       <div className="sso-card">
         <h1 className="sso-wordmark">Marketing Hub</h1>
-        <p className="sso-sub">Sign in with your work account</p>
-        <a className="sso-btn" href="/">
-          <GoogleGlyph />
-          Sign in with Google
-        </a>
-        <p className="sso-status">
-          Access is managed through single sign-on — you&apos;ll be redirected
-          to your Google Workspace account.
-        </p>
+        {user ? (
+          <>
+            <p className="sso-sub">
+              Signed in as {user.email} — awaiting access. Ask an admin.
+            </p>
+            <p className="sso-status">
+              <a href="/logout">Sign out</a>
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="sso-sub">Sign in with your work account</p>
+            <a className="sso-btn" href="/overview">
+              <GoogleGlyph />
+              Sign in with Google
+            </a>
+            <p className="sso-status">
+              Access is managed through single sign-on — you&apos;ll be
+              redirected to your Google Workspace account.
+            </p>
+          </>
+        )}
       </div>
     </div>
   );

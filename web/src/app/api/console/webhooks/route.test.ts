@@ -47,15 +47,25 @@ vi.mock("@/lib/console/pgmeta", () => ({
 
 import { DELETE, GET, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -77,11 +87,11 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function headers(token = marketingToken): HeadersInit {
+function headers(token = platformToken): HeadersInit {
   return { "x-amzn-oidc-data": token, "content-type": "application/json" };
 }
 
-function req(method: string, body?: unknown, token = marketingToken): Request {
+function req(method: string, body?: unknown, token = platformToken): Request {
   return new Request("http://x/api/console/webhooks", {
     method,
     headers: headers(token),
@@ -114,9 +124,19 @@ describe("GET /api/console/webhooks", () => {
     expect(h.listWebhooks).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the platform section", async () => {
     const res = await GET(req("GET", undefined, viewersToken));
     expect(res.status).toBe(403);
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect((await GET(req("GET", undefined, marketingToken))).status).toBe(403);
+    expect(h.listWebhooks).not.toHaveBeenCalled();
+
+    h.listWebhooks.mockResolvedValue(HOOKS);
+    h.listTables.mockResolvedValue(LIVE_TABLES);
+    h.runQuery.mockResolvedValue([{ ready: true }]);
+    expect((await GET(req("GET", undefined, adminToken))).status).toBe(200);
   });
 
   test("200: returns webhooks, sorted tables, and a ready flag from the role probe", async () => {
@@ -226,7 +246,7 @@ describe("POST /api/console/webhooks (create)", () => {
     expect(json.error).not.toContain("[console:");
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the platform section", async () => {
     const res = await POST(
       req(
         "POST",

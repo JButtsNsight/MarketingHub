@@ -1,13 +1,12 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { createSnippet, listSnippets } from "@/lib/console/sql";
 
 /** Saved SQL snippets (Studio's saved queries), shared across the group. */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -23,7 +22,7 @@ const PostBodySchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -34,7 +33,7 @@ export async function GET(req: Request): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

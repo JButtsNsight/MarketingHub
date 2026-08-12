@@ -21,11 +21,18 @@ import {
 // Mock ONLY queryLogs; the real allowlists (LOG_SOURCES) and the real
 // AnalyticsUnavailableError class stay live so the route validates against —
 // and instanceof-checks against — the same objects production does.
-const h = vi.hoisted(() => ({ queryLogs: vi.fn() }));
+const h = vi.hoisted(() => ({ queryLogs: vi.fn(), liveGroupsFor: vi.fn() }));
 
 vi.mock("@/lib/console/logs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/console/logs")>();
   return { ...actual, queryLogs: h.queryLogs };
+});
+
+// The admin gate consults the live pool through requireAdminApi; mock ONLY
+// liveGroupsFor (null = fail-open, token verdict stands — the default).
+vi.mock("@/lib/cognitoAdmin", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cognitoAdmin")>();
+  return { ...actual, liveGroupsFor: h.liveGroupsFor };
 });
 
 import { AnalyticsUnavailableError } from "@/lib/console/logs";
@@ -61,6 +68,7 @@ beforeEach(() => {
   setAlbEnv();
   installAlbKeyFetch();
   h.queryLogs.mockReset().mockResolvedValue(ENTRIES);
+  h.liveGroupsFor.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -86,6 +94,14 @@ describe("GET /api/console/logs — auth gate", () => {
     const res = await get("?source=edge_logs", {
       "x-amzn-oidc-data": marketingToken,
     });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
+    expect(h.queryLogs).not.toHaveBeenCalled();
+  });
+
+  test("403 admin-only when the LIVE pool no longer grants admin (revoked since sign-in)", async () => {
+    h.liveGroupsFor.mockResolvedValue(["marketing"]);
+    const res = await get("?source=edge_logs");
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.queryLogs).not.toHaveBeenCalled();

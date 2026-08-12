@@ -1,5 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   bucketExists,
   fetchTransformedImage,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/console/storage";
 
 /**
- * Transform-preview proxy, gated on the `marketing` group:
+ * Transform-preview proxy, gated on the platform section:
  *
  * - GET ?bucket&path&width&height&resize&quality&format → streams the
  *   transformed object from the storage-api render endpoint (imgproxy).
@@ -94,7 +94,7 @@ function readTransformParams(params: URLSearchParams): TransformOptions {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return Response.json({ error: err.message }, { status: err.status });

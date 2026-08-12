@@ -61,7 +61,8 @@ function toState<T>(result: PromiseSettledResult<T[]>): SeriesState<T> {
  * "Analytics unavailable" state (the advisors-page degradation precedent).
  */
 export default async function ReportsPage() {
-  // Server-side group gate: mirrors the /api/console/reports handler.
+  // Base marketing tier (the Wave D role model keeps Reports in it); mirrors
+  // the /api/console/reports handler.
   await requireMarketingUser();
 
   const to = new Date();

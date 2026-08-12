@@ -1,5 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/authGroups";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { GatewayError, gatewayFromEnv } from "@/lib/gateway/hardening";
 import {
   ASSISTANT_TASK_ID_RE,
@@ -153,7 +153,7 @@ export async function GET(
   context: { params: Promise<{ taskId: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

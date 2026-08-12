@@ -41,15 +41,25 @@ vi.mock("@/lib/console/pgmeta", () => ({
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -70,11 +80,11 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function headers(token = marketingToken): HeadersInit {
+function headers(token = platformToken): HeadersInit {
   return { "x-amzn-oidc-data": token, "content-type": "application/json" };
 }
 
-function req(method: string, body?: unknown, token = marketingToken): Request {
+function req(method: string, body?: unknown, token = platformToken): Request {
   return new Request("http://x/api/console/publications", {
     method,
     headers: headers(token),
@@ -125,9 +135,19 @@ describe("GET /api/console/publications", () => {
     expect(h.listPublications).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the platform section", async () => {
     const res = await GET(req("GET", undefined, viewersToken));
     expect(res.status).toBe(403);
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect((await GET(req("GET", undefined, marketingToken))).status).toBe(403);
+    expect(h.listPublications).not.toHaveBeenCalled();
+
+    h.listPublications.mockResolvedValue([]);
+    h.runQuery.mockResolvedValue([]);
+    h.listTables.mockResolvedValue([]);
+    expect((await GET(req("GET", undefined, adminToken))).status).toBe(200);
   });
 
   test("200: publications carry member tables; all-tables pub omits them", async () => {

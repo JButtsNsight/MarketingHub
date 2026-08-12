@@ -49,14 +49,24 @@ vi.mock("@/lib/intel/repo", async (importOriginal) => {
 import { NotProvisionedError } from "@/lib/intel/repo";
 import { GET, POST } from "./route";
 
+let intelToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  intelToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-intel"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -74,14 +84,14 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": intelToken,
     "content-type": "application/json",
   };
 }
 
-function postReq(body: unknown, headers: HeadersInit = marketingHeaders()) {
+function postReq(body: unknown, headers: HeadersInit = sectionHeaders()) {
   return new Request("http://x/api/intel/sources", {
     method: "POST",
     headers,
@@ -106,7 +116,7 @@ describe("POST /api/intel/sources", () => {
     expect(h.createSource).not.toHaveBeenCalled();
   });
 
-  test("403 when missing the marketing group", async () => {
+  test("403 when missing the intel section", async () => {
     const res = await POST(
       postReq(
         { name: "Acme" },
@@ -118,6 +128,32 @@ describe("POST /api/intel/sources", () => {
     );
     expect(res.status).toBe(403);
     expect(h.createSource).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await POST(
+      postReq(
+        { name: "Acme" },
+        {
+          "x-amzn-oidc-data": marketingToken,
+          "content-type": "application/json",
+        },
+      ),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.createSource).not.toHaveBeenCalled();
+
+    h.createSource.mockResolvedValue(sourceRow);
+    const admin = await POST(
+      postReq(
+        { name: "Acme" },
+        {
+          "x-amzn-oidc-data": adminToken,
+          "content-type": "application/json",
+        },
+      ),
+    );
+    expect(admin.status).toBe(201);
   });
 
   test("400 with zod issues when name is missing", async () => {
@@ -199,7 +235,7 @@ describe("GET /api/intel/sources", () => {
       },
     ]);
     const res = await GET(
-      new Request("http://x/api/intel/sources", { headers: marketingHeaders() }),
+      new Request("http://x/api/intel/sources", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -215,7 +251,7 @@ describe("GET /api/intel/sources", () => {
     );
     h.listSourceStats.mockResolvedValue([]);
     const res = await GET(
-      new Request("http://x/api/intel/sources", { headers: marketingHeaders() }),
+      new Request("http://x/api/intel/sources", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(503);
   });

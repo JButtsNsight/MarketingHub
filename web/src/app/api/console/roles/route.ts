@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { listRoles } from "@/lib/console/dbobjects";
 import { runQuery } from "@/lib/console/pgmeta";
 import {
@@ -12,7 +13,7 @@ import {
 import type { RoleMembership } from "@/components/console/RolesClient";
 
 /**
- * Database → Roles, gated on the Cognito `marketing` group. GET lists pg_roles
+ * Database → Roles, gated on the platform section. GET lists pg_roles
  * (via the foundation lib) plus their memberships (pg_auth_members); POST/PATCH/
  * DELETE create/alter/drop a role. Every write is DDL run as `supabase_admin`,
  * so the role name is validated against the identifier allow-list and quoted,
@@ -28,8 +29,6 @@ import type { RoleMembership } from "@/components/console/RolesClient";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /**
  * Platform-critical roles the console refuses to ALTER or DROP: nuking or
@@ -223,7 +222,7 @@ const DeleteSchema = z.object({ name: identifier });
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -238,7 +237,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -265,7 +264,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -292,7 +291,7 @@ export async function PATCH(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

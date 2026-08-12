@@ -48,15 +48,25 @@ const META = {
 };
 const PLAINTEXT = "sk_live_SENTINEL_hunter2";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -81,7 +91,7 @@ function ctx(id: string) {
   return { params: Promise.resolve({ id }) };
 }
 
-function req(headers: HeadersInit = { "x-amzn-oidc-data": marketingToken }) {
+function req(headers: HeadersInit = { "x-amzn-oidc-data": platformToken }) {
   return new Request(`http://x/api/console/vault/${ID}/reveal`, {
     method: "POST",
     headers,
@@ -107,6 +117,16 @@ describe("POST /api/console/vault/[id]/reveal", () => {
     ).toBe(403);
     expect(h.revealSecret).not.toHaveBeenCalled();
     expect(h.auditVaultActionOrThrow).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await POST(req({ "x-amzn-oidc-data": marketingToken }), ctx(ID))).status,
+    ).toBe(403);
+    expect(h.revealSecret).not.toHaveBeenCalled();
+    expect(
+      (await POST(req({ "x-amzn-oidc-data": adminToken }), ctx(ID))).status,
+    ).toBe(200);
   });
 
   test("404 on a non-uuid id / unknown secret — never a decrypt attempt", async () => {

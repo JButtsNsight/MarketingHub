@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/authGroups";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { GatewayError, gatewayFromEnv } from "@/lib/gateway/hardening";
 import {
   buildSchemaContext,
@@ -27,7 +27,7 @@ import {
  *   — never a 5xx, never gateway internals.
  *
  * Marketing-gated (not admin): the assistant is a Platform /sql surface, and
- * /sql itself stays marketing-gated this round (plan Track A decision log).
+ * /sql itself sits behind the platform section gate (Wave D).
  */
 
 export const dynamic = "force-dynamic";
@@ -189,7 +189,7 @@ const PostBodySchema = z.object({
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

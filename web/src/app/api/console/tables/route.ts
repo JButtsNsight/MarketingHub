@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { listEditorTables } from "@/lib/console/tables";
 
 /**
@@ -9,8 +10,6 @@ import { listEditorTables } from "@/lib/console/tables";
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
     return Response.json({ error: err.message }, { status: err.status });
@@ -20,7 +19,7 @@ function authErrorResponse(err: unknown): Response {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -123,15 +123,25 @@ const TEMPLATE_COLUMNS = [
   },
 ];
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -159,7 +169,7 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function req(qs: string, token: string | null = marketingToken) {
+function req(qs: string, token: string | null = platformToken) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers["x-amzn-oidc-data"] = token;
   return new Request(`http://x/api/console/fk-options?${qs}`, { headers });
@@ -172,6 +182,17 @@ describe("GET /api/console/fk-options", () => {
       (await GET(req("schema=marketinghub&table=campaigns", viewersToken))).status,
     ).toBe(403);
     expect(h.listTables).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await GET(req("schema=marketinghub&table=campaigns", marketingToken)))
+        .status,
+    ).toBe(403);
+    expect(h.listTables).not.toHaveBeenCalled();
+    expect(
+      (await GET(req("schema=marketinghub&table=campaigns", adminToken))).status,
+    ).toBe(200);
   });
 
   test("relationships mode returns the table's FK map", async () => {

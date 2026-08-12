@@ -39,13 +39,23 @@ import { GET } from "./route";
 
 const DOC_ID = "9a1b2c3d-0000-4111-8222-333344445555";
 
+let intelToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  intelToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-intel"],
   });
 });
 
@@ -61,7 +71,7 @@ afterEach(() => {
 
 function req(headers?: HeadersInit) {
   return new Request(`http://x/api/intel/documents/${DOC_ID}/status`, {
-    headers: headers ?? { "x-amzn-oidc-data": marketingToken },
+    headers: headers ?? { "x-amzn-oidc-data": intelToken },
   });
 }
 
@@ -74,6 +84,22 @@ describe("GET /api/intel/documents/[id]/status", () => {
     const res = await GET(req({}), params(DOC_ID));
     expect(res.status).toBe(401);
     expect(h.chunkStatus).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      req({ "x-amzn-oidc-data": marketingToken }),
+      params(DOC_ID),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.chunkStatus).not.toHaveBeenCalled();
+
+    h.chunkStatus.mockResolvedValue({ document_id: DOC_ID, status: "processing" });
+    const admin = await GET(
+      req({ "x-amzn-oidc-data": adminToken }),
+      params(DOC_ID),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("404 on a non-UUID id without touching PostgREST", async () => {

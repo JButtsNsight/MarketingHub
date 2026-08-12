@@ -89,6 +89,37 @@ describe("AppShell", () => {
     );
   });
 
+  it("threads sections down to the nav (display filter; routes enforce)", () => {
+    render(
+      <AppShell sections={[]}>
+        <p>body</p>
+      </AppShell>,
+    );
+    const nav = screen.getByRole("navigation");
+    expect(within(nav).queryByRole("link", { name: /table editor/i })).toBeNull();
+    expect(
+      within(nav).queryByRole("link", { name: /competitor intel/i }),
+    ).toBeNull();
+    expect(
+      within(nav).getByRole("link", { name: /sms campaigns/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("threads the marketing tier down to the nav (section-only rail keeps its section)", () => {
+    render(
+      <AppShell sections={["platform"]} marketing={false}>
+        <p>body</p>
+      </AppShell>,
+    );
+    const nav = screen.getByRole("navigation");
+    expect(
+      within(nav).getByRole("link", { name: /table editor/i }),
+    ).toBeInTheDocument();
+    expect(within(nav).queryByRole("link", { name: /overview/i })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: /sms campaigns/i })).toBeNull();
+    expect(within(nav).queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+
   it("renders children inside a <main> landmark", () => {
     render(
       <AppShell>

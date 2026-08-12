@@ -41,15 +41,25 @@ const EXTENSIONS = [
   },
 ];
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -73,7 +83,7 @@ afterEach(() => {
 function req(
   method: string,
   body?: unknown,
-  token: string | null = marketingToken,
+  token: string | null = platformToken,
 ) {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (token) headers["x-amzn-oidc-data"] = token;
@@ -96,7 +106,13 @@ describe("GET /api/console/extensions", () => {
     expect(h.listInstalledExtensions).not.toHaveBeenCalled();
   });
 
-  test("returns the joined extension list for the marketing group", async () => {
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect((await GET(req("GET", undefined, marketingToken))).status).toBe(403);
+    expect(h.listInstalledExtensions).not.toHaveBeenCalled();
+    expect((await GET(req("GET", undefined, adminToken))).status).toBe(200);
+  });
+
+  test("returns the joined extension list for the section group", async () => {
     const res = await GET(req("GET"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ extensions: EXTENSIONS });

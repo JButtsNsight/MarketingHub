@@ -20,11 +20,18 @@ import {
 
 // Mock ONLY getUser; the real GoTrueUnavailableError class stays live so the
 // route instanceof-checks against the same object production does.
-const h = vi.hoisted(() => ({ getUser: vi.fn() }));
+const h = vi.hoisted(() => ({ getUser: vi.fn(), liveGroupsFor: vi.fn() }));
 
 vi.mock("@/lib/console/gotrue", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/console/gotrue")>();
   return { ...actual, getUser: h.getUser };
+});
+
+// The admin gate consults the live pool through requireAdminApi; mock ONLY
+// liveGroupsFor (null = fail-open, token verdict stands — the default).
+vi.mock("@/lib/cognitoAdmin", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cognitoAdmin")>();
+  return { ...actual, liveGroupsFor: h.liveGroupsFor };
 });
 
 import { GoTrueUnavailableError } from "@/lib/console/gotrue";
@@ -74,6 +81,7 @@ beforeEach(() => {
   setAlbEnv();
   installAlbKeyFetch();
   h.getUser.mockReset().mockResolvedValue(DETAIL_USER);
+  h.liveGroupsFor.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -116,6 +124,14 @@ describe("GET /api/console/gotrue/users/[id] — auth gate", () => {
 
   test("403 admin-only when authenticated without the admin group", async () => {
     const res = await get(USER_ID, { "x-amzn-oidc-data": marketingToken });
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
+    expect(h.getUser).not.toHaveBeenCalled();
+  });
+
+  test("403 admin-only when the LIVE pool no longer grants admin (revoked since sign-in)", async () => {
+    h.liveGroupsFor.mockResolvedValue(["marketing"]);
+    const res = await get(USER_ID);
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.getUser).not.toHaveBeenCalled();

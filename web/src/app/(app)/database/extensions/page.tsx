@@ -3,7 +3,8 @@ import { Tabs } from "@/components/ui/Tabs";
 import { Section } from "@/components/ui/Section";
 import { StatCard } from "@/components/ui/StatCard";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listInstalledExtensions } from "@/lib/console/dbobjects";
 import type { PgExtension } from "@/lib/console/pgmeta";
 import { DB_TABS } from "@/lib/console/tabs";
@@ -23,11 +24,12 @@ export const metadata = {
  * Live Postgres extensions — pg_available_extensions joined to installed state
  * (pg_extension) through postgres-meta. Enable/drop are DDL run as superuser
  * and live in the client component behind an interrupting confirm; this server
- * page only gates on the `marketing` group and hands down the initial list.
+ * page only gates on the platform section and hands down the initial list.
  */
 export default async function ExtensionsPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let extensions: PgExtension[] | null = null;
   try {

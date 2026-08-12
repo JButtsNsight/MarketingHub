@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { DEFAULT_TTL_SECONDS, mintUserJwt } from "@/lib/userJwt";
 
 /**
@@ -27,17 +28,15 @@ import { DEFAULT_TTL_SECONDS, mintUserJwt } from "@/lib/userJwt";
 // Per-user response: always compute per request, never cache across users.
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 /** Belt-and-braces alongside `dynamic`: no shared/proxy/browser caching. */
 const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
 
 export async function GET(req: Request): Promise<Response> {
   // Same session gate as every console route: 401 unauthenticated, 403 when
-  // the `marketing` Cognito group is missing.
+  // the platform section is missing.
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return Response.json(

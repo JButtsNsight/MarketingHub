@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   CAMPAIGN_BUCKET,
   bucketExists,
@@ -13,7 +13,7 @@ import {
 } from "@/lib/console/storage";
 
 /**
- * Bucket management, gated on the `marketing` group:
+ * Bucket management, gated on the platform section:
  *
  * - GET                                      → all buckets with their settings
  * - POST   {name, public?, fileSizeLimit?, allowedMimeTypes?} → create
@@ -73,7 +73,7 @@ async function jsonBody(req: Request): Promise<unknown | Response> {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -96,7 +96,7 @@ const CreateBodySchema = z.object({
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -130,7 +130,7 @@ const UpdateBodySchema = z.object({
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -169,7 +169,7 @@ const DeleteBodySchema = z.object({
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

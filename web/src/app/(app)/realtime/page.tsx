@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { RealtimeInspector } from "@/components/console/RealtimeInspector";
 
 // Request-time identity gate; the inspector itself is fully client-side.
@@ -16,8 +17,10 @@ export const metadata = {
  * "Realtime unreachable" state and nothing else in the app changes.
  */
 export default async function RealtimePage() {
-  // Server-side group gate: mirrors the /api/realtime/token handler.
-  const user = await requireMarketingUser();
+  // Server-side section gate: mirrors the /api/realtime/token handler.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
+  const { user } = gate;
 
   return (
     <>

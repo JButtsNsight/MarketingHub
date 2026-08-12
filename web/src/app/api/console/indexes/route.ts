@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { dropIndex, listIndexes, OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { listColumns, runQuery } from "@/lib/console/pgmeta";
 import {
@@ -12,8 +13,8 @@ import {
 import type { IndexRow } from "@/components/console/IndexesClient";
 
 /**
- * Indexes surface (Studio Database → Indexes), gated on the Cognito `marketing`
- * group. GET enriches pg-meta's index list with `idx_scan` scan-counts from
+ * Indexes surface (Studio Database → Indexes), gated on the platform
+ * section. GET enriches pg-meta's index list with `idx_scan` scan-counts from
  * `pg_stat_user_indexes` (a read — no confirm). POST creates an index from a
  * STRUCTURED definition and DELETE drops one; both are DDL and go behind the
  * client's confirm modal.
@@ -27,8 +28,6 @@ import type { IndexRow } from "@/components/console/IndexesClient";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Index access methods Studio offers — a fixed whitelist (never user text). */
 const IndexMethod = z.enum(["btree", "hash", "gin", "gist", "brin", "spgist"]);
@@ -158,7 +157,7 @@ const DropBodySchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -169,7 +168,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -198,7 +197,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

@@ -36,15 +36,25 @@ import { ReadOnlyViolationError } from "@/lib/console/sql";
 
 import { GET, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -66,7 +76,7 @@ afterEach(() => {
 function postReq(
   body: unknown,
   headers: HeadersInit = {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   },
 ) {
@@ -94,6 +104,38 @@ describe("POST /api/console/sql", () => {
       ).status,
     ).toBe(403);
     expect(h.runConsoleQuery).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await POST(
+      postReq(
+        { sql: "select 1" },
+        {
+          "x-amzn-oidc-data": marketingToken,
+          "content-type": "application/json",
+        },
+      ),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.runConsoleQuery).not.toHaveBeenCalled();
+
+    h.runConsoleQuery.mockResolvedValue({
+      rows: [{ ok: 1 }],
+      rowCount: 1,
+      truncated: false,
+      durationMs: 12,
+      classification: "read",
+    });
+    const admin = await POST(
+      postReq(
+        { sql: "select 1" },
+        {
+          "x-amzn-oidc-data": adminToken,
+          "content-type": "application/json",
+        },
+      ),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("read statements run immediately with the caller as auditee", async () => {
@@ -200,7 +242,7 @@ describe("GET /api/console/sql", () => {
     h.listHistory.mockResolvedValue([{ id: "h1", sql: "select 1" }]);
     const res = await GET(
       new Request("http://x/api/console/sql", {
-        headers: { "x-amzn-oidc-data": marketingToken },
+        headers: { "x-amzn-oidc-data": platformToken },
       }),
     );
     expect(res.status).toBe(200);

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser, type AppUser } from "@/lib/auth";
+import { AuthError, type AppUser } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   MAX_DESCRIPTION_LEN,
   MAX_NAME_LEN,
@@ -12,7 +13,7 @@ import {
 
 /**
  * Vault console collection route (Studio → Integrations → Vault), gated on the
- * Cognito `marketing` group. GET lists secret METADATA (id/name/description/
+ * platform section. GET lists secret METADATA (id/name/description/
  * timestamps — the data layer never selects the ciphertext column, let alone
  * the decrypting view); POST creates a secret via `vault.create_secret`.
  *
@@ -31,14 +32,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 /** Group-gate the request; returns the user (audit actor) or the 401/403. */
 async function gate(req: Request): Promise<AppUser | Response> {
   try {
-    return await requireUser(req.headers, MARKETING_GROUP);
+    return await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return Response.json(

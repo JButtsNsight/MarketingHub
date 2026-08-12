@@ -40,15 +40,25 @@ vi.mock("@/lib/console/tables", async (importOriginal) => {
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -82,21 +92,21 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   };
 }
 
-function getReq(qs: string, headers: HeadersInit = marketingHeaders()) {
+function getReq(qs: string, headers: HeadersInit = sectionHeaders()) {
   return new Request(`http://x/api/console/rows?${qs}`, { headers });
 }
 
 function bodyReq(
   method: string,
   body: unknown,
-  headers: HeadersInit = marketingHeaders(),
+  headers: HeadersInit = sectionHeaders(),
 ) {
   return new Request("http://x/api/console/rows", {
     method,
@@ -118,6 +128,30 @@ describe("GET /api/console/rows", () => {
       ).status,
     ).toBe(403);
     expect(h.getEditorTable).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (
+        await GET(
+          getReq("schema=marketinghub&table=templates", {
+            "x-amzn-oidc-data": marketingToken,
+          }),
+        )
+      ).status,
+    ).toBe(403);
+    expect(h.getEditorTable).not.toHaveBeenCalled();
+
+    h.getRows.mockResolvedValue({ rows: [], total: 0 });
+    expect(
+      (
+        await GET(
+          getReq("schema=marketinghub&table=templates", {
+            "x-amzn-oidc-data": adminToken,
+          }),
+        )
+      ).status,
+    ).toBe(200);
   });
 
   test("404 for an unknown table", async () => {

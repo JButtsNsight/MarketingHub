@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   dropTrigger,
   listTriggers,
@@ -9,7 +10,7 @@ import {
 import { isValidIdentifier } from "@/lib/console/identifiers";
 
 /**
- * Database → Triggers, gated on the Cognito `marketing` group. GET lists the
+ * Database → Triggers, gated on the platform section. GET lists the
  * user-schema triggers (pg_trigger joined to pg_class/pg_proc) from live
  * introspection; PATCH enables/disables a trigger and DELETE drops it. Every
  * write is DDL run as `supabase_admin`, so the target's schema/table/name are
@@ -23,8 +24,6 @@ import { isValidIdentifier } from "@/lib/console/identifiers";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -62,7 +61,7 @@ const PatchSchema = TargetSchema.extend({ enabled: z.boolean() });
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -74,7 +73,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -103,7 +102,7 @@ export async function PATCH(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

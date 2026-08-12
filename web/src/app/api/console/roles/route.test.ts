@@ -38,15 +38,25 @@ vi.mock("@/lib/console/pgmeta", async (importOriginal) => {
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -91,21 +101,21 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": platformToken,
     "content-type": "application/json",
   };
 }
 
-function getReq(headers: HeadersInit = marketingHeaders()) {
+function getReq(headers: HeadersInit = sectionHeaders()) {
   return new Request("http://x/api/console/roles", { headers });
 }
 
 function bodyReq(
   method: string,
   body: unknown,
-  headers: HeadersInit = marketingHeaders(),
+  headers: HeadersInit = sectionHeaders(),
 ) {
   return new Request("http://x/api/console/roles", {
     method,
@@ -122,6 +132,16 @@ describe("GET /api/console/roles", () => {
     ).toBe(403);
     expect(h.listRoles).not.toHaveBeenCalled();
     expect(h.runQuery).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": marketingToken }))).status,
+    ).toBe(403);
+    expect(h.listRoles).not.toHaveBeenCalled();
+    expect(
+      (await GET(getReq({ "x-amzn-oidc-data": adminToken }))).status,
+    ).toBe(200);
   });
 
   test("200 returns roles + mapped memberships", async () => {
@@ -144,7 +164,7 @@ describe("GET /api/console/roles", () => {
 });
 
 describe("POST /api/console/roles (create)", () => {
-  test("403 for a non-marketing user before any write", async () => {
+  test("403 for a user without the section before any write", async () => {
     const res = await POST(
       bodyReq(
         "POST",

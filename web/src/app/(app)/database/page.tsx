@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables } from "@/lib/console/tables";
 import { TableEditor } from "@/components/console/TableEditor";
 import { Surface } from "@/components/Surface";
@@ -21,9 +22,10 @@ export const metadata = {
  * card — never a blank console.
  */
 export default async function DatabasePage() {
-  // Server-side group gate: mirrors the API handlers so this page can't be
-  // browsed by an authenticated employee outside the `marketing` group.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers so this page can't be
+  // browsed by an authenticated employee outside the platform section.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let tables;
   try {

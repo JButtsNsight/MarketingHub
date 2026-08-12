@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser, type AppUser } from "@/lib/auth";
+import { AuthError, type AppUser } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   auditVaultActionOrThrow,
   listSecrets,
@@ -34,14 +35,12 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const MARKETING_GROUP = "marketing";
-
 const NO_STORE = { "Cache-Control": "no-store" } as const;
 
 /** Group-gate the request; returns the user (audit actor) or the 401/403. */
 async function gate(req: Request): Promise<AppUser | Response> {
   try {
-    return await requireUser(req.headers, MARKETING_GROUP);
+    return await requireSectionApi(req.headers, "platform");
   } catch (err) {
     if (err instanceof AuthError) {
       return Response.json(

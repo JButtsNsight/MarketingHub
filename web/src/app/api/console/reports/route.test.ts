@@ -37,7 +37,9 @@ vi.mock("@/lib/console/logs", async (importOriginal) => {
 import { AnalyticsUnavailableError } from "@/lib/console/logs";
 import { GET } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 const VOLUME_ROWS = [
@@ -57,9 +59,17 @@ const allMocks = Object.values(h);
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -77,6 +87,7 @@ afterEach(() => {
   clearAlbEnv();
 });
 
+// Reports sits in the base marketing tier (Wave D role model), NOT platform.
 function marketingHeaders(): HeadersInit {
   return { "x-amzn-oidc-data": marketingToken };
 }
@@ -92,7 +103,7 @@ describe("GET /api/console/reports", () => {
     for (const fn of allMocks) expect(fn).not.toHaveBeenCalled();
   });
 
-  test("403 when authenticated but missing the marketing group", async () => {
+  test("403 when authenticated without the marketing group", async () => {
     const res = await GET(
       new Request(url("?metric=apiRequestVolume"), {
         headers: { "x-amzn-oidc-data": viewersToken },
@@ -100,6 +111,34 @@ describe("GET /api/console/reports", () => {
     );
     expect(res.status).toBe(403);
     for (const fn of allMocks) expect(fn).not.toHaveBeenCalled();
+  });
+
+  test("base marketing passes; a platform-only section does NOT (marketing tier, not platform)", async () => {
+    const ok = await GET(
+      new Request(url("?metric=apiRequestVolume"), {
+        headers: marketingHeaders(),
+      }),
+    );
+    expect(ok.status).toBe(200);
+
+    const forbidden = await GET(
+      new Request(url("?metric=apiRequestVolume"), {
+        headers: { "x-amzn-oidc-data": platformToken },
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+  });
+
+  test("the marketing gate keeps its historical meaning — even god-mode needs the group", async () => {
+    // Per the Wave D role model, admins imply every SECTION, but `marketing`
+    // is the base tier every user holds; an admin token without it 403s here
+    // exactly as it did before the wave.
+    const res = await GET(
+      new Request(url("?metric=apiRequestVolume"), {
+        headers: { "x-amzn-oidc-data": adminToken },
+      }),
+    );
+    expect(res.status).toBe(403);
   });
 
   test("400 when metric is missing — nothing runs", async () => {

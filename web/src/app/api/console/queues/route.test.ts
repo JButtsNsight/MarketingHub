@@ -45,15 +45,25 @@ vi.mock("@/lib/console/pgmeta", () => ({ runQuery: h.runQuery }));
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -86,10 +96,10 @@ afterEach(() => {
 });
 
 function auth(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+  return { "x-amzn-oidc-data": platformToken };
 }
 function jsonAuth(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken, "content-type": "application/json" };
+  return { "x-amzn-oidc-data": platformToken, "content-type": "application/json" };
 }
 const URL_BASE = "http://x/api/console/queues";
 
@@ -100,11 +110,24 @@ describe("GET overview", () => {
     expect(h.listQueues).not.toHaveBeenCalled();
   });
 
-  test("403 authenticated but not in marketing", async () => {
+  test("403 authenticated but not in the platform section", async () => {
     const res = await GET(
       new Request(URL_BASE, { headers: { "x-amzn-oidc-data": viewersToken } }),
     );
     expect(res.status).toBe(403);
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      new Request(URL_BASE, { headers: { "x-amzn-oidc-data": marketingToken } }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.listQueues).not.toHaveBeenCalled();
+
+    const admin = await GET(
+      new Request(URL_BASE, { headers: { "x-amzn-oidc-data": adminToken } }),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("merges queues + metrics + archive count", async () => {

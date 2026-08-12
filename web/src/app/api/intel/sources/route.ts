@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { readJsonBodyBounded } from "@/lib/jsonBody";
 import { getUserClient } from "@/lib/supabase";
 import {
@@ -11,7 +12,7 @@ import { SourceCreateInputSchema } from "@/lib/intel/schema";
 
 /**
  * Competitor-intel sources collection. Gated SERVER-SIDE on the Cognito
- * `marketing` group via `requireUser` (ALB-injected `x-amzn-oidc-data`), like
+ * intel section via `requireSectionApi` (ALB-injected `x-amzn-oidc-data`), like
  * every app route. All DB access goes through the user client so RLS applies.
  *
  * Note: `url` on a source is reference metadata ONLY — nothing here fetches
@@ -20,8 +21,6 @@ import { SourceCreateInputSchema } from "@/lib/intel/schema";
 
 // Reads request-time headers (ALB identity); never prerender/cache.
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Map an AuthError to its HTTP response; rethrow anything else. */
 function authErrorResponse(err: unknown): Response {
@@ -42,7 +41,7 @@ function notProvisionedResponse(err: NotProvisionedError): Response {
 export async function GET(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -63,7 +62,7 @@ export async function GET(req: Request): Promise<Response> {
 export async function POST(req: Request): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }

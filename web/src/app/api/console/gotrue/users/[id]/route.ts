@@ -1,5 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
-import { ADMIN_GROUP } from "@/lib/authGroups";
+import { AuthError } from "@/lib/auth";
+import { requireAdminApi } from "@/lib/requireAdminUser";
 import { GoTrueUnavailableError, getUser } from "@/lib/console/gotrue";
 
 /**
@@ -73,7 +73,9 @@ export async function GET(
   context: { params: Promise<{ id: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, ADMIN_GROUP);
+    // Token gate + live pool check (60s cache) — a revoked admin loses this
+    // API near-instantly, not at token expiry.
+    await requireAdminApi(req.headers);
   } catch (err) {
     return authErrorResponse(err);
   }

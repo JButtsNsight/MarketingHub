@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   getBackupSnapshot,
   getLastArchivedAt,
@@ -12,7 +13,7 @@ import {
  *
  * READ-ONLY — the only verb is GET; nothing here can trigger a backup or a
  * restore (restores are host operations run per the restore-drill runbook).
- * Gated on the `marketing` Cognito group like every console route.
+ * Gated on the platform section like every console route.
  *
  * Honest degradation, mirroring the page:
  *   - `snapshot: null` (status table missing or empty) is a 200, not an error
@@ -23,8 +24,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 export interface BackupsStatusResponse {
   snapshot: BackupSnapshot | null;
@@ -60,7 +59,7 @@ async function consoleAttempt<T>(work: () => Promise<T>): Promise<T | Response> 
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

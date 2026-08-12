@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
-import { MARKETING_GROUP } from "@/lib/requireMarketingUser";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   dropExtension,
   enableExtension,
@@ -10,7 +10,7 @@ import {
 
 /**
  * Postgres extensions (Studio Database → Extensions), gated on the Cognito
- * `marketing` group. pg-meta runs everything as supabase_admin, so both writes
+ * platform section. pg-meta runs everything as supabase_admin, so both writes
  * here are DDL run as superuser:
  *
  * - GET                → pg_available_extensions joined to installed state
@@ -61,7 +61,7 @@ const DropBodySchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -72,7 +72,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -102,7 +102,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

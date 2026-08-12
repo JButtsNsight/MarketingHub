@@ -24,7 +24,9 @@ import { DELETE, HEAD, OPTIONS, PATCH, POST } from "./route";
 const UPSTREAM_BASE = "http://kong.internal:8000";
 const SERVICE_KEY = "test-service-role-key";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 type UpstreamHandler = (
   url: string,
@@ -57,9 +59,17 @@ function installFetch(
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
 });
 
@@ -78,7 +88,7 @@ afterEach(() => {
 });
 
 function auth(extra: Record<string, string> = {}): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken, ...extra };
+  return { "x-amzn-oidc-data": platformToken, ...extra };
 }
 
 function ctx(id?: string[]) {
@@ -106,6 +116,27 @@ describe("auth gate", () => {
     ).toBe(401);
     expect((await OPTIONS(bare, ctx())).status).toBe(401);
     expect(upstream).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await OPTIONS(
+      new Request("http://x/api/console/storage/tus", {
+        method: "OPTIONS",
+        headers: { "x-amzn-oidc-data": marketingToken },
+      }),
+      ctx(),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(upstream).not.toHaveBeenCalled();
+
+    const admin = await OPTIONS(
+      new Request("http://x/api/console/storage/tus", {
+        method: "OPTIONS",
+        headers: { "x-amzn-oidc-data": adminToken },
+      }),
+      ctx(),
+    );
+    expect(admin.status).toBe(204); // relayed from the default upstream stub
   });
 });
 

@@ -32,7 +32,9 @@ vi.mock("@/lib/console/backups", () => ({
 
 import { GET } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 let viewersToken: string;
 
 const SNAPSHOT = {
@@ -66,9 +68,17 @@ const LAST_ARCHIVED = "2026-08-08 13:58:12.412+00";
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
   viewersToken = await signAlbToken({
     email: "bob@nsight.example",
@@ -87,8 +97,8 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+function sectionHeaders(): HeadersInit {
+  return { "x-amzn-oidc-data": platformToken };
 }
 
 describe("GET /api/console/backups", () => {
@@ -99,7 +109,7 @@ describe("GET /api/console/backups", () => {
     expect(h.getLastArchivedAt).not.toHaveBeenCalled();
   });
 
-  test("403 when authenticated but missing the marketing group", async () => {
+  test("403 when authenticated but missing the platform section", async () => {
     const res = await GET(
       new Request("http://x/api/console/backups", {
         headers: { "x-amzn-oidc-data": viewersToken },
@@ -110,9 +120,26 @@ describe("GET /api/console/backups", () => {
     expect(h.getLastArchivedAt).not.toHaveBeenCalled();
   });
 
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      new Request("http://x/api/console/backups", {
+        headers: { "x-amzn-oidc-data": marketingToken },
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.getBackupSnapshot).not.toHaveBeenCalled();
+
+    const admin = await GET(
+      new Request("http://x/api/console/backups", {
+        headers: { "x-amzn-oidc-data": adminToken },
+      }),
+    );
+    expect(admin.status).toBe(200);
+  });
+
   test("200 returns the snapshot plus the archiver cross-check", async () => {
     const res = await GET(
-      new Request("http://x/api/console/backups", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/backups", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -124,7 +151,7 @@ describe("GET /api/console/backups", () => {
   test("a null snapshot (reporter not installed) is an honest 200, not an error — and skips the archiver read", async () => {
     h.getBackupSnapshot.mockResolvedValue(null);
     const res = await GET(
-      new Request("http://x/api/console/backups", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/backups", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ snapshot: null, lastArchivedAt: null });
@@ -136,7 +163,7 @@ describe("GET /api/console/backups", () => {
       new Error("[console:pgmeta] query failed: connection refused"),
     );
     const res = await GET(
-      new Request("http://x/api/console/backups", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/backups", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ snapshot: SNAPSHOT, lastArchivedAt: null });
@@ -147,7 +174,7 @@ describe("GET /api/console/backups", () => {
       new Error("[console:pgmeta] query failed: pg-meta exploded"),
     );
     const res = await GET(
-      new Request("http://x/api/console/backups", { headers: marketingHeaders() }),
+      new Request("http://x/api/console/backups", { headers: sectionHeaders() }),
     );
     expect(res.status).toBe(400);
     expect((await res.json()).error).toBe("pg-meta exploded");

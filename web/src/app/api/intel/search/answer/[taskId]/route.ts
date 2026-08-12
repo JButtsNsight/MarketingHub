@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   INTEL_TASK_ID_RE,
   type AnswerResponse,
@@ -20,8 +21,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Completed answers are served from cache for 10 minutes. */
 const COMPLETED_TTL_MS = 10 * 60_000;
@@ -113,7 +112,7 @@ export async function GET(
   context: { params: Promise<{ taskId: string }> },
 ): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }

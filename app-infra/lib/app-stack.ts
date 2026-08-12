@@ -734,6 +734,38 @@ export class AppStack extends Stack {
         groupName: marketingGroup,
         description: 'MarketingHub marketing staff (template authors/browsers)',
       });
+      // Wave-D section groups: names FIXED in code (the app's authGroups.ts
+      // SECTIONS registry is the single source of truth, not context) —
+      // granted/revoked per-user from /admin/users, never via Google mapping.
+      new cognito.CfnUserPoolGroup(this, 'PlatformSectionGroup', {
+        userPoolId: userPool.userPoolId,
+        groupName: 'mh-section-platform',
+        description: 'Platform console access',
+      });
+      new cognito.CfnUserPoolGroup(this, 'IntelSectionGroup', {
+        userPoolId: userPool.userPoolId,
+        groupName: 'mh-section-intel',
+        description: 'Competitor intel access',
+      });
+
+      // Wave-D: the app's Cognito-admin surface (/admin/users + the live
+      // requireAdminUser revocation check, web/src/lib/cognitoAdmin.ts) signs
+      // cognito-idp calls with TASK-role SigV4 creds — grant EXACTLY the five
+      // ops it uses, scoped to THIS pool. Lives here so the grant exists
+      // precisely when the pool does (prod always; preview only when the SAML
+      // prestage builds the broker). Never the worker, never the exec role.
+      taskDef.addToTaskRolePolicy(
+        new iam.PolicyStatement({
+          actions: [
+            'cognito-idp:ListUsers',
+            'cognito-idp:ListGroups',
+            'cognito-idp:AdminListGroupsForUser',
+            'cognito-idp:AdminAddUserToGroup',
+            'cognito-idp:AdminRemoveUserFromGroup',
+          ],
+          resources: [userPool.userPoolArn],
+        }),
+      );
 
       // What the Google-side SAML app registration needs (runbook §1.3).
       new CfnOutput(this, 'CognitoUserPoolIdOutput', { value: userPool.userPoolId });

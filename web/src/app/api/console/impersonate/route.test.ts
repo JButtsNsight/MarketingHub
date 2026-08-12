@@ -20,6 +20,7 @@ import {
 
 const h = vi.hoisted(() => ({
   runImpersonatedQuery: vi.fn(),
+  liveGroupsFor: vi.fn(),
 }));
 
 vi.mock("@/lib/console/impersonate", async (importOriginal) => {
@@ -29,6 +30,13 @@ vi.mock("@/lib/console/impersonate", async (importOriginal) => {
     ...actual, // ImpersonationAuditError stays REAL (instanceof in the route)
     runImpersonatedQuery: h.runImpersonatedQuery,
   };
+});
+
+// The admin gate consults the live pool through requireAdminApi; mock ONLY
+// liveGroupsFor (null = fail-open, token verdict stands — the default).
+vi.mock("@/lib/cognitoAdmin", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/cognitoAdmin")>();
+  return { ...actual, liveGroupsFor: h.liveGroupsFor };
 });
 
 import { ImpersonationAuditError } from "@/lib/console/impersonate";
@@ -55,6 +63,7 @@ beforeEach(() => {
   setAlbEnv();
   installAlbKeyFetch();
   h.runImpersonatedQuery.mockReset();
+  h.liveGroupsFor.mockReset().mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -106,6 +115,14 @@ describe("POST /api/console/impersonate", () => {
     );
     expect(forbidden.status).toBe(403);
     expect(await forbidden.json()).toEqual({ error: "admin-only" });
+    expect(h.runImpersonatedQuery).not.toHaveBeenCalled();
+  });
+
+  test("403 admin-only when the LIVE pool no longer grants admin — revocation reaches impersonation, not just the pages", async () => {
+    h.liveGroupsFor.mockResolvedValue(["marketing"]); // demoted since sign-in
+    const res = await POST(postReq(VALID_BODY));
+    expect(res.status).toBe(403);
+    expect(await res.json()).toEqual({ error: "admin-only" });
     expect(h.runImpersonatedQuery).not.toHaveBeenCalled();
   });
 

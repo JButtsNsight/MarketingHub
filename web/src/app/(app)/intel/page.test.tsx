@@ -2,13 +2,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({
-  requireMarketingUser: vi.fn(),
+  requireSectionUser: vi.fn(),
 }));
 
-// Gated server-side on the marketing group; stub the gate (unit-tested in
-// requireMarketingUser.test.ts) so these tests focus on the page body.
-vi.mock("@/lib/requireMarketingUser", () => ({
-  requireMarketingUser: h.requireMarketingUser,
+// Gated server-side on the intel section; stub the gate (unit-tested in
+// requireSection.test.ts) so these tests focus on the page body.
+vi.mock("@/lib/requireSection", () => ({
+  requireSectionUser: h.requireSectionUser,
 }));
 
 // SearchPanel is a client component using the app-router hooks.
@@ -36,11 +36,14 @@ function stubFetch(status: number, body: unknown) {
 
 describe("intel/page.tsx (server component)", () => {
   beforeEach(() => {
-    h.requireMarketingUser.mockReset();
-    h.requireMarketingUser.mockResolvedValue({
-      email: "amy@nsight.example",
-      name: "Amy",
-      groups: ["marketing"],
+    h.requireSectionUser.mockReset();
+    h.requireSectionUser.mockResolvedValue({
+      ok: true,
+      user: {
+        email: "amy@nsight.example",
+        name: "Amy",
+        groups: ["mh-section-intel"],
+      },
     });
   });
 
@@ -48,10 +51,21 @@ describe("intel/page.tsx (server component)", () => {
     vi.unstubAllGlobals();
   });
 
-  test("enforces the marketing group gate", async () => {
+  test("enforces the intel section gate", async () => {
     stubFetch(200, { sources: [] });
     render(await IntelPage());
-    expect(h.requireMarketingUser).toHaveBeenCalled();
+    expect(h.requireSectionUser).toHaveBeenCalledWith("intel");
+  });
+
+  test("renders the terse 403 panel when the intel section is missing", async () => {
+    h.requireSectionUser.mockResolvedValue({ ok: false });
+    render(await IntelPage());
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Competitor Intel access required.",
+    );
+    expect(
+      screen.queryByRole("searchbox", { name: /search competitor intel/i }),
+    ).not.toBeInTheDocument();
   });
 
   test("renders search on top and the sources manager below — no separate search page", async () => {

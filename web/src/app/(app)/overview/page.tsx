@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/Badge";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { formatBytes } from "@/components/storage/resumable";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { isAdmin } from "@/lib/authGroups";
+import { isAdmin, sectionAllows } from "@/lib/authGroups";
 import { getUserClient } from "@/lib/supabase";
 import { getTemplateStats } from "@/lib/console/stats";
 import { listBucket } from "@/lib/console/storage";
@@ -114,13 +114,18 @@ export default async function OverviewPage() {
   // set; the service-role fallback otherwise — identical to before.
   const db = await getUserClient(user);
 
+  // Storage lives in the platform section now — like the Explore cards, the
+  // section renders only for users its /storage route admits (never
+  // advertises a 403), and non-platform users trigger no bucket listing.
+  const platform = sectionAllows(user, "platform");
+
   // Storage listing rides the same fan-out; a failure is shown, never faked.
   const [stats, campaigns, unhandled, suppressed, objects] = await Promise.all([
     getTemplateStats(db),
     listCampaignsWithCounts(db),
     countUnhandledInbound(db),
     countSuppressions(db),
-    listBucket("").catch(() => null),
+    platform ? listBucket("").catch(() => null) : null,
   ]);
   const engagement = await getEngagementForCampaigns(
     campaigns.map((c) => c.id),
@@ -266,22 +271,24 @@ export default async function OverviewPage() {
           </Section>
         )}
 
-        <Section
-          eyebrow="Object storage"
-          title="Storage"
-          description="The private campaign-templates bucket."
-          actions={<Link href="/storage">Open</Link>}
-        >
-          {objects == null ? (
-            <p className="note">Storage listing is currently unavailable.</p>
-          ) : (
-            <p className="note">
-              <span className="mono">{folders}</span> folders ·{" "}
-              <span className="mono">{files}</span> files ·{" "}
-              <span className="mono">{formatBytes(totalSize)}</span>
-            </p>
-          )}
-        </Section>
+        {platform && (
+          <Section
+            eyebrow="Object storage"
+            title="Storage"
+            description="The private campaign-templates bucket."
+            actions={<Link href="/storage">Open</Link>}
+          >
+            {objects == null ? (
+              <p className="note">Storage listing is currently unavailable.</p>
+            ) : (
+              <p className="note">
+                <span className="mono">{folders}</span> folders ·{" "}
+                <span className="mono">{files}</span> files ·{" "}
+                <span className="mono">{formatBytes(totalSize)}</span>
+              </p>
+            )}
+          </Section>
+        )}
       </div>
     </>
   );

@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { readJsonBodyBounded } from "@/lib/jsonBody";
 import { getUserClient } from "@/lib/supabase";
 import {
@@ -18,8 +19,6 @@ import { SourceUpdateInputSchema } from "@/lib/intel/schema";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /**
  * Path params reach PostgREST as uuid filters — a non-UUID would trigger
@@ -48,7 +47,7 @@ export async function GET(
 ): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -78,7 +77,7 @@ export async function PATCH(
 ): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -121,7 +120,7 @@ export async function DELETE(
 ): Promise<Response> {
   let user;
   try {
-    user = await requireUser(req.headers, MARKETING_GROUP);
+    user = await requireSectionApi(req.headers, "intel");
   } catch (err) {
     return authErrorResponse(err);
   }

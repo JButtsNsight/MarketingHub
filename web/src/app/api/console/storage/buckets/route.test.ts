@@ -42,14 +42,24 @@ vi.mock("@/lib/console/storage", async (importOriginal) => {
 
 import { DELETE, GET, PATCH, POST } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
 });
 
@@ -75,7 +85,7 @@ afterEach(() => {
 });
 
 function auth(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+  return { "x-amzn-oidc-data": platformToken };
 }
 
 function jsonReq(method: string, body: unknown): Request {
@@ -103,6 +113,23 @@ describe("GET /api/console/storage/buckets", () => {
       fileSizeLimit: null,
       allowedMimeTypes: null,
     });
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      new Request("http://x/api/console/storage/buckets", {
+        headers: { "x-amzn-oidc-data": marketingToken },
+      }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.listBuckets).not.toHaveBeenCalled();
+
+    const admin = await GET(
+      new Request("http://x/api/console/storage/buckets", {
+        headers: { "x-amzn-oidc-data": adminToken },
+      }),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("a listing failure surfaces as 400 with the real message", async () => {

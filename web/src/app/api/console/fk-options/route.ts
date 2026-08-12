@@ -1,4 +1,5 @@
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { getServiceClient } from "@/lib/supabase";
 import { listColumns, listTables, type PgColumn } from "@/lib/console/pgmeta";
 import { EDITOR_SCHEMAS } from "@/lib/console/tables";
@@ -6,7 +7,7 @@ import { clampLimit, isValidIdentifier } from "@/lib/console/identifiers";
 
 /**
  * Foreign-key row picker source for the Table Editor, gated on the Cognito
- * `marketing` group. Two read-only modes, one endpoint:
+ * platform section. Two read-only modes, one endpoint:
  *
  *   GET ?schema&table                 → { relationships }  (the table's FK map)
  *   GET ?schema&table&column[&search] → { column, target, options }  (rows)
@@ -15,7 +16,7 @@ import { clampLimit, isValidIdentifier } from "@/lib/console/identifiers";
  * a display column) instead of a free-text cell for FK columns; this route
  * supplies both the FK map (which columns are FKs) and the candidate rows.
  *
- * These are READS, so no write-confirm applies — but the `marketing` gate does,
+ * These are READS, so no write-confirm applies — but the section gate does,
  * exactly like every other console route. The schema/table/column are validated
  * against LIVE introspection before anything is queried: the source table must
  * exist in the PostgREST-exposed schemas, the column must actually be a foreign
@@ -26,8 +27,6 @@ import { clampLimit, isValidIdentifier } from "@/lib/console/identifiers";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Dropdown size defaults — a picker is a shortlist, not the whole table. */
 const DEFAULT_LIMIT = 100;
@@ -221,7 +220,7 @@ async function fetchOptions(
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

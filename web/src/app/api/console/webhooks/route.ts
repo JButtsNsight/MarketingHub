@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { isValidIdentifier, quoteLiteral } from "@/lib/console/identifiers";
 import { listTables, runQuery } from "@/lib/console/pgmeta";
@@ -14,7 +15,7 @@ import {
 
 /**
  * Database Webhooks (Studio → Database → Webhooks), gated on the Cognito
- * `marketing` group. A database webhook is an AFTER-row trigger whose function
+ * platform section. A database webhook is an AFTER-row trigger whose function
  * is `supabase_functions.http_request(...)`, which dispatches the outbound call
  * through pg_net — the foundation `webhooks` lib owns that convention and all
  * of the SQL-safety (identifier regex + live existence checks, values via
@@ -36,8 +37,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -113,7 +112,7 @@ const DeleteBodySchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -144,7 +143,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -174,7 +173,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

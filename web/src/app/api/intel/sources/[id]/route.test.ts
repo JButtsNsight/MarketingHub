@@ -48,13 +48,23 @@ import { DELETE, GET, PATCH } from "./route";
 
 const SOURCE_ID = "5f5e8c2a-9d1b-4f3a-8a51-51e6dd2e1a01";
 
+let intelToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
-    email: "amy@nsight.example",
+    email: "mia@nsight.example",
     "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  intelToken = await signAlbToken({
+    email: "amy@nsight.example",
+    "cognito:groups": ["mh-section-intel"],
   });
 });
 
@@ -68,9 +78,9 @@ afterEach(() => {
   clearAlbEnv();
 });
 
-function marketingHeaders(): HeadersInit {
+function sectionHeaders(): HeadersInit {
   return {
-    "x-amzn-oidc-data": marketingToken,
+    "x-amzn-oidc-data": intelToken,
     "content-type": "application/json",
   };
 }
@@ -82,7 +92,7 @@ function params(id: string) {
 function req(method: string, body?: unknown, headers?: HeadersInit) {
   return new Request(`http://x/api/intel/sources/${SOURCE_ID}`, {
     method,
-    headers: headers ?? marketingHeaders(),
+    headers: headers ?? sectionHeaders(),
     body: body === undefined ? undefined : JSON.stringify(body),
   });
 }
@@ -97,6 +107,29 @@ describe("GET /api/intel/sources/[id]", () => {
     );
     expect(res.status).toBe(401);
     expect(h.getSource).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      req("GET", undefined, {
+        "x-amzn-oidc-data": marketingToken,
+        "content-type": "application/json",
+      }),
+      params(SOURCE_ID),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.getSource).not.toHaveBeenCalled();
+
+    h.getSource.mockResolvedValue(sourceRow);
+    h.listDocumentsBySource.mockResolvedValue([]);
+    const admin = await GET(
+      req("GET", undefined, {
+        "x-amzn-oidc-data": adminToken,
+        "content-type": "application/json",
+      }),
+      params(SOURCE_ID),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("404 on a non-UUID id without touching PostgREST", async () => {
@@ -146,7 +179,7 @@ describe("PATCH /api/intel/sources/[id]", () => {
     const res = await PATCH(
       new Request(`http://x/api/intel/sources/${SOURCE_ID}`, {
         method: "PATCH",
-        headers: marketingHeaders(),
+        headers: sectionHeaders(),
         body: "x".repeat(256 * 1024 + 1),
       }),
       params(SOURCE_ID),

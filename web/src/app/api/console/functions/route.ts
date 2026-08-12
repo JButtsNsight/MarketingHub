@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { dropFunction, listFunctions } from "@/lib/console/dbobjects";
 import { assertSafeInteger } from "@/lib/console/identifiers";
 import { runQuery } from "@/lib/console/pgmeta";
@@ -11,7 +12,7 @@ import { runQuery } from "@/lib/console/pgmeta";
  * language, security-definer flag), serves a single function's definition on
  * demand (read), and drops a function by OID.
  *
- * Every verb is gated on the Cognito `marketing` group (mirrors
+ * Every verb is gated on the platform section (mirrors
  * /api/console/rows). The DROP is destructive — the client gates it behind the
  * confirm modal; the server still validates the OID as a safe integer and lets
  * postgres-meta be the source of truth for existence. Any thrown
@@ -19,8 +20,6 @@ import { runQuery } from "@/lib/console/pgmeta";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** Routines the Functions page surfaces (matches the surface spec). */
 const FUNCTION_SCHEMAS = ["marketinghub", "public", "pgmq_public"];
@@ -85,7 +84,7 @@ const OidQuery = z.coerce.number().int().nonnegative().safe();
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -119,7 +118,7 @@ const DeleteBodySchema = z.object({
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

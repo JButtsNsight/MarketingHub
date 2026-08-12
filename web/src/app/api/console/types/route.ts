@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import { addEnumValue, listEnumTypes, OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { runQuery } from "@/lib/console/pgmeta";
 import {
@@ -12,7 +13,7 @@ import {
 
 /**
  * Enumerated-types surface (Studio → Database → Enumerated Types), gated on the
- * Cognito `marketing` group. Reads list `pg_type`/`pg_enum` for the surfaced
+ * platform section. Reads list `pg_type`/`pg_enum` for the surfaced
  * user schemas; the three DDL verbs are guarded in the client behind the
  * confirm modal.
  *
@@ -31,8 +32,6 @@ import {
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 function authErrorResponse(err: unknown): Response {
   if (err instanceof AuthError) {
@@ -153,7 +152,7 @@ const DropSchema = z.object({
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -165,7 +164,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -197,7 +196,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -229,7 +228,7 @@ export async function PATCH(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }

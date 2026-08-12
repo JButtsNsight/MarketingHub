@@ -2,7 +2,8 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Surface } from "@/components/Surface";
 import { Section } from "@/components/ui/Section";
 import { KeyValue } from "@/components/ui/KeyValue";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import {
   listBucket,
   listBuckets,
@@ -25,8 +26,9 @@ export const metadata = {
  * signed URLs — the internal data API stays private.
  */
 export default async function StoragePage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let buckets: Awaited<ReturnType<typeof listBuckets>> = [];
   let entries: Awaited<ReturnType<typeof listBucket>> = [];

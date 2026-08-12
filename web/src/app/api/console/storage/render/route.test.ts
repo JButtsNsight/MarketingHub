@@ -38,14 +38,24 @@ vi.mock("@/lib/console/storage", async (importOriginal) => {
 import { TransformUnavailableError } from "@/lib/console/storage";
 import { GET } from "./route";
 
+let platformToken: string;
 let marketingToken: string;
+let adminToken: string;
 
 beforeAll(async () => {
   await initAlbKeys();
   marketingToken = await signAlbToken({
+    email: "mia@nsight.example",
+    "cognito:groups": ["marketing"],
+  });
+  adminToken = await signAlbToken({
+    email: "ada@nsight.example",
+    "cognito:groups": ["marketinghub-admins"],
+  });
+  platformToken = await signAlbToken({
     email: "amy@nsight.example",
     name: "Amy",
-    "cognito:groups": ["marketing"],
+    "cognito:groups": ["mh-section-platform"],
   });
 });
 
@@ -61,7 +71,7 @@ afterEach(() => {
 });
 
 function auth(): HeadersInit {
-  return { "x-amzn-oidc-data": marketingToken };
+  return { "x-amzn-oidc-data": platformToken };
 }
 
 function renderReq(query: string, headers: HeadersInit = auth()): Request {
@@ -84,6 +94,20 @@ describe("GET /api/console/storage/render — gate + input validation", () => {
     const res = await GET(renderReq("bucket=b1&path=a.png", {}));
     expect(res.status).toBe(401);
     expect(h.fetchTransformedImage).not.toHaveBeenCalled();
+  });
+
+  test("403 for base marketing without the section; admins pass", async () => {
+    const forbidden = await GET(
+      renderReq("bucket=b1&path=a.png", { "x-amzn-oidc-data": marketingToken }),
+    );
+    expect(forbidden.status).toBe(403);
+    expect(h.fetchTransformedImage).not.toHaveBeenCalled();
+
+    h.fetchTransformedImage.mockResolvedValue(transformed("image/png"));
+    const admin = await GET(
+      renderReq("bucket=b1&path=a.png", { "x-amzn-oidc-data": adminToken }),
+    );
+    expect(admin.status).toBe(200);
   });
 
   test("400 traversal path, 400 bad bucket name, 404 unknown bucket", async () => {

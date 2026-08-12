@@ -1,4 +1,5 @@
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { SearchPanel } from "@/components/intel/SearchPanel";
 import { SourcesManager } from "@/components/intel/SourcesManager";
@@ -13,14 +14,15 @@ export const metadata = {
 
 /**
  * Competitor-intel home: agentic search over the corpus, then the sources
- * library. Server component enforces the marketing-group gate (mirrors the
+ * library. Server component enforces the intel section gate (mirrors the
  * API handlers). SearchPanel owns the two-phase search flow (q lives in the
  * URL — /intel?q=… — so searches are shareable); SourcesManager owns
  * list/create/edit/delete against /api/intel/sources. The old /intel/search
  * page 308s here with its query intact.
  */
 export default async function IntelPage() {
-  await requireMarketingUser();
+  const gate = await requireSectionUser("intel");
+  if (!gate.ok) return <Forbidden message="Competitor Intel access required." />;
 
   return (
     <>

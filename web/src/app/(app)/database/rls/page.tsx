@@ -1,7 +1,8 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
-import { requireMarketingUser } from "@/lib/requireMarketingUser";
+import { Forbidden } from "@/components/ui/Forbidden";
+import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables } from "@/lib/console/tables";
 import { listPolicies, POLICY_TEMPLATES } from "@/lib/console/policies";
 import { DB_TABS } from "@/lib/console/tabs";
@@ -75,11 +76,12 @@ const EMPTY_PREFILL: PolicyTemplatePrefill = {
  *
  * The house doctrine: every exposed table is deny-by-default for anon/
  * authenticated; the app path is service_role (BYPASSRLS) behind the Cognito
- * group gate. Introspection failure degrades to an explicit error card.
+ * section gate. Introspection failure degrades to an explicit error card.
  */
 export default async function RlsPage() {
-  // Server-side group gate: mirrors the API handlers.
-  await requireMarketingUser();
+  // Server-side section gate: mirrors the API handlers.
+  const gate = await requireSectionUser("platform");
+  if (!gate.ok) return <Forbidden message="Platform access required." />;
 
   let data: { tables: PolicyTableDto[]; policies: PolicyDto[] } | null = null;
   try {

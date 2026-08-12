@@ -1,6 +1,7 @@
 import { z } from "zod";
 
-import { AuthError, requireUser } from "@/lib/auth";
+import { AuthError } from "@/lib/auth";
+import { requireSectionApi } from "@/lib/requireSection";
 import {
   POLICY_ACTIONS,
   POLICY_COMMANDS,
@@ -16,7 +17,7 @@ import { listEditorTables } from "@/lib/console/tables";
 
 /**
  * RLS policies (Studio → Auth → Policies / Database → Policies), gated on the
- * Cognito `marketing` group.
+ * platform section.
  *
  * - GET    → every policy in the managed schemas plus the live table list (with
  *            RLS state) for the coverage view and the create-form picker.
@@ -41,8 +42,6 @@ import { listEditorTables } from "@/lib/console/tables";
  */
 
 export const dynamic = "force-dynamic";
-
-const MARKETING_GROUP = "marketing";
 
 /** The PostgREST-exposed schemas the console manages policies for. */
 const POLICY_SCHEMAS = ["marketinghub", "public", "storage"];
@@ -153,7 +152,7 @@ async function readJson(req: Request): Promise<unknown | Response> {
 
 export async function GET(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -178,7 +177,7 @@ export async function GET(req: Request): Promise<Response> {
 
 export async function POST(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -213,7 +212,7 @@ export async function POST(req: Request): Promise<Response> {
 
 export async function PATCH(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
@@ -247,7 +246,7 @@ export async function PATCH(req: Request): Promise<Response> {
 
 export async function DELETE(req: Request): Promise<Response> {
   try {
-    await requireUser(req.headers, MARKETING_GROUP);
+    await requireSectionApi(req.headers, "platform");
   } catch (err) {
     return authErrorResponse(err);
   }
