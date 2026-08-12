@@ -381,6 +381,22 @@ fi
 if [ -n "$LIVE_CAP_DAYS" ]; then
   CDK_CTX+=( -c smsFreqCapDays="$LIVE_CAP_DAYS" )
 fi
+# SAML prestage (runbook §1.3): when the downloaded Google IdP metadata XML is
+# present in-repo, ALWAYS pass the Cognito-broker context. Once the pool has
+# been prestaged, a synth WITHOUT this context would orphan it (RETAIN) and a
+# later re-create would mint a NEW pool id — silently breaking the Google-side
+# SAML registration. Override the path with SAML_METADATA_FILE if needed.
+SAML_METADATA_FILE="${SAML_METADATA_FILE:-$APP_INFRA_DIR/config/google-idp-metadata.xml}"
+if [ -f "$SAML_METADATA_FILE" ]; then
+  CDK_CTX+=(
+    -c googleSamlMetadataFilePath="$SAML_METADATA_FILE"
+    -c appHostname=marketinghub.nsightcare.com
+    -c cognitoDomainPrefix=nsight-marketinghub
+    -c adminGroup=marketinghub-admins
+    -c marketingGroup=marketing
+  )
+  echo ">> SAML prestage ON: Cognito broker context from $SAML_METADATA_FILE"
+fi
 
 echo "== [5/9] SAFETY GATE: synth vs LIVE task-defs (no-silent-strip) =========="
 # stdin is protected (</dev/null) on every foreign command so the piped

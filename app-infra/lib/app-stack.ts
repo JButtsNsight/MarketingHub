@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
+import { CfnOutput, Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -638,6 +638,115 @@ export class AppStack extends Stack {
       maxHealthyPercent: 100,
     });
 
+    // ---- Cognito identity broker (Google Workspace SAML) --------------------
+    // Google Workspace publishes NO fetchable IdP-metadata URL (the Admin
+    // console only offers a download of the metadata XML), so the IdP accepts
+    // EITHER a metadata URL OR a path to that downloaded XML — exactly one.
+    // Production always builds the broker; preview PRESTAGES it when the
+    // metadata context is supplied, so the pool id / SP entity id are real
+    // before the public-front-door cutover (the Google-side SAML app needs
+    // them) and the cutover itself is a no-op for these resources — the
+    // construct ids below are identical in both modes.
+    const SAML_METADATA_CTX_ERROR =
+      'AppStack: exactly ONE of context "googleSamlMetadataUrl" / "googleSamlMetadataFilePath" is required';
+    // cdk.json ships REPLACE_ME placeholders for every context key (real
+    // deploys override via -c) — a placeholder is NOT a supplied value here.
+    const optCtx = (k: string): string | undefined => {
+      const v = this.node.tryGetContext(k) as string | undefined;
+      return v && v !== 'REPLACE_ME' ? v : undefined;
+    };
+    const googleSamlMetadataUrl = optCtx('googleSamlMetadataUrl');
+    const googleSamlMetadataFilePath = optCtx('googleSamlMetadataFilePath');
+    if (googleSamlMetadataUrl && googleSamlMetadataFilePath) {
+      throw new Error(SAML_METADATA_CTX_ERROR);
+    }
+
+    const buildCognito = () => {
+      const appHostname = req('appHostname');
+      const adminGroup = req('adminGroup');
+      const marketingGroup = req('marketingGroup');
+      const cognitoDomainPrefix = req('cognitoDomainPrefix');
+
+      const userPool = new cognito.UserPool(this, 'AppUserPool', {
+        userPoolName: 'nsight-marketinghub',
+        selfSignUpEnabled: false, // federated-only; no local signups
+        signInAliases: { email: true },
+        removalPolicy: RemovalPolicy.RETAIN, // never auto-delete identities
+      });
+
+      const userPoolDomain = userPool.addDomain('AppUserPoolDomain', {
+        cognitoDomain: { domainPrefix: cognitoDomainPrefix },
+      });
+
+      const samlProviderName = 'GoogleSAML';
+      const samlIdp = new cognito.CfnUserPoolIdentityProvider(this, 'GoogleSamlIdp', {
+        userPoolId: userPool.userPoolId,
+        providerName: samlProviderName,
+        providerType: 'SAML',
+        providerDetails: {
+          ...(googleSamlMetadataUrl
+            ? { MetadataURL: googleSamlMetadataUrl }
+            : { MetadataFile: readFileSync(googleSamlMetadataFilePath as string, 'utf8') }),
+          IDPSignout: 'true',
+        },
+        attributeMapping: {
+          email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
+        },
+      });
+
+      const userPoolClient = userPool.addClient('AppClient', {
+        generateSecret: true, // ALB authenticate-cognito requires a client secret
+        supportedIdentityProviders: [
+          cognito.UserPoolClientIdentityProvider.custom(samlProviderName),
+        ],
+        oAuth: {
+          flows: { authorizationCodeGrant: true },
+          scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+          callbackUrls: [`https://${appHostname}/oauth2/idpresponse`],
+          // Where the Cognito Hosted-UI /logout endpoint redirects the browser
+          // AFTER clearing the Cognito/SAML session. The app's /logout route hits
+          // the Hosted-UI logout with this as `logout_uri`; Cognito rejects any
+          // logout_uri not registered here. Landing on the app root re-triggers
+          // the ALB auth flow (i.e. a clean signed-out state).
+          logoutUrls: [`https://${appHostname}/`],
+        },
+      });
+      userPoolClient.node.addDependency(samlIdp); // client references the IdP by name
+
+      // The fully-formed Cognito Hosted-UI logout URL the app's /logout route
+      // redirects to (after expiring the ALB session cookie). Passed to the
+      // container as env so the app owns no Cognito config of its own.
+      const postLogoutRedirect = `https://${appHostname}/`;
+      const cognitoLogoutUrl =
+        `https://${cognitoDomainPrefix}.auth.${this.region}.amazoncognito.com/logout` +
+        `?client_id=${userPoolClient.userPoolClientId}` +
+        `&logout_uri=${encodeURIComponent(postLogoutRedirect)}`;
+
+      // The two authorization boundaries: admins + marketing staff. Google groups
+      // map to these Cognito groups; app-layer authz reads `cognito:groups`.
+      new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
+        userPoolId: userPool.userPoolId,
+        groupName: adminGroup,
+        description: 'MarketingHub administrators',
+      });
+      new cognito.CfnUserPoolGroup(this, 'MarketingGroup', {
+        userPoolId: userPool.userPoolId,
+        groupName: marketingGroup,
+        description: 'MarketingHub marketing staff (template authors/browsers)',
+      });
+
+      // What the Google-side SAML app registration needs (runbook §1.3).
+      new CfnOutput(this, 'CognitoUserPoolIdOutput', { value: userPool.userPoolId });
+      new CfnOutput(this, 'CognitoSpEntityIdOutput', {
+        value: `urn:amazon:cognito:sp:${userPool.userPoolId}`,
+      });
+      new CfnOutput(this, 'CognitoSamlAcsUrlOutput', {
+        value: `https://${cognitoDomainPrefix}.auth.${this.region}.amazoncognito.com/saml2/idpresponse`,
+      });
+
+      return { userPool, userPoolDomain, userPoolClient, cognitoLogoutUrl };
+    };
+
     if (previewMode) {
       // ===================== INTERNAL PREVIEW FRONT DOOR =====================
       // An INTERNAL ALB in the private subnets, plain HTTP:80 forwarding straight
@@ -685,6 +794,12 @@ export class AppStack extends Stack {
       // (the shim needs no token).
       appContainer.addEnvironment('PREVIEW_AUTH', 'marketing,marketinghub-admins');
 
+      // SAML prestage: build the Cognito broker ahead of the production
+      // cutover when the metadata context is supplied. The preview front door
+      // is untouched — nothing routes through Cognito here; this only makes
+      // the pool id / SP entity id real for the Google-side registration.
+      if (googleSamlMetadataUrl || googleSamlMetadataFilePath) buildCognito();
+
       return;
     }
 
@@ -696,23 +811,9 @@ export class AppStack extends Stack {
     const appHostname = req('appHostname');
     const hostedZoneId = req('hostedZoneId');
     const hostedZoneName = req('hostedZoneName');
-    // Google Workspace publishes NO fetchable IdP-metadata URL (the Admin
-    // console only offers a download of the metadata XML), so the IdP accepts
-    // EITHER a metadata URL OR a path to that downloaded XML — exactly one.
-    const googleSamlMetadataUrl = this.node.tryGetContext('googleSamlMetadataUrl') as
-      | string
-      | undefined;
-    const googleSamlMetadataFilePath = this.node.tryGetContext('googleSamlMetadataFilePath') as
-      | string
-      | undefined;
-    if (!googleSamlMetadataUrl === !googleSamlMetadataFilePath) {
-      throw new Error(
-        'AppStack: exactly ONE of context "googleSamlMetadataUrl" / "googleSamlMetadataFilePath" is required',
-      );
+    if (!googleSamlMetadataUrl && !googleSamlMetadataFilePath) {
+      throw new Error(SAML_METADATA_CTX_ERROR);
     }
-    const adminGroup = req('adminGroup');
-    const marketingGroup = req('marketingGroup');
-    const cognitoDomainPrefix = req('cognitoDomainPrefix');
 
     // The imported PUBLIC subnets host the internet-facing ALB.
     const publicSubnets = vpc.selectSubnets({ subnetType: ec2.SubnetType.PUBLIC });
@@ -731,73 +832,7 @@ export class AppStack extends Stack {
     cert.applyRemovalPolicy(RemovalPolicy.RETAIN); // durable edge resource
 
     // --- Cognito: identity broker for the ALB (Google Workspace SAML) ---
-    const userPool = new cognito.UserPool(this, 'AppUserPool', {
-      userPoolName: 'nsight-marketinghub',
-      selfSignUpEnabled: false, // federated-only; no local signups
-      signInAliases: { email: true },
-      removalPolicy: RemovalPolicy.RETAIN, // never auto-delete identities
-    });
-
-    const userPoolDomain = userPool.addDomain('AppUserPoolDomain', {
-      cognitoDomain: { domainPrefix: cognitoDomainPrefix },
-    });
-
-    const samlProviderName = 'GoogleSAML';
-    const samlIdp = new cognito.CfnUserPoolIdentityProvider(this, 'GoogleSamlIdp', {
-      userPoolId: userPool.userPoolId,
-      providerName: samlProviderName,
-      providerType: 'SAML',
-      providerDetails: {
-        ...(googleSamlMetadataUrl
-          ? { MetadataURL: googleSamlMetadataUrl }
-          : { MetadataFile: readFileSync(googleSamlMetadataFilePath as string, 'utf8') }),
-        IDPSignout: 'true',
-      },
-      attributeMapping: {
-        email: 'http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress',
-      },
-    });
-
-    const userPoolClient = userPool.addClient('AppClient', {
-      generateSecret: true, // ALB authenticate-cognito requires a client secret
-      supportedIdentityProviders: [
-        cognito.UserPoolClientIdentityProvider.custom(samlProviderName),
-      ],
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
-        callbackUrls: [`https://${appHostname}/oauth2/idpresponse`],
-        // Where the Cognito Hosted-UI /logout endpoint redirects the browser
-        // AFTER clearing the Cognito/SAML session. The app's /logout route hits
-        // the Hosted-UI logout with this as `logout_uri`; Cognito rejects any
-        // logout_uri not registered here. Landing on the app root re-triggers
-        // the ALB auth flow (i.e. a clean signed-out state).
-        logoutUrls: [`https://${appHostname}/`],
-      },
-    });
-    userPoolClient.node.addDependency(samlIdp); // client references the IdP by name
-
-    // The fully-formed Cognito Hosted-UI logout URL the app's /logout route
-    // redirects to (after expiring the ALB session cookie). Passed to the
-    // container as env so the app owns no Cognito config of its own.
-    const postLogoutRedirect = `https://${appHostname}/`;
-    const cognitoLogoutUrl =
-      `https://${cognitoDomainPrefix}.auth.${this.region}.amazoncognito.com/logout` +
-      `?client_id=${userPoolClient.userPoolClientId}` +
-      `&logout_uri=${encodeURIComponent(postLogoutRedirect)}`;
-
-    // The two authorization boundaries: admins + marketing staff. Google groups
-    // map to these Cognito groups; app-layer authz reads `cognito:groups`.
-    new cognito.CfnUserPoolGroup(this, 'AdminGroup', {
-      userPoolId: userPool.userPoolId,
-      groupName: adminGroup,
-      description: 'MarketingHub administrators',
-    });
-    new cognito.CfnUserPoolGroup(this, 'MarketingGroup', {
-      userPoolId: userPool.userPoolId,
-      groupName: marketingGroup,
-      description: 'MarketingHub marketing staff (template authors/browsers)',
-    });
+    const { userPool, userPoolDomain, userPoolClient, cognitoLogoutUrl } = buildCognito();
 
     // --- ALB access-log bucket (retained, SSE-S3, TLS-only, no public access) ---
     const accessLogsBucket = new s3.Bucket(this, 'AlbAccessLogsBucket', {

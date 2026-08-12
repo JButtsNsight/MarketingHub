@@ -148,6 +148,11 @@ test('exactly one of SAML metadata URL / file is required (production)', () => {
   expect(
     () => new AppStack(new App({ context: both }), 'AppBoth', { env }),
   ).toThrow(/exactly ONE/);
+  // cdk.json's REPLACE_ME placeholder counts as ABSENT, not as a second value.
+  const placeholder = { ...CONTEXT, googleSamlMetadataUrl: 'REPLACE_ME' };
+  expect(
+    () => new AppStack(new App({ context: placeholder }), 'AppPlaceholder', { env }),
+  ).toThrow(/exactly ONE/); // placeholder URL + no file = neither supplied
 });
 
 test('both an admin and a marketing Cognito group exist', () => {
@@ -629,12 +634,46 @@ test('preview: the listener is plain HTTP:80 forwarding to the target group (no 
   }
 });
 
-test('preview: ZERO Cognito user pool / SAML IdP / app client / groups', () => {
-  const { template } = makePreviewApp();
+test('preview WITHOUT SAML metadata context: ZERO Cognito user pool / SAML IdP / app client / groups', () => {
+  const noSaml: Record<string, unknown> = { ...CONTEXT, previewMode: true };
+  delete noSaml.googleSamlMetadataUrl;
+  const { template } = makePreviewApp(noSaml);
   template.resourceCountIs('AWS::Cognito::UserPool', 0);
   template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
   template.resourceCountIs('AWS::Cognito::UserPoolClient', 0);
   template.resourceCountIs('AWS::Cognito::UserPoolGroup', 0);
+});
+
+test('preview WITH SAML metadata context: Cognito broker is PRESTAGED, front door untouched', () => {
+  const { template } = makePreviewApp(); // default CONTEXT carries googleSamlMetadataUrl
+  template.resourceCountIs('AWS::Cognito::UserPool', 1);
+  template.resourceCountIs('AWS::Cognito::UserPoolDomain', 1);
+  template.resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 1);
+  template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
+  template.resourceCountIs('AWS::Cognito::UserPoolGroup', 2);
+  // Still the PREVIEW front door: internal ALB, no cert / WAF / DNS.
+  template.hasResourceProperties('AWS::ElasticLoadBalancingV2::LoadBalancer', {
+    Scheme: 'internal',
+  });
+  template.resourceCountIs('AWS::CertificateManager::Certificate', 0);
+  template.resourceCountIs('AWS::WAFv2::WebACL', 0);
+  template.resourceCountIs('AWS::Route53::RecordSet', 0);
+});
+
+test('prestaged Cognito logical ids MATCH production (cutover is a no-op for the broker)', () => {
+  const prestage = makePreviewApp().template;
+  const prod = makeApp().template;
+  for (const type of [
+    'AWS::Cognito::UserPool',
+    'AWS::Cognito::UserPoolDomain',
+    'AWS::Cognito::UserPoolIdentityProvider',
+    'AWS::Cognito::UserPoolClient',
+    'AWS::Cognito::UserPoolGroup',
+  ]) {
+    expect(Object.keys(prestage.findResources(type)).sort()).toEqual(
+      Object.keys(prod.findResources(type)).sort(),
+    );
+  }
 });
 
 test('preview: ZERO WAFv2 WebACL and ZERO ACM certificate', () => {
