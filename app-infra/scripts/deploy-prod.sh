@@ -411,6 +411,28 @@ CDK_CTX+=(
 )
 echo ">> prod DNS: zone $ZONE_ID ($APP_HOSTNAME)"
 
+# Prod-only: the internet-facing ALB lives in the VPC's PUBLIC subnets.
+# MapPublicIpOnLaunch is false on them here, so "public" is derived the
+# correct way — subnets whose route table routes to an internet gateway.
+# (cdk.json's supabasePublicSubnetIds is a REPLACE_ME placeholder; failing
+# to pass this context is exactly the 2026-08-11 first-cutover failure.)
+PUB_SUBNET_LIST=$(aws ec2 describe-route-tables --region "$REGION" \
+  --filters Name=vpc-id,Values="$VPC_ID" \
+  --query 'RouteTables[?Routes[?starts_with(GatewayId||``,`igw-`)]].Associations[].SubnetId' \
+  --output text | tr '[:space:]' '\n' | sort -u | grep -v '^$' || true)
+[ -n "$PUB_SUBNET_LIST" ] \
+  || fail "no IGW-routed (public) subnets found in $VPC_ID — the internet-facing ALB needs at least two"
+# AZ-ordered to line up with supabaseVpcAzs, comma-joined for the context.
+PUB_SUBNETS=$(aws ec2 describe-subnets --region "$REGION" \
+  --subnet-ids $PUB_SUBNET_LIST \
+  --query 'sort_by(Subnets,&AvailabilityZone)[].SubnetId' --output text | tr '[:space:]' ',' | sed 's/,*$//')
+case "$PUB_SUBNETS" in
+  *,*) : ;;
+  *) fail "only one public subnet ($PUB_SUBNETS) — an internet-facing ALB needs two AZs" ;;
+esac
+CDK_CTX+=( -c supabasePublicSubnetIds="$PUB_SUBNETS" )
+echo ">> public subnets (IGW-routed, AZ-ordered): $PUB_SUBNETS"
+
 if [ -f "$SAML_METADATA_FILE" ]; then
   CDK_CTX+=(
     -c googleSamlMetadataFilePath="$SAML_METADATA_FILE"
