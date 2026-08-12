@@ -148,6 +148,11 @@ test('exactly one of SAML metadata URL / file is required (production)', () => {
   expect(
     () => new AppStack(new App({ context: both }), 'AppBoth', { env }),
   ).toThrow(/exactly ONE/);
+  // cdk.json's REPLACE_ME placeholder counts as ABSENT, not as a second value.
+  const placeholder = { ...CONTEXT, googleSamlMetadataUrl: 'REPLACE_ME' };
+  expect(
+    () => new AppStack(new App({ context: placeholder }), 'AppPlaceholder', { env }),
+  ).toThrow(/exactly ONE/); // placeholder URL + no file = neither supplied
 });
 
 test('both an admin and a marketing Cognito group exist', () => {

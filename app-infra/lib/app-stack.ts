@@ -617,12 +617,14 @@ export class AppStack extends Stack {
     // construct ids below are identical in both modes.
     const SAML_METADATA_CTX_ERROR =
       'AppStack: exactly ONE of context "googleSamlMetadataUrl" / "googleSamlMetadataFilePath" is required';
-    const googleSamlMetadataUrl = this.node.tryGetContext('googleSamlMetadataUrl') as
-      | string
-      | undefined;
-    const googleSamlMetadataFilePath = this.node.tryGetContext('googleSamlMetadataFilePath') as
-      | string
-      | undefined;
+    // cdk.json ships REPLACE_ME placeholders for every context key (real
+    // deploys override via -c) — a placeholder is NOT a supplied value here.
+    const optCtx = (k: string): string | undefined => {
+      const v = this.node.tryGetContext(k) as string | undefined;
+      return v && v !== 'REPLACE_ME' ? v : undefined;
+    };
+    const googleSamlMetadataUrl = optCtx('googleSamlMetadataUrl');
+    const googleSamlMetadataFilePath = optCtx('googleSamlMetadataFilePath');
     if (googleSamlMetadataUrl && googleSamlMetadataFilePath) {
       throw new Error(SAML_METADATA_CTX_ERROR);
     }
