@@ -20,6 +20,11 @@
 #   SMS_LINK_BASE_URL     (env, optional) overrides the smsLinkBaseUrl context;
 #                         otherwise the LIVE task-def value is kept
 #                         (default http://localhost:8080 when absent live).
+#   WORKER_TAG            (env, optional) rolls the WORKER onto this image tag
+#                         instead of pinning to its live image. Use when a
+#                         round ships worker code (new consumer, dispatcher
+#                         change). Must equal the app tag being deployed or
+#                         already exist in ECR.
 #   SUPABASE_DIFF_STACKS  (env, optional) space-separated Supabase stacks for
 #                         the REPORT-ONLY post-deploy drift diff
 #                         (default "SupabaseData"; never deployed here).
@@ -171,7 +176,16 @@ echo "== [4/9] derive ALL cdk context from LIVE state ==========================
 OLD_APP_IMAGE=$(jq -r '.image' "$WORK/live-app-container.json")
 WORKER_IMG=$(jq -r '.image' "$WORK/live-worker-container.json")
 echo "$WORKER_IMG" | grep -q '\.dkr\.ecr\.' || fail "live worker image '$WORKER_IMG' is not an ECR image — task-def shape changed"
-if [ "$WORKER_IMG" != "$IMG" ]; then
+if [ -n "${WORKER_TAG:-}" ]; then
+  WORKER_IMG="$ECR_HOST/$ECR_REPO:$WORKER_TAG"
+  if [ "$WORKER_IMG" != "$IMG" ]; then
+    aws ecr describe-images --repository-name "$ECR_REPO" --region "$REGION" \
+      --image-ids imageTag="$WORKER_TAG" >/dev/null 2>&1 \
+      || fail "WORKER_TAG '$WORKER_TAG' is neither this deploy's app tag nor an existing ECR image"
+  fi
+  echo ">> worker ROLLS FORWARD via WORKER_TAG:"
+  echo ">>   worker -> $WORKER_IMG (was $(jq -r '.image' "$WORK/live-worker-container.json"))"
+elif [ "$WORKER_IMG" != "$IMG" ]; then
   echo ">> worker PINNED to its live image (app/worker have drifted apart — expected):"
   echo ">>   app    -> $IMG (this deploy)"
   echo ">>   worker -> $WORKER_IMG (unchanged)"
