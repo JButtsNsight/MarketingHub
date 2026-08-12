@@ -875,6 +875,11 @@ export class AppStack extends Stack {
         userPoolClient,
         userPoolDomain,
         sessionTimeout: Duration.hours(12), // bound the SSO session (not the 7-day default)
+        // Single-IdP app: skip the Cognito hosted-UI login page and go straight
+        // to Google (the interstitial's provider button also proved unreliable
+        // in real browsers at cutover — applied out-of-band 2026-08-12, folded
+        // in here so deploys preserve it).
+        authenticationRequestExtraParams: { identity_provider: 'GoogleSAML' },
         next: elbv2.ListenerAction.forward([targetGroup]),
       }),
     });
