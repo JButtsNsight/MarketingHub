@@ -49,6 +49,22 @@ function mockFetchRoutes(
         ),
       );
     }
+    if (url === "/api/console/assistant" && method === "POST") {
+      // Completed-cache shape: the answer arrives with the POST (no polling).
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            answer: {
+              state: "completed",
+              explanation: "Counts templates.",
+              sql: "select count(*) from marketinghub.templates;",
+            },
+            degraded: null,
+          }),
+          { status: 200 },
+        ),
+      );
+    }
     return Promise.resolve(new Response("{}", { status: 200 }));
   });
   vi.stubGlobal("fetch", fn);
@@ -143,6 +159,82 @@ describe("SqlConsole", () => {
     await waitFor(() =>
       expect(editor.textContent).toContain("pg_stat_user_tables"),
     );
+  });
+
+  test("assistant proposal REPLACES the editor document and never auto-runs", async () => {
+    const { calls } = mockFetchRoutes([]);
+    const user = userEvent.setup();
+    render(<SqlConsole initialSnippets={[]} initialHistory={[]} />);
+
+    // The editor starts with the default draft — the proposal must replace
+    // it wholesale (the snippet/history idiom), not append to it.
+    const editor = screen.getByRole("textbox", { name: "SQL editor" });
+    await waitFor(() => expect(editor.textContent).toContain("n_live_tup"));
+
+    await user.type(
+      screen.getByRole("searchbox", { name: /ask the assistant/i }),
+      "count templates",
+    );
+    await user.click(screen.getByRole("button", { name: "Ask" }));
+
+    await user.click(
+      await screen.findByRole("button", { name: "Replace editor" }),
+    );
+    await waitFor(() =>
+      expect(editor.textContent).toContain(
+        "select count(*) from marketinghub.templates;",
+      ),
+    );
+    expect(editor.textContent).not.toContain("n_live_tup");
+    // Insert-not-run: nothing ever left for the sql run route.
+    expect(
+      calls.filter((c) => c.url === "/api/console/sql" && c.init?.method === "POST"),
+    ).toHaveLength(0);
+  });
+
+  test("an armed write confirm never carries over to a replaced document", async () => {
+    // First run 409s (write) and arms "Run write"; the follow-up run of the
+    // REPLACED statement must re-enter classify (no confirmWrite in the body).
+    const { calls } = mockFetchRoutes([
+      { status: 409, body: { requiresConfirmation: true, classification: "write" } },
+      {
+        status: 200,
+        body: { rows: [], rowCount: 0, truncated: false, durationMs: 2, classification: "read" },
+      },
+    ]);
+    const user = userEvent.setup();
+    render(<SqlConsole initialSnippets={[]} initialHistory={[]} />);
+
+    await user.click(screen.getByRole("button", { name: /Run \(/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Run write" })).toBeInTheDocument(),
+    );
+
+    await user.type(
+      screen.getByRole("searchbox", { name: /ask the assistant/i }),
+      "clean up rows",
+    );
+    await user.click(screen.getByRole("button", { name: "Ask" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Replace editor" }),
+    );
+
+    // Disarmed: the confirm granted for the PREVIOUS statement is gone and
+    // the plain Run is back.
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Run write" })).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: /Run \(/ }));
+
+    await waitFor(() => {
+      const posts = calls.filter(
+        (c) => c.url === "/api/console/sql" && c.init?.method === "POST",
+      );
+      expect(posts).toHaveLength(2);
+      const body = JSON.parse(posts[1].init!.body as string) as Record<string, unknown>;
+      expect(body.confirmWrite).toBeUndefined();
+      expect(body.sql).toContain("select count(*) from marketinghub.templates;");
+    });
   });
 
   test("saving a snippet POSTs the current document and adds it to the rail", async () => {

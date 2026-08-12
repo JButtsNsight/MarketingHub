@@ -229,6 +229,50 @@ describe("GET /api/intel/search", () => {
     expect(h.submitSynthesis).not.toHaveBeenCalled();
   });
 
+  test("OR fallback: AND-miss retries once with OR and serves the hits", async () => {
+    h.gatewayFromEnv.mockReturnValue(null);
+    h.searchChunksFts.mockResolvedValueOnce([]).mockResolvedValueOnce(ROWS);
+    const res = await GET(req("?q=podcast%20pricing"));
+    expect(res.status).toBe(200);
+    expect((await res.json()).results).toEqual(ROWS);
+    expect(h.searchChunksFts).toHaveBeenCalledTimes(2);
+    expect(h.searchChunksFts).toHaveBeenNthCalledWith(
+      1,
+      "podcast pricing",
+      { sourceId: null, count: 16 },
+      userDb,
+    );
+    expect(h.searchChunksFts).toHaveBeenNthCalledWith(
+      2,
+      "podcast OR pricing",
+      { sourceId: null, count: 16 },
+      userDb,
+    );
+  });
+
+  test("OR fallback: zero rows on both passes stays a clean zero-result", async () => {
+    h.gatewayFromEnv.mockReturnValue(GW);
+    h.searchChunksFts.mockResolvedValue([]);
+    const res = await GET(req("?q=podcast%20pricing"));
+    expect((await res.json()).results).toEqual([]);
+    expect(h.searchChunksFts).toHaveBeenCalledTimes(2);
+    expect(h.submitSynthesis).not.toHaveBeenCalled();
+  });
+
+  test.each([
+    ["quoted phrase", '?q=%22acme%20pricing%22'],
+    ["negation", "?q=acme%20-pricing"],
+    ["explicit lowercase or", "?q=acme%20or%20pricing"],
+    ["explicit uppercase OR", "?q=acme%20OR%20pricing"],
+    ["single term", "?q=acme"],
+  ])("OR fallback never loosens %s", async (_label, qs) => {
+    h.gatewayFromEnv.mockReturnValue(null);
+    h.searchChunksFts.mockResolvedValue([]);
+    const res = await GET(req(qs));
+    expect(res.status).toBe(200);
+    expect(h.searchChunksFts).toHaveBeenCalledTimes(1);
+  });
+
   test("zero rows without gateway: keyword-only + degraded marker", async () => {
     h.gatewayFromEnv.mockReturnValue(null);
     h.searchChunksFts.mockResolvedValue([]);

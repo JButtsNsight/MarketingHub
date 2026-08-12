@@ -5,6 +5,7 @@ import { SqlEditor } from "../ui/SqlEditor";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Badge } from "../ui/Badge";
 import { Surface } from "../Surface";
+import { AssistantPanel } from "./AssistantPanel";
 
 /**
  * The SQL editor screen (Studio parity): CodeMirror editor with ⌘/Ctrl+Enter
@@ -75,6 +76,16 @@ export function SqlConsole({
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState("");
   const [armedSnippet, setArmedSnippet] = useState<string | null>(null);
+
+  /** ANY document change disarms a pending write confirm. The confirmation
+   * was granted for the PREVIOUS statement, and /api/console/sql runs
+   * `confirmWrite: true` writes immediately — a swapped-in statement
+   * (assistant proposal, snippet, history, typing) must face its own
+   * classify → 409 → confirm handshake. */
+  const updateDoc = (next: string) => {
+    setDoc(next);
+    setNeedsConfirm(false);
+  };
 
   const refreshHistory = async () => {
     try {
@@ -189,7 +200,7 @@ export function SqlConsole({
   return (
     <div className="sqlconsole">
       <div className="sqlconsole-main">
-        <SqlEditor value={doc} onChange={setDoc} onRun={() => void run(false)} />
+        <SqlEditor value={doc} onChange={updateDoc} onRun={() => void run(false)} />
 
         <div className="dgrid-toolbar">
           {needsConfirm ? (
@@ -293,6 +304,11 @@ export function SqlConsole({
       </div>
 
       <Surface as="aside" className="sqlconsole-rail" glint>
+        {/* Proposals REPLACE the editor document and disarm any pending
+            write confirm — running stays the classify → confirm-write flow
+            above. */}
+        <AssistantPanel onInsert={updateDoc} />
+
         <div className="nav-group">
           <span className="nav-group-label">Snippets</span>
           <ul className="nav-list">
@@ -305,7 +321,7 @@ export function SqlConsole({
                     type="button"
                     className="nav-link"
                     title={s.sql}
-                    onClick={() => setDoc(s.sql)}
+                    onClick={() => updateDoc(s.sql)}
                   >
                     <span className="teditor-tname">{s.name}</span>
                   </button>
@@ -345,7 +361,7 @@ export function SqlConsole({
                     type="button"
                     className="nav-link sqlconsole-hentry"
                     title={entry.sql}
-                    onClick={() => setDoc(entry.sql)}
+                    onClick={() => updateDoc(entry.sql)}
                   >
                     <span className="teditor-tname mono">
                       {entry.sql.length > 36

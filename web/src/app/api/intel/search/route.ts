@@ -165,6 +165,21 @@ function respond(body: SearchResponse): Response {
   return Response.json(body);
 }
 
+/**
+ * Loosened retry query for a zero-hit search, or null when loosening is not
+ * safe: quoted phrases, negations (`-term`), and an explicit or/OR all
+ * express intent the fallback must not invert. Plain multi-word queries
+ * rejoin with OR (websearch_to_tsquery keyword), so "podcast pricing" can
+ * match documents that carry either concept.
+ */
+function orFallbackQuery(q: string): string | null {
+  if (/["“”]/.test(q)) return null;
+  const terms = q.split(/\s+/).filter((t) => t.length > 0);
+  if (terms.length < 2) return null;
+  if (terms.some((t) => t.startsWith("-") || /^or$/i.test(t))) return null;
+  return terms.join(" OR ");
+}
+
 export async function GET(req: Request): Promise<Response> {
   let user;
   try {
@@ -194,6 +209,14 @@ export async function GET(req: Request): Promise<Response> {
   let results: FtsChunkRow[];
   try {
     results = await searchChunksFts(q, { sourceId, count }, db);
+    // websearch_to_tsquery ANDs every term, so multi-concept queries can
+    // 0-out even when each concept matches. Retry once with OR semantics —
+    // but only for plain word soup: quotes, negations, or an explicit
+    // or/OR already express intent we must not loosen.
+    const orQuery = orFallbackQuery(q);
+    if (results.length === 0 && orQuery !== null) {
+      results = await searchChunksFts(orQuery, { sourceId, count }, db);
+    }
   } catch (err) {
     if (err instanceof NotProvisionedError) {
       return Response.json(

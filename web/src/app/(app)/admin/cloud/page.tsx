@@ -27,9 +27,10 @@ export const metadata = {
  * this stack instead.
  *
  * The AI Assistant is the one non-cloud-only entry: Studio at our pin ships
- * it self-hosted (BYO OPENAI_API_KEY). It is SKIPPED PENDING SIGN-OFF — a
- * compliance decision (schema metadata would leave the VPC for OpenAI with
- * no BAA), not a technical gap.
+ * it self-hosted (BYO OPENAI_API_KEY). Stock Studio's stays off (no OpenAI
+ * BAA — the recorded W7 decision), but since 2026-08-11 our own equivalent
+ * is LIVE in /sql on the headless-claude gateway (direct Anthropic, BAA):
+ * schema-metadata-only egress, propose-into-editor only, never executes.
  */
 
 /** One cloud-platform feature and its honest status in this deployment. */
@@ -75,7 +76,7 @@ const CLOUD_FEATURES: CloudFeature[] = [
     feature: "AI Assistant",
     maturity: "Public Alpha",
     selfHosted: "partial (BYO OpenAI key)",
-    here: "skipped pending sign-off",
+    here: "our equivalent live — /sql",
   },
 ];
 
@@ -153,21 +154,29 @@ const COVERAGE_ROWS: RefRow[] = [
   },
 ];
 
-/** The one deliberate skip: available self-hosted, not enabled on purpose. */
+/** The W7 skip, flipped 2026-08-11: our own equivalent, not stock Studio's. */
 const ASSISTANT_ROWS: RefRow[] = [
   {
-    label: "Upstream capability",
-    detail: "Ships self-hosted at our pin with a BYO OpenAI key.",
-    status: "info",
+    label: "Our equivalent is live — /sql",
+    detail:
+      "SQL assistant on the headless-claude gateway (direct Anthropic, BAA) — not stock Studio's assistant.",
+    status: "ok",
   },
   {
-    label: "Skipped pending sign-off",
-    detail: "No BAA covers OpenAI — a compliance decision, not a technical gap.",
-    status: "warn",
+    label: "Egress: schema metadata only",
+    detail:
+      "pg-meta tables/columns/policies, injection-neutralized; row data and query results never leave.",
+    status: "ok",
   },
   {
-    label: "If sign-off lands",
-    detail: "One env var and a Studio restart.",
+    label: "Propose-only",
+    detail:
+      "Proposed SQL lands in the editor; Run keeps the classify → confirm-write path. Nothing auto-executes.",
+    status: "ok",
+  },
+  {
+    label: "Stock Studio assistant stays off",
+    detail: "No OPENAI_API_KEY anywhere — the no-BAA decision stands.",
     status: "info",
   },
 ];
@@ -200,8 +209,8 @@ export default async function CloudFeaturesPage() {
         </Section>
 
         <Section
-          eyebrow="Deliberate skip"
-          title="AI Assistant — skipped pending sign-off"
+          eyebrow="Equivalent"
+          title="AI Assistant — our equivalent is live"
         >
           <RefList items={ASSISTANT_ROWS} />
         </Section>

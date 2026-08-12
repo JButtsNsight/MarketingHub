@@ -1504,11 +1504,11 @@ so the engagement-suite migration does NOT need a re-apply):
 ```
 aws ssm start-session --target <supabase-instance-id> --region us-east-1
 # on the host, with both files present:
-sudo docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 \
+sudo docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
   < 2026-08-11-monday-writeback.sql
-sudo docker exec -i supabase-db psql -U postgres -v ON_ERROR_STOP=1 \
+sudo docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 \
   < 2026-08-11-recipient-timezones.sql
-sudo docker exec -i supabase-db psql -U postgres \
+sudo docker exec supabase-db psql -U supabase_admin -d postgres \
   -c "select pg_notify('pgrst','reload schema');"
 ```
 
@@ -1549,3 +1549,47 @@ emptying the field drops the consumer to its honest idle-warn state. Sync
 is idempotent (a row re-writes only while its current outcome differs from
 the synced snapshot), so a later re-activation simply catches up — nothing
 to reconcile.
+
+## 16. Console SQL assistant — W7 AI-assistant equivalent (2026-08-11)
+
+The `/sql` editor gains an assistant rail panel: the equivalent of Studio's
+AI Assistant that Wave 7 recorded as skipped-pending-sign-off, built on the
+**headless-claude gateway** (direct Anthropic, BAA-confirmed) instead of
+OpenAI. Stock Studio's assistant stays unconfigured (no `OPENAI_API_KEY`
+anywhere — that decision stands); `/admin/cloud` and the feature catalog
+record the flip.
+
+**No new infra.** The assistant reads §14.2's gateway config EXACTLY —
+same `HEADLESS_CLAUDE_URL` / `HEADLESS_CLAUDE_API_KEY` /
+`HEADLESS_CLAUDE_MODEL` on the app task-def, same
+`marketinghub/headless-claude` secret, same per-client key. If §14.3 steps
+2–3 have run, the assistant is on; there is nothing to provision, stage,
+or deploy for this feature beyond the round-2 image.
+
+Semantics (§14.4's rules apply; the assistant adds its own):
+
+- **Env unset/blank** ⇒ the panel renders one honest degraded line and
+  makes ZERO gateway calls — never an error state.
+- **Never executes SQL.** It proposes a statement into the editor; the
+  user's Run keeps the existing classify → 409 → confirm-write → audit
+  path. Nothing in the assistant touches `/pg/query`.
+- **Egress = schema METADATA only**: pg-meta tables/columns/policies for
+  the editor schemas. Row data and query results never reach the gateway
+  (a new egress decision, explicitly out of scope). Every DB-derived
+  string is injection-neutralized via the shared W8R helpers
+  (`web/src/lib/gateway/hardening.ts`) and framed as untrusted.
+- **Task namespace `mh-sqlast-<uuid>`** — fresh id per submission, never
+  reused; the answer relay regex-rejects anything else (same non-oracle
+  rule as §14's `mh-intel-*` on the shared ClaudeCloud key).
+- **Client owns the deadline** (§14.4: the gateway has NO failed state) —
+  the browser polls and gives up at 90 s; completed results persist
+  ~90 days, so re-asking is safe. Gateway errors surface as generic 502s;
+  key/URL/response bodies never reach the browser.
+- **Cost bounds**: prompt hard-capped (150 K chars / 200 KB JSON-encoded
+  bytes, trailing schema blocks dropped app-schema-last), `max_tokens`
+  1500, own per-process token bucket — same discipline as §14.5.
+
+Rollback: same lever as §14.6 — unset the two gateway vars and the panel
+degrades to its honest one-liner. Note the config is SHARED: pulling it
+also drops intel search to keyword-only. There are no schema or data
+changes to unwind (the assistant persists nothing).

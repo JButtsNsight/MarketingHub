@@ -21,8 +21,8 @@ const AMY = {
   groups: ["marketing", "marketinghub-admins"],
 };
 
-// The five cloud-only features this panel must declare N/A — plus the one
-// deliberate skip (AI Assistant), asserted separately below.
+// The five cloud-only features this panel must declare N/A — plus the AI
+// Assistant (our live equivalent since 2026-08-11), asserted separately below.
 const CLOUD_ONLY_FEATURES = [
   "Branching",
   "Read replicas",
@@ -74,17 +74,32 @@ describe("admin/cloud/page.tsx (server component)", () => {
     ).toBeInTheDocument();
   });
 
-  test("AI Assistant is declared skipped pending sign-off, not cloud-only", async () => {
+  test("AI Assistant declares our live equivalent, not the stock Studio one", async () => {
     render(await CloudFeaturesPage());
 
     expect(screen.getByRole("cell", { name: "AI Assistant" })).toBeInTheDocument();
     expect(
-      screen.getByRole("cell", { name: "skipped pending sign-off" }),
+      screen.getByRole("cell", { name: "our equivalent live — /sql" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Skipped pending sign-off")).toBeInTheDocument();
-    // The honest reason: compliance decision (no BAA), not a technical gap.
     expect(
-      screen.getByText(/No BAA covers OpenAI — a compliance decision, not a technical gap/),
+      screen.getByRole("heading", { name: "AI Assistant — our equivalent is live" }),
+    ).toBeInTheDocument();
+    // The W7 skip is FLIPPED — no stale skipped-pending-sign-off copy anywhere.
+    expect(screen.queryByText(/skipped pending sign-off/i)).not.toBeInTheDocument();
+    // Honest scope: our equivalent, not stock Studio's assistant.
+    expect(
+      screen.getByText(
+        /headless-claude gateway \(direct Anthropic, BAA\) — not stock Studio's assistant/,
+      ),
+    ).toBeInTheDocument();
+    // The non-negotiables stay on the record: metadata-only egress, propose-only.
+    expect(
+      screen.getByText(/row data and query results never leave/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Nothing auto-executes/)).toBeInTheDocument();
+    // Stock Studio's assistant stays off — the no-BAA decision stands.
+    expect(
+      screen.getByText(/No OPENAI_API_KEY anywhere — the no-BAA decision stands/),
     ).toBeInTheDocument();
     // And honest self-hosted availability (BYO key), never "cloud-only".
     expect(
