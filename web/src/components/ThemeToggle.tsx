@@ -4,53 +4,47 @@ import { useEffect, useState } from "react";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { Surface } from "./Surface";
 
-type Segment<T extends string> = { value: T; label: string };
-
-const THEME_SEGMENTS: Segment<Theme>[] = [
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-];
-
-function Segmented<T extends string>({
-  ariaLabel,
-  segments,
-  value,
-  onSelect,
-}: {
-  ariaLabel: string;
-  segments: Segment<T>[];
-  value: T;
-  onSelect: (v: T) => void;
-}) {
+function SunIcon() {
   return (
-    <Surface
-      as="div"
-      role="group"
-      aria-label={ariaLabel}
-      className="seg"
-      elevated={false}
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
     >
-      {segments.map((s) => {
-        const active = s.value === value;
-        return (
-          <button
-            key={s.value}
-            type="button"
-            className={active ? "seg-btn on" : "seg-btn"}
-            aria-pressed={active}
-            onClick={() => onSelect(s.value)}
-          >
-            {s.label}
-          </button>
-        );
-      })}
-    </Surface>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
   );
 }
 
 /**
- * The global Light/Dark control. This sets the app-wide theme (§2.4 of the
- * spec) — every surface-bearing element honors the choice.
+ * The global theme control (§2.4 of the spec) — a single sun/moon icon
+ * button that flips light ⇄ dark. The icon shows the mode a click switches
+ * TO: a moon in light mode, a sun in dark mode.
  */
 export function ThemeToggle() {
   const [theme, setThemeState] = useState<Theme>("light");
@@ -59,17 +53,24 @@ export function ThemeToggle() {
     setThemeState(getTheme());
   }, []);
 
+  const next: Theme = theme === "dark" ? "light" : "dark";
+
   return (
     <div className="theme-toggle">
-      <Segmented
-        ariaLabel="Theme"
-        segments={THEME_SEGMENTS}
-        value={theme}
-        onSelect={(v) => {
-          setTheme(v);
-          setThemeState(v);
-        }}
-      />
+      <Surface as="div" className="seg" elevated={false}>
+        <button
+          type="button"
+          className="seg-btn"
+          aria-label={`Switch to ${next} theme`}
+          title={`Switch to ${next} theme`}
+          onClick={() => {
+            setTheme(next);
+            setThemeState(next);
+          }}
+        >
+          {theme === "dark" ? <SunIcon /> : <MoonIcon />}
+        </button>
+      </Surface>
     </div>
   );
 }

@@ -50,14 +50,15 @@ describe("AppShell", () => {
     expect(link).toHaveAttribute("href", "/campaigns");
   });
 
-  it("renders the light/dark theme toggle without the retired skin toggle", () => {
+  it("renders the sun/moon theme toggle without the retired skin toggle", () => {
     render(
       <AppShell>
         <p>body</p>
       </AppShell>,
     );
-    expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /switch to dark theme/i }),
+    ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
   });
 

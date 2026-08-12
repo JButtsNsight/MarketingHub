@@ -9,15 +9,19 @@ beforeEach(() => {
 });
 
 describe("ThemeToggle", () => {
-  it("renders the Light/Dark segmented control and nothing else", () => {
+  it("renders a single sun/moon icon toggle and nothing else", () => {
     render(<ThemeToggle />);
-    expect(screen.getByRole("button", { name: /light/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /dark/i })).toBeInTheDocument();
-    // Only two themes; the novelty "Supabase" option was folded into Dark.
+    // Light is the default, so the button offers the switch TO dark.
+    expect(
+      screen.getByRole("button", { name: /switch to dark theme/i }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole("button")).toHaveLength(1);
+    // The old segmented Light/Dark labels are gone.
+    expect(screen.queryByText(/^light$/i)).toBeNull();
+    expect(screen.queryByText(/^dark$/i)).toBeNull();
+    // Retired options stay retired.
     expect(screen.queryByRole("button", { name: /supabase/i })).toBeNull();
-    // The glass/flat skin toggle is gone — the app is flat-only.
-    expect(screen.queryByRole("button", { name: /glass/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /flat/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /glass|flat/i })).toBeNull();
   });
 
   it("built from the .surface primitive so it honors the surface tokens", () => {
@@ -25,25 +29,29 @@ describe("ThemeToggle", () => {
     expect(container.querySelectorAll(".surface").length).toBeGreaterThan(0);
   });
 
-  it("clicking Dark sets data-theme=dark on <html>", async () => {
+  it("clicking flips to dark: sets data-theme, persists, and offers the way back", async () => {
     const user = userEvent.setup();
     render(<ThemeToggle />);
-    await user.click(screen.getByRole("button", { name: /dark/i }));
+    await user.click(
+      screen.getByRole("button", { name: /switch to dark theme/i }),
+    );
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(localStorage.getItem("mh-theme")).toBe("dark");
+    expect(
+      screen.getByRole("button", { name: /switch to light theme/i }),
+    ).toBeInTheDocument();
   });
 
-  it("marks the active option with aria-pressed", async () => {
+  it("clicking twice round-trips back to light", async () => {
     const user = userEvent.setup();
     render(<ThemeToggle />);
-    await user.click(screen.getByRole("button", { name: /dark/i }));
-    expect(screen.getByRole("button", { name: /dark/i })).toHaveAttribute(
-      "aria-pressed",
-      "true",
+    await user.click(
+      screen.getByRole("button", { name: /switch to dark theme/i }),
     );
-    expect(screen.getByRole("button", { name: /light/i })).toHaveAttribute(
-      "aria-pressed",
-      "false",
+    await user.click(
+      screen.getByRole("button", { name: /switch to light theme/i }),
     );
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("mh-theme")).toBe("light");
   });
 });
