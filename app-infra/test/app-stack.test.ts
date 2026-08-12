@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { App } from 'aws-cdk-lib';
 import { Template, Match } from 'aws-cdk-lib/assertions';
 import { AppStack } from '../lib/app-stack';
@@ -113,6 +116,38 @@ test('Google SAML IdP wired to the metadata URL from context', () => {
       MetadataURL: 'https://accounts.google.com/o/saml2/idp?idpid=C00n27oyt&metadata=true',
     }),
   });
+});
+
+test('Google SAML IdP accepts a downloaded metadata XML file instead of a URL', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'saml-metadata-'));
+  const xmlPath = join(dir, 'google-idp-metadata.xml');
+  const xml = '<md:EntityDescriptor entityID="https://accounts.google.com/o/saml2?idpid=C00n27oyt"/>';
+  writeFileSync(xmlPath, xml);
+  const context = { ...CONTEXT, googleSamlMetadataFilePath: xmlPath } as Record<string, string>;
+  delete context.googleSamlMetadataUrl;
+  const app = new App({ context });
+  const template = Template.fromStack(new AppStack(app, 'App', { env }));
+  template.hasResourceProperties('AWS::Cognito::UserPoolIdentityProvider', {
+    ProviderType: 'SAML',
+    ProviderName: 'GoogleSAML',
+    ProviderDetails: Match.objectLike({ MetadataFile: xml }),
+  });
+  const idps = template.findResources('AWS::Cognito::UserPoolIdentityProvider');
+  for (const idp of Object.values(idps) as any[]) {
+    expect(idp.Properties.ProviderDetails.MetadataURL).toBeUndefined();
+  }
+});
+
+test('exactly one of SAML metadata URL / file is required (production)', () => {
+  const neither = { ...CONTEXT } as Record<string, string>;
+  delete neither.googleSamlMetadataUrl;
+  expect(
+    () => new AppStack(new App({ context: neither }), 'AppNeither', { env }),
+  ).toThrow(/exactly ONE/);
+  const both = { ...CONTEXT, googleSamlMetadataFilePath: '/tmp/whatever.xml' };
+  expect(
+    () => new AppStack(new App({ context: both }), 'AppBoth', { env }),
+  ).toThrow(/exactly ONE/);
 });
 
 test('both an admin and a marketing Cognito group exist', () => {

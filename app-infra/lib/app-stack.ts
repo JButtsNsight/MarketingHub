@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { Stack, StackProps, RemovalPolicy, Duration } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -695,7 +696,20 @@ export class AppStack extends Stack {
     const appHostname = req('appHostname');
     const hostedZoneId = req('hostedZoneId');
     const hostedZoneName = req('hostedZoneName');
-    const googleSamlMetadataUrl = req('googleSamlMetadataUrl');
+    // Google Workspace publishes NO fetchable IdP-metadata URL (the Admin
+    // console only offers a download of the metadata XML), so the IdP accepts
+    // EITHER a metadata URL OR a path to that downloaded XML — exactly one.
+    const googleSamlMetadataUrl = this.node.tryGetContext('googleSamlMetadataUrl') as
+      | string
+      | undefined;
+    const googleSamlMetadataFilePath = this.node.tryGetContext('googleSamlMetadataFilePath') as
+      | string
+      | undefined;
+    if (!googleSamlMetadataUrl === !googleSamlMetadataFilePath) {
+      throw new Error(
+        'AppStack: exactly ONE of context "googleSamlMetadataUrl" / "googleSamlMetadataFilePath" is required',
+      );
+    }
     const adminGroup = req('adminGroup');
     const marketingGroup = req('marketingGroup');
     const cognitoDomainPrefix = req('cognitoDomainPrefix');
@@ -734,7 +748,9 @@ export class AppStack extends Stack {
       providerName: samlProviderName,
       providerType: 'SAML',
       providerDetails: {
-        MetadataURL: googleSamlMetadataUrl,
+        ...(googleSamlMetadataUrl
+          ? { MetadataURL: googleSamlMetadataUrl }
+          : { MetadataFile: readFileSync(googleSamlMetadataFilePath as string, 'utf8') }),
         IDPSignout: 'true',
       },
       attributeMapping: {
