@@ -1,6 +1,11 @@
 import "server-only";
 
-import { decodeProtectedHeader, importSPKI, jwtVerify } from "jose";
+import {
+  createRemoteJWKSet,
+  decodeProtectedHeader,
+  importSPKI,
+  jwtVerify,
+} from "jose";
 
 import { ADMIN_GROUP } from "./authGroups";
 
@@ -10,7 +15,9 @@ import { ADMIN_GROUP } from "./authGroups";
  * The app is ONLY reachable through the ALB, whose HTTPS:443 listener default
  * action is `authenticate-cognito` (Google Workspace SAML). On every
  * authenticated request the ALB injects `x-amzn-oidc-data` — a JWS (ES256)
- * whose payload carries the Cognito claims (email, name, `cognito:groups`).
+ * whose payload carries the Cognito userinfo claims (email, name) — and
+ * `x-amzn-oidc-accesstoken`, the raw Cognito access token, which is the only
+ * header that carries `cognito:groups` in production (userinfo omits it).
  *
  * We VERIFY that token's signature before trusting any claim. AWS signs it with
  * an EC key whose public half is published (PEM) at
@@ -27,6 +34,7 @@ import { ADMIN_GROUP } from "./authGroups";
  */
 
 const OIDC_DATA_HEADER = "x-amzn-oidc-data";
+const OIDC_ACCESS_TOKEN_HEADER = "x-amzn-oidc-accesstoken";
 
 export interface AppUser {
   email: string;
@@ -105,6 +113,69 @@ function previewPersona(headers: HeaderSource): string | null {
 /** Imported (verified) EC public key, keyed by the ALB `kid`. */
 type PublicKey = Awaited<ReturnType<typeof importSPKI>>;
 const keyCache = new Map<string, PublicKey>();
+
+/**
+ * Cognito-pool JWKS for verifying `x-amzn-oidc-accesstoken` (lazy, cached per
+ * issuer — jose handles key rollover + caching internally).
+ */
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+function cognitoJwks(issuer: string): ReturnType<typeof createRemoteJWKSet> {
+  let jwks = jwksCache.get(issuer);
+  if (!jwks) {
+    jwks = createRemoteJWKSet(new URL(`${issuer}/.well-known/jwks.json`));
+    jwksCache.set(issuer, jwks);
+  }
+  return jwks;
+}
+
+/**
+ * Group claims via the ALB's SECOND header: `x-amzn-oidc-accesstoken`, the raw
+ * Cognito ACCESS token.
+ *
+ * The identity header (`x-amzn-oidc-data`) carries claims from Cognito's
+ * userinfo endpoint, which NEVER includes `cognito:groups` — a documented
+ * ALB+Cognito limitation that only manifests behind the real front door
+ * (preview shim and e2e both fabricate groups into the identity header, which
+ * is why every gate passed until production). The access token DOES carry the
+ * groups, so when the identity header yields none we verify the access token
+ * against the pool's JWKS (RS256 signature, `iss`, `exp`, `token_use=access`,
+ * `client_id`) and read `cognito:groups` from it.
+ *
+ * Fail-closed: any missing env, absent header, or failed check returns [] —
+ * never a throw (the user stays authenticated, just group-less, exactly as if
+ * the pool granted nothing).
+ */
+async function groupsFromAccessToken(
+  headers: HeaderSource,
+): Promise<string[]> {
+  const poolId = process.env.COGNITO_USER_POOL_ID;
+  if (!poolId) return []; // preview/e2e: groups already arrive in the identity header
+  const raw = readHeader(headers, OIDC_ACCESS_TOKEN_HEADER);
+  if (!raw) return [];
+
+  const issuer = `https://cognito-idp.${albRegion()}.amazonaws.com/${poolId}`;
+  try {
+    const { payload } = await jwtVerify(raw, cognitoJwks(issuer), {
+      algorithms: ["RS256"],
+      issuer,
+    });
+    if (payload.token_use !== "access") return [];
+    const expectedClient = process.env.COGNITO_CLIENT_ID;
+    if (expectedClient && payload.client_id !== expectedClient) return [];
+    return parseGroups(payload["cognito:groups"]);
+  } catch (err) {
+    // Log loud: with a real front door this is the difference between working
+    // and silently group-less RBAC.
+    console.warn(
+      JSON.stringify({
+        msg: "x-amzn-oidc-accesstoken verification failed — user treated as group-less",
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    );
+    return [];
+  }
+}
 
 /** The AWS region whose ALB public-key endpoint to query. */
 function albRegion(): string {
@@ -210,7 +281,15 @@ export async function getUser(headers: HeaderSource): Promise<AppUser | null> {
     (typeof claims.given_name === "string" && claims.given_name) ||
     email;
 
-  return { email, name, groups: parseGroups(claims["cognito:groups"]) };
+  // Groups: identity-header claim when present (preview/e2e path), else the
+  // verified Cognito access token (the ONLY place groups exist in production —
+  // see groupsFromAccessToken).
+  let groups = parseGroups(claims["cognito:groups"]);
+  if (groups.length === 0) {
+    groups = await groupsFromAccessToken(headers);
+  }
+
+  return { email, name, groups };
 }
 
 /**

@@ -862,6 +862,11 @@ export class AppStack extends Stack {
     appContainer.addEnvironment('ALB_ARN', this.alb.loadBalancerArn);
     // The app's /logout route redirects here after expiring the ALB session cookie.
     appContainer.addEnvironment('COGNITO_LOGOUT_URL', cognitoLogoutUrl);
+    // REQUIRED for authz: `x-amzn-oidc-data` carries userinfo claims, which
+    // NEVER include `cognito:groups` — the app reads groups from the verified
+    // `x-amzn-oidc-accesstoken` (pool JWKS + issuer + token_use + client id).
+    appContainer.addEnvironment('COGNITO_USER_POOL_ID', userPool.userPoolId);
+    appContainer.addEnvironment('COGNITO_CLIENT_ID', userPoolClient.userPoolClientId);
 
     // HTTPS:443 — DEFAULT action authenticates the WHOLE app via Cognito, then
     // forwards. Modern TLS only (RECOMMENDED_TLS).

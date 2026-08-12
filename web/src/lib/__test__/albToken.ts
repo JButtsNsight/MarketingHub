@@ -82,3 +82,88 @@ export function setAlbEnv(): void {
 export function clearAlbEnv(): void {
   delete process.env.ALB_ARN;
 }
+
+// ---------------------------------------------------------------------------
+// Cognito ACCESS-token scaffolding (`x-amzn-oidc-accesstoken`): in production
+// `cognito:groups` arrives ONLY in the access token (userinfo omits it), so
+// tests mint real RS256 tokens and serve the matching JWKS from the pool URL.
+// ---------------------------------------------------------------------------
+
+export const TEST_POOL_ID = "us-east-1_TESTPOOL";
+export const TEST_CLIENT_ID = "testclientid1234567890";
+export const TEST_ISSUER = `https://cognito-idp.us-east-1.amazonaws.com/${TEST_POOL_ID}`;
+const TEST_JWKS_KID = "cognito-test-kid";
+
+let rsPrivateKey: SigningKey | undefined;
+let jwksJson: string | undefined;
+
+/** Generate (once per test file) the RS256 keypair + JWKS for access tokens. */
+export async function initCognitoKeys(): Promise<void> {
+  if (rsPrivateKey && jwksJson) return;
+  const { generateKeyPair, exportJWK } = await import("jose");
+  const { privateKey: pk, publicKey } = await generateKeyPair("RS256", {
+    extractable: true,
+  });
+  rsPrivateKey = pk;
+  const jwk = await exportJWK(publicKey);
+  jwksJson = JSON.stringify({
+    keys: [{ ...jwk, kid: TEST_JWKS_KID, alg: "RS256", use: "sig" }],
+  });
+}
+
+export interface AccessTokenOptions {
+  issuer?: string;
+  tokenUse?: string;
+  clientId?: string;
+  /** Absolute `exp` in epoch-seconds; defaults to one hour ahead. */
+  exp?: number;
+}
+
+/** Mint an RS256 access token shaped like ALB `x-amzn-oidc-accesstoken`. */
+export async function signAccessToken(
+  claims: Record<string, unknown>,
+  opts: AccessTokenOptions = {},
+): Promise<string> {
+  if (!rsPrivateKey) throw new Error("initCognitoKeys() must be awaited first");
+  const { SignJWT: Sign } = await import("jose");
+  return new Sign({
+    token_use: opts.tokenUse ?? "access",
+    client_id: opts.clientId ?? TEST_CLIENT_ID,
+    ...claims,
+  })
+    .setProtectedHeader({ alg: "RS256", kid: TEST_JWKS_KID })
+    .setIssuer(opts.issuer ?? TEST_ISSUER)
+    .setExpirationTime(opts.exp ?? Math.floor(Date.now() / 1000) + 3600)
+    .sign(rsPrivateKey);
+}
+
+/**
+ * Stub global `fetch` to serve BOTH auth endpoints: the pool JWKS for
+ * `.well-known/jwks.json` URLs, the ALB public-key PEM for everything else.
+ */
+export function installAuthFetch(): ReturnType<typeof vi.fn> {
+  const mock = vi.fn(async (url: unknown) => {
+    if (String(url).includes("/.well-known/jwks.json")) {
+      if (!jwksJson) throw new Error("initCognitoKeys() must be awaited first");
+      return new Response(jwksJson, {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    return new Response(albPublicPem(), { status: 200 });
+  });
+  vi.stubGlobal("fetch", mock);
+  return mock;
+}
+
+/** Set the Cognito pool/client env consumed by the access-token group path. */
+export function setCognitoEnv(): void {
+  process.env.COGNITO_USER_POOL_ID = TEST_POOL_ID;
+  process.env.COGNITO_CLIENT_ID = TEST_CLIENT_ID;
+}
+
+/** Clear the Cognito env (the preview/e2e profile — access token ignored). */
+export function clearCognitoEnv(): void {
+  delete process.env.COGNITO_USER_POOL_ID;
+  delete process.env.COGNITO_CLIENT_ID;
+}

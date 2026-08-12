@@ -15,9 +15,14 @@ import { ADMIN_GROUP, isAdmin, MARKETING_GROUP } from "./authGroups";
 import {
   albPublicPem,
   clearAlbEnv,
+  clearCognitoEnv,
   initAlbKeys,
+  initCognitoKeys,
   installAlbKeyFetch,
+  installAuthFetch,
   setAlbEnv,
+  setCognitoEnv,
+  signAccessToken,
   signAlbToken,
   TEST_ALB_ARN,
 } from "./__test__/albToken";
@@ -427,5 +432,127 @@ describe("requireAdminUser (admin page gate)", () => {
     nextMocks.cookieValue = "mh-preview-persona=member";
     expect(await requireAdminUser()).toEqual({ ok: false });
     expect(nextMocks.redirect).not.toHaveBeenCalled();
+  });
+});
+
+describe("production groups via x-amzn-oidc-accesstoken", () => {
+  beforeAll(async () => {
+    await initAlbKeys();
+    await initCognitoKeys();
+  });
+
+  beforeEach(() => {
+    installAuthFetch();
+    setAlbEnv();
+    setCognitoEnv();
+  });
+
+  afterEach(() => {
+    clearCognitoEnv();
+  });
+
+  async function prodHeaders(
+    identityClaims: Record<string, unknown>,
+    accessToken?: string,
+  ): Promise<Headers> {
+    const h = headersWith(await signAlbToken(identityClaims));
+    if (accessToken) h.set("x-amzn-oidc-accesstoken", accessToken);
+    return h;
+  }
+
+  it("keeps identity-header groups when present (preview/e2e path untouched)", async () => {
+    const h = await prodHeaders(
+      { email: "a@b.com", "cognito:groups": ["marketing"] },
+      await signAccessToken({ "cognito:groups": ["other"] }),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual(["marketing"]);
+  });
+
+  it("reads groups from the verified access token when userinfo has none", async () => {
+    const h = await prodHeaders(
+      { email: "jbutts@nsightcare.com" }, // real front door: NO groups in userinfo
+      await signAccessToken({
+        "cognito:groups": [MARKETING_GROUP, ADMIN_GROUP],
+      }),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([MARKETING_GROUP, ADMIN_GROUP]);
+  });
+
+  it("requireUser admits an admin whose groups arrive only via access token", async () => {
+    const h = await prodHeaders(
+      { email: "jbutts@nsightcare.com" },
+      await signAccessToken({
+        "cognito:groups": [MARKETING_GROUP, ADMIN_GROUP],
+      }),
+    );
+    await expect(requireUser(h, ADMIN_GROUP)).resolves.toMatchObject({
+      email: "jbutts@nsightcare.com",
+    });
+  });
+
+  it("rejects an ID token masquerading as an access token (token_use)", async () => {
+    const h = await prodHeaders(
+      { email: "a@b.com" },
+      await signAccessToken(
+        { "cognito:groups": [ADMIN_GROUP] },
+        { tokenUse: "id" },
+      ),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
+  });
+
+  it("rejects a token for a different client id", async () => {
+    const h = await prodHeaders(
+      { email: "a@b.com" },
+      await signAccessToken(
+        { "cognito:groups": [ADMIN_GROUP] },
+        { clientId: "someone-elses-client" },
+      ),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
+  });
+
+  it("rejects a token from a different issuer", async () => {
+    const h = await prodHeaders(
+      { email: "a@b.com" },
+      await signAccessToken(
+        { "cognito:groups": [ADMIN_GROUP] },
+        { issuer: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_EVIL" },
+      ),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
+  });
+
+  it("rejects an expired access token", async () => {
+    const h = await prodHeaders(
+      { email: "a@b.com" },
+      await signAccessToken(
+        { "cognito:groups": [ADMIN_GROUP] },
+        { exp: Math.floor(Date.now() / 1000) - 60 },
+      ),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
+  });
+
+  it("stays group-less without COGNITO_USER_POOL_ID (preview/e2e profile)", async () => {
+    clearCognitoEnv();
+    const h = await prodHeaders(
+      { email: "a@b.com" },
+      await signAccessToken({ "cognito:groups": [ADMIN_GROUP] }),
+    );
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
+  });
+
+  it("stays group-less when the access-token header is absent", async () => {
+    const h = await prodHeaders({ email: "a@b.com" });
+    const user = await getUser(h);
+    expect(user?.groups).toEqual([]);
   });
 });
