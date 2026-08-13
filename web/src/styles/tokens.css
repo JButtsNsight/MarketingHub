@@ -4,9 +4,9 @@
  * One axis on <html>: data-theme=light|dark. Surfaces are always flat.
  * Every color / surface value is a token. No freehand hex.
  * BOTH themes carry the NSight design language: LIGHT is "Dawn" (warm sand),
- * DARK is "Dusk" re-anchored on the brand navy (nsightcare.com's #132E3F —
- * replaced the Supabase-styled dark, then the spec's petrol chrome, per
- * product direction 2026-08-13; accent/status stay spec-Dusk).
+ * DARK is "Dusk" on an inky navy field (picked by eye against nsightcare.com
+ * 2026-08-13, variant B of the side-by-side — replaced the Supabase-styled
+ * dark, then the spec's petrol chrome, which read too green/teal).
  * Type is unified across BOTH themes (per product direction, 2026-08): Geist
  * Sans for UI and display — the display face differentiates via weight/size,
  * never family — with IBM Plex Mono for data.
@@ -84,13 +84,13 @@
     0 4px 12px rgba(21, 48, 63, 0.12);
 }
 
-/* ── DARK — "Dusk", navy-anchored. The page field IS the brand navy
- * (nsightcare.com's #132E3F), panels one lift above it, with the site's
- * pale blue #ECF4F9 as the ink family and the governed brand teal #64A6A7
- * as the accent — the site's own navy/teal pairing. Status set and eggshell
- * knockout keep the spec's Dusk values (§1); the spec's petrol surfaces
- * read too green next to the site — re-anchored per product direction
- * 2026-08-13. ── */
+/* ── DARK — "Dusk", inky navy. A deep blue-black field (hue pushed past the
+ * brand navy toward true blue — the cyan cast of #132E3F-family chrome read
+ * "teal" at page scale), panels one lift above it, the site's pale blue
+ * #ECF4F9 as the ink family, and the governed brand teal #64A6A7 as the one
+ * living accent. Status set and eggshell knockout keep the spec's Dusk
+ * values (§1). Chosen by eye from a side-by-side (product direction
+ * 2026-08-13); --navy stays the brand identity hex. ── */
 html[data-theme="dark"] {
   /* Type — same unified stack as light (the spec's Marcellus/DM Sans predate
    * the 2026-08 Geist unification). Bindings kept explicit here so DARK never
@@ -99,9 +99,9 @@ html[data-theme="dark"] {
   --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
 
-  --canvas: #132E3F; /* app background — the nsightcare.com navy, exact */
-  --paper: #18384C; /* panels / surfaces — one lift above the navy */
-  --wash: #0C1F2C; /* deepest (sidebar / rails) */
+  --canvas: #081422; /* app background — inky navy */
+  --paper: #0C1D30; /* panels / surfaces — one lift above the field */
+  --wash: #050C16; /* deepest (sidebar / rails) */
   --hair: rgba(255, 255, 255, 0.12);
 
   --ink: #ECF4F9; /* the site's pale blue wash */
@@ -141,10 +141,10 @@ html[data-theme="dark"] {
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
 
-  /* Floating surfaces — 4.5% white composited onto --canvas #132E3F (the
+  /* Floating surfaces — 4.5% white composited onto --canvas #081422 (the
    * identical visual tint, fully opaque); float shadow deep enough to read
-   * on navy. */
-  --surface-solid: #1E3748;
+   * on the inky field. */
+  --surface-solid: #131F2C;
   --shadow-float:
     0 1px 2px rgba(0, 0, 0, 0.5),
     0 4px 12px rgba(0, 0, 0, 0.45);

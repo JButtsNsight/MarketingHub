@@ -64,8 +64,8 @@ describe("tokens.css", () => {
 
   it("DARK is 'Dusk' anchored on the brand navy — nsightcare.com chrome + governed teal accent", () => {
     const dark = ruleBody('html[data-theme="dark"]');
-    expect(dark).toContain("--canvas:#132E3F"); // page field = the nsightcare.com navy, exact
-    expect(dark).toContain("--paper:#18384C"); // panels — one lift above the navy
+    expect(dark).toContain("--canvas:#081422"); // page field — inky navy (variant B, 2026-08-13)
+    expect(dark).toContain("--paper:#0C1D30"); // panels — one lift above the field
     expect(dark).toContain("--teal:#64A6A7"); // the governed brand teal, same value as light
     expect(dark).toContain("--accent:var(--teal)"); // dark binds the living accent like light does
     expect(dark).toContain('--fd:"GeistSans"'); // type stays unified (whitespace collapsed by `flat`)
