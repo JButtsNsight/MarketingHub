@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
 import { formatSlot, zoneAbbr } from "@/lib/sms/schedule";
 import {
@@ -38,7 +39,11 @@ const COLUMNS: Column<CampaignRow>[] = [
   {
     key: "name",
     header: "name",
-    render: (c) => <Link href={`/campaigns/${c.id}`}>{c.name}</Link>,
+    render: (c) => (
+      <Guide id="campaigns.list.open-campaign">
+        <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
+      </Guide>
+    ),
   },
   {
     key: "status",
@@ -129,39 +134,53 @@ export default async function CampaignsPage() {
     <>
       <PageHeader
         eyebrow="Build"
-        title="SMS Campaigns"
+        title={
+          <Guide id="campaigns.list.title">
+            <span>SMS Campaigns</span>
+          </Guide>
+        }
         count={`${campaigns.length} total`}
         actions={
           <>
-            <Link className="type-chip" href="/campaigns/schedule">
-              Schedule
-            </Link>
-            <Link className="type-chip" href="/campaigns/lists">
-              Contact lists
-            </Link>
-            <Link className="btn-primary" href="/campaigns/new">
-              New campaign
-            </Link>
+            <Guide id="campaigns.list.schedule-link">
+              <Link className="type-chip" href="/campaigns/schedule">
+                Schedule
+              </Link>
+            </Guide>
+            <Guide id="campaigns.list.lists-link">
+              <Link className="type-chip" href="/campaigns/lists">
+                Contact lists
+              </Link>
+            </Guide>
+            <Guide id="campaigns.list.new-link">
+              <Link className="btn-primary" href="/campaigns/new">
+                New campaign
+              </Link>
+            </Guide>
           </>
         }
       />
 
       {campaigns.length > 0 ? (
-        <DataTable
-          columns={COLUMNS}
-          rows={rows}
-          getRowKey={(c) => c.id}
-          empty="No campaigns."
-        />
+        <Guide id="campaigns.list.table">
+          <DataTable
+            columns={COLUMNS}
+            rows={rows}
+            getRowKey={(c) => c.id}
+            empty="No campaigns."
+          />
+        </Guide>
       ) : (
         <Surface className="empty-state" glint>
           <h2>No campaigns yet</h2>
           <p>
             Pick a text template, a contact list, and a weekday send slot.
           </p>
-          <Link className="btn-primary" href="/campaigns/new">
-            New campaign
-          </Link>
+          <Guide id="campaigns.list.new-link">
+            <Link className="btn-primary" href="/campaigns/new">
+              New campaign
+            </Link>
+          </Guide>
         </Surface>
       )}
     </>

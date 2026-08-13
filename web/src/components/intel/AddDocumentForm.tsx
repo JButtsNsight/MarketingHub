@@ -8,6 +8,7 @@
 
 import { useState } from "react";
 import { DocumentCreateInputSchema } from "@/lib/intel/schema";
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "../Surface";
 import { createDocument, IntelApiError } from "./api";
 
@@ -49,56 +50,66 @@ export function AddDocumentForm({
 
   if (!open) {
     return (
-      <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
-        Paste a document
-      </button>
+      <Guide id="intel.add-doc.open">
+        <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
+          Paste a document
+        </button>
+      </Guide>
     );
   }
 
   return (
     <Surface className="reschedule-pop" elevated={false}>
-      <div className="field">
-        <label htmlFor="doc-title">Title</label>
-        <input
-          id="doc-title"
-          type="text"
-          className="surface control"
-          placeholder="e.g. Pricing page — August snapshot"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="doc-content">Content (paste text)</label>
-        <textarea
-          id="doc-content"
-          className="surface control"
-          rows={10}
-          placeholder="Paste the competitor content here — headings and paragraphs are preserved for chunking."
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-        />
-      </div>
+      <Guide id="intel.add-doc.title">
+        <div className="field">
+          <label htmlFor="doc-title">Title</label>
+          <input
+            id="doc-title"
+            type="text"
+            className="surface control"
+            placeholder="e.g. Pricing page — August snapshot"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
+      </Guide>
+      <Guide id="intel.add-doc.content">
+        <div className="field">
+          <label htmlFor="doc-content">Content (paste text)</label>
+          <textarea
+            id="doc-content"
+            className="surface control"
+            rows={10}
+            placeholder="Paste the competitor content here — headings and paragraphs are preserved for chunking."
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+          />
+        </div>
+      </Guide>
       {error ? (
         <p className="form-error" role="alert">
           {error}
         </p>
       ) : null}
       <div className="form-actions">
-        <button
-          type="button"
-          className="type-chip"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
-          disabled={busy}
-        >
-          Cancel
-        </button>
-        <button type="button" className="btn-primary" onClick={onSubmit} disabled={busy}>
-          {busy ? "Adding…" : "Add document"}
-        </button>
+        <Guide id="intel.add-doc.cancel">
+          <button
+            type="button"
+            className="type-chip"
+            onClick={() => {
+              setOpen(false);
+              setError(null);
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+        </Guide>
+        <Guide id="intel.add-doc.submit">
+          <button type="button" className="btn-primary" onClick={onSubmit} disabled={busy}>
+            {busy ? "Adding…" : "Add document"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

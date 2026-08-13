@@ -4,16 +4,19 @@
 // provisioned, a degraded API/error state (with retry), and a loading shim.
 // These render the truth — never placeholder data.
 
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "../Surface";
 import type { IntelApiError } from "./api";
 import { NOT_PROVISIONED_BODY, NOT_PROVISIONED_TITLE } from "./status";
 
 export function NotProvisionedState() {
   return (
-    <Surface className="empty-state" glint>
-      <h2>{NOT_PROVISIONED_TITLE}</h2>
-      <p>{NOT_PROVISIONED_BODY}</p>
-    </Surface>
+    <Guide id="intel.states.not-provisioned">
+      <Surface className="empty-state" glint>
+        <h2>{NOT_PROVISIONED_TITLE}</h2>
+        <p>{NOT_PROVISIONED_BODY}</p>
+      </Surface>
+    </Guide>
   );
 }
 
@@ -25,17 +28,21 @@ export function DegradedState({
   onRetry?: () => void;
 }) {
   return (
-    <Surface className="empty-state" glint>
-      <h2>Something went wrong</h2>
-      <p className="form-error" role="alert">
-        {error.message}
-      </p>
-      {onRetry ? (
-        <button type="button" className="type-chip" onClick={onRetry}>
-          Retry
-        </button>
-      ) : null}
-    </Surface>
+    <Guide id="intel.states.degraded">
+      <Surface className="empty-state" glint>
+        <h2>Something went wrong</h2>
+        <p className="form-error" role="alert">
+          {error.message}
+        </p>
+        {onRetry ? (
+          <Guide id="intel.states.retry">
+            <button type="button" className="type-chip" onClick={onRetry}>
+              Retry
+            </button>
+          </Guide>
+        ) : null}
+      </Surface>
+    </Guide>
   );
 }
 

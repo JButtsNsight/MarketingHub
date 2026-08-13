@@ -3,6 +3,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { Badge } from "../ui/Badge";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Visual Schema Designer canvas (Studio Database → Schema Visualizer parity).
@@ -245,32 +246,33 @@ export function SchemaDesignerCanvas({
         {schemas.map((schema) => {
           const on = !hidden.has(schema);
           return (
-            <button
-              key={schema}
-              type="button"
-              className="type-chip"
-              aria-pressed={on}
-              data-schema={schema}
-              onClick={() => toggleSchema(schema)}
-              style={{
-                opacity: on ? 1 : 0.45,
-                borderColor: toneFor.get(schema),
-              }}
-            >
-              <span
-                aria-hidden
+            <Guide key={schema} id="database.designer.schema-chip">
+              <button
+                type="button"
+                className="type-chip"
+                aria-pressed={on}
+                data-schema={schema}
+                onClick={() => toggleSchema(schema)}
                 style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: 2,
-                  marginRight: 6,
-                  background: toneFor.get(schema),
-                  verticalAlign: "middle",
+                  opacity: on ? 1 : 0.45,
+                  borderColor: toneFor.get(schema),
                 }}
-              />
-              {schema}
-            </button>
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    display: "inline-block",
+                    width: 8,
+                    height: 8,
+                    borderRadius: 2,
+                    marginRight: 6,
+                    background: toneFor.get(schema),
+                    verticalAlign: "middle",
+                  }}
+                />
+                {schema}
+              </button>
+            </Guide>
           );
         })}
         <span style={{ flex: 1 }} />
@@ -278,18 +280,21 @@ export function SchemaDesignerCanvas({
           {visibleTables.length} tables · {visibleEdges.length} relationships
         </span>
         {selected ? (
-          <button type="button" className="type-chip" onClick={() => setSelected(null)}>
-            Clear focus
-          </button>
+          <Guide id="database.designer.clear-focus">
+            <button type="button" className="type-chip" onClick={() => setSelected(null)}>
+              Clear focus
+            </button>
+          </Guide>
         ) : null}
       </div>
 
-      <Surface className="dtable-wrap" glint>
-        <div
-          role="group"
-          aria-label="Schema diagram"
-          style={{ overflow: "auto", maxHeight: "72vh" }}
-        >
+      <Guide id="database.designer.canvas">
+        <Surface className="dtable-wrap" glint>
+          <div
+            role="group"
+            aria-label="Schema diagram"
+            style={{ overflow: "auto", maxHeight: "72vh" }}
+          >
           <div
             style={{
               position: "relative",
@@ -367,17 +372,17 @@ export function SchemaDesignerCanvas({
                 transition: "opacity 120ms ease, box-shadow 120ms ease",
               };
               return (
-                <button
-                  key={key}
-                  type="button"
-                  className="designer-card"
-                  data-table-key={key}
-                  data-dim={dim ? "true" : "false"}
-                  aria-pressed={focused}
-                  title={`${key} · ${t.rowsEstimate.toLocaleString()} rows`}
-                  onClick={() => setSelected((cur) => (cur === key ? null : key))}
-                  style={cardStyle}
-                >
+                <Guide key={key} id="database.designer.table-card">
+                  <button
+                    type="button"
+                    className="designer-card"
+                    data-table-key={key}
+                    data-dim={dim ? "true" : "false"}
+                    aria-pressed={focused}
+                    title={`${key} · ${t.rowsEstimate.toLocaleString()} rows`}
+                    onClick={() => setSelected((cur) => (cur === key ? null : key))}
+                    style={cardStyle}
+                  >
                   <div
                     style={{
                       display: "flex",
@@ -455,12 +460,14 @@ export function SchemaDesignerCanvas({
                       </div>
                     ))}
                   </div>
-                </button>
+                  </button>
+                </Guide>
               );
             })}
           </div>
-        </div>
-      </Surface>
+          </div>
+        </Surface>
+      </Guide>
     </div>
   );
 }

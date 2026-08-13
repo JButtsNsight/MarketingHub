@@ -7,6 +7,7 @@ import { StatCard } from "../ui/StatCard";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import type {
   AdvisorLevel,
   AdvisorLint,
@@ -140,28 +141,31 @@ export function AdvisorsClient({ initialReport }: { initialReport: AdvisorReport
     <div className="stack">
       <div className="dgrid-toolbar" role="search">
         {LEVEL_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            type="button"
-            className={level === f.value ? "type-chip on" : "type-chip"}
-            aria-pressed={level === f.value}
-            disabled={loading}
-            onClick={() => {
-              if (f.value !== level) void run(f.value);
-            }}
-          >
-            {f.label}
-          </button>
+          <Guide key={f.value} id="auth-admin.advisors.level-filter">
+            <button
+              type="button"
+              className={level === f.value ? "type-chip on" : "type-chip"}
+              aria-pressed={level === f.value}
+              disabled={loading}
+              onClick={() => {
+                if (f.value !== level) void run(f.value);
+              }}
+            >
+              {f.label}
+            </button>
+          </Guide>
         ))}
         <span className="spacer" />
-        <button
-          type="button"
-          className="type-chip"
-          disabled={loading}
-          onClick={() => void run(level)}
-        >
-          {loading ? "Running…" : "Re-run advisors"}
-        </button>
+        <Guide id="auth-admin.advisors.rerun">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={loading}
+            onClick={() => void run(level)}
+          >
+            {loading ? "Running…" : "Re-run advisors"}
+          </button>
+        </Guide>
       </div>
 
       {error ? (
@@ -170,13 +174,15 @@ export function AdvisorsClient({ initialReport }: { initialReport: AdvisorReport
         </p>
       ) : null}
 
-      <div className="stat-grid">
-        {/* No accent: any error/warning lint is an attention state, and the
-            design language reserves --fail for a StatCard-forbidden red. */}
-        <StatCard label="Errors" value={counts.error} />
-        <StatCard label="Warnings" value={counts.warn} />
-        <StatCard label="Info" value={counts.info} accent="var(--data-2)" />
-      </div>
+      <Guide id="auth-admin.advisors.severity-stats">
+        <div className="stat-grid">
+          {/* No accent: any error/warning lint is an attention state, and the
+              design language reserves --fail for a StatCard-forbidden red. */}
+          <StatCard label="Errors" value={counts.error} />
+          <StatCard label="Warnings" value={counts.warn} />
+          <StatCard label="Info" value={counts.info} accent="var(--data-2)" />
+        </div>
+      </Guide>
 
       {report.failed.length > 0 ? (
         <Section
@@ -184,12 +190,14 @@ export function AdvisorsClient({ initialReport }: { initialReport: AdvisorReport
           title="Checks that could not run"
           description="These lints failed to execute; the rest still ran."
         >
-          <DataTable
-            columns={FAILED_COLUMNS}
-            rows={report.failed}
-            getRowKey={(f) => f.id}
-            empty="None."
-          />
+          <Guide id="auth-admin.advisors.failed-table">
+            <DataTable
+              columns={FAILED_COLUMNS}
+              rows={report.failed}
+              getRowKey={(f) => f.id}
+              empty="None."
+            />
+          </Guide>
         </Section>
       ) : null}
 
@@ -208,23 +216,27 @@ export function AdvisorsClient({ initialReport }: { initialReport: AdvisorReport
                 </Badge>
               }
             >
-              <DataTable
-                columns={FINDING_COLUMNS}
-                rows={lints}
-                getRowKey={(l) => `${l.id}:${l.schema ?? ""}.${l.object ?? ""}`}
-                empty="No findings."
-              />
+              <Guide id="auth-admin.advisors.findings-table">
+                <DataTable
+                  columns={FINDING_COLUMNS}
+                  rows={lints}
+                  getRowKey={(l) => `${l.id}:${l.schema ?? ""}.${l.object ?? ""}`}
+                  empty="No findings."
+                />
+              </Guide>
             </Section>
           );
         })
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>No advisories</h2>
-          <p>
-            Every advisor check passed for the scanned schemas
-            {level === "all" ? "" : ` at the ${level} level`}.
-          </p>
-        </Surface>
+        <Guide id="auth-admin.advisors.clear">
+          <Surface className="empty-state" glint>
+            <h2>No advisories</h2>
+            <p>
+              Every advisor check passed for the scanned schemas
+              {level === "all" ? "" : ` at the ${level} level`}.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </div>
   );

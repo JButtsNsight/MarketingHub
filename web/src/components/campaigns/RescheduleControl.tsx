@@ -10,6 +10,7 @@ import {
   SEND_TIMEZONES,
 } from "@/lib/sms/schedule";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Reschedule control for a campaign that has not started sending. Collapsed
@@ -89,9 +90,11 @@ export function RescheduleControl({
 
   if (!open) {
     return (
-      <button type="button" className="type-chip" onClick={() => setOpen(true)}>
-        Reschedule
-      </button>
+      <Guide id="campaigns.detail.reschedule">
+        <button type="button" className="type-chip" onClick={() => setOpen(true)}>
+          Reschedule
+        </button>
+      </Guide>
     );
   }
 
@@ -99,44 +102,50 @@ export function RescheduleControl({
     <Surface className="reschedule-pop" elevated={false}>
       <div className="field">
         <label htmlFor="resch-date">Send date (Mon–Fri)</label>
-        <input
-          id="resch-date"
-          type="date"
-          className="surface control"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-        />
+        <Guide id="campaigns.detail.reschedule-date">
+          <input
+            id="resch-date"
+            type="date"
+            className="surface control"
+            value={date}
+            onChange={(e) => setDate(e.target.value)}
+          />
+        </Guide>
       </div>
       <div className="field">
         <label htmlFor="resch-zone">Fallback zone</label>
-        <select
-          id="resch-zone"
-          className="surface control"
-          value={zone}
-          onChange={(e) => setZone(e.target.value)}
-        >
-          {SEND_TIMEZONES.map((z) => (
-            <option key={z.id} value={z.id}>
-              {z.label}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.detail.reschedule-zone">
+          <select
+            id="resch-zone"
+            className="surface control"
+            value={zone}
+            onChange={(e) => setZone(e.target.value)}
+          >
+            {SEND_TIMEZONES.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+        </Guide>
         <p className="note">Fallback for contacts without a timezone.</p>
       </div>
       <div className="field">
         <label htmlFor="resch-time">Send time</label>
-        <select
-          id="resch-time"
-          className="surface control"
-          value={time}
-          onChange={(e) => setTime(e.target.value)}
-        >
-          {SEND_SLOTS.map((s) => (
-            <option key={s} value={s}>
-              {formatSlot(s)}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.detail.reschedule-time">
+          <select
+            id="resch-time"
+            className="surface control"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+          >
+            {SEND_SLOTS.map((s) => (
+              <option key={s} value={s}>
+                {formatSlot(s)}
+              </option>
+            ))}
+          </select>
+        </Guide>
       </div>
       {error ? (
         <p className="form-error" role="alert">
@@ -144,25 +153,29 @@ export function RescheduleControl({
         </p>
       ) : null}
       <div className="form-actions">
-        <button
-          type="button"
-          className="type-chip"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
-          disabled={busy}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={onSave}
-          disabled={busy}
-        >
-          {busy ? "Saving…" : "Save schedule"}
-        </button>
+        <Guide id="campaigns.detail.reschedule-cancel">
+          <button
+            type="button"
+            className="type-chip"
+            onClick={() => {
+              setOpen(false);
+              setError(null);
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+        </Guide>
+        <Guide id="campaigns.detail.reschedule-save">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onSave}
+            disabled={busy}
+          >
+            {busy ? "Saving…" : "Save schedule"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { CodeBlock } from "../ui/CodeBlock";
 import { DataTable, type Column } from "../ui/DataTable";
@@ -192,21 +193,25 @@ export function FunctionsClient({
       align: "right",
       render: (f) => (
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            className={openOid === f.oid ? "type-chip on" : "type-chip"}
-            onClick={() => showDefinition(f)}
-          >
-            {openOid === f.oid ? "Hide" : "Definition"}
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            disabled={dropping === f.oid}
-            onClick={() => requestDrop(f)}
-          >
-            {dropping === f.oid ? "Dropping…" : "Drop"}
-          </button>
+          <Guide id="db-platform.functions.definition">
+            <button
+              type="button"
+              className={openOid === f.oid ? "type-chip on" : "type-chip"}
+              onClick={() => showDefinition(f)}
+            >
+              {openOid === f.oid ? "Hide" : "Definition"}
+            </button>
+          </Guide>
+          <Guide id="db-platform.functions.drop">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={dropping === f.oid}
+              onClick={() => requestDrop(f)}
+            >
+              {dropping === f.oid ? "Dropping…" : "Drop"}
+            </button>
+          </Guide>
         </div>
       ),
     },
@@ -240,13 +245,15 @@ export function FunctionsClient({
         title="Functions"
         description="Live routines from pg_proc across marketinghub, public, and pgmq_public."
       >
-        <DataTable
-          columns={columns}
-          rows={functions}
-          getRowKey={(f) => String(f.oid)}
-          empty="No functions in these schemas."
-          paginate={50}
-        />
+        <Guide id="db-platform.functions.table">
+          <DataTable
+            columns={columns}
+            rows={functions}
+            getRowKey={(f) => String(f.oid)}
+            empty="No functions in these schemas."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       {openFn ? (

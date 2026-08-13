@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Section } from "../ui/Section";
@@ -167,19 +168,23 @@ export function PublicationsClient({
       width: "170px",
       render: (p) => (
         <span className="campaign-actions">
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => {
-              setCreating(false);
-              setEditingName(editingName === p.name ? null : p.name);
-            }}
-          >
-            {editingName === p.name ? "Close" : "Edit"}
-          </button>
-          <button type="button" className="type-chip" onClick={() => void drop(p)}>
-            Drop
-          </button>
+          <Guide id="db-platform.publications.edit">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => {
+                setCreating(false);
+                setEditingName(editingName === p.name ? null : p.name);
+              }}
+            >
+              {editingName === p.name ? "Close" : "Edit"}
+            </button>
+          </Guide>
+          <Guide id="db-platform.publications.drop">
+            <button type="button" className="type-chip" onClick={() => void drop(p)}>
+              Drop
+            </button>
+          </Guide>
         </span>
       ),
     },
@@ -236,25 +241,29 @@ export function PublicationsClient({
         eyebrow="Logical replication"
         title="Publications"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setEditingName(null);
-              setCreating((v) => !v);
-            }}
-          >
-            {creating ? "Close" : "New publication"}
-          </button>
+          <Guide id="db-platform.publications.create">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setEditingName(null);
+                setCreating((v) => !v);
+              }}
+            >
+              {creating ? "Close" : "New publication"}
+            </button>
+          </Guide>
         }
       >
-        <DataTable
-          columns={columns}
-          rows={publications}
-          getRowKey={(p) => p.name}
-          empty="No publications."
-          paginate={50}
-        />
+        <Guide id="db-platform.publications.table">
+          <DataTable
+            columns={columns}
+            rows={publications}
+            getRowKey={(p) => p.name}
+            empty="No publications."
+            paginate={50}
+          />
+        </Guide>
       </Section>
       {dialog}
     </div>
@@ -379,69 +388,77 @@ function PublicationForm({
         {mode === "create" ? "New publication" : `Alter ${name}`}
       </span>
 
-      <div className="field">
-        <label htmlFor="pub-name">name</label>
-        <input
-          id="pub-name"
-          className="surface control mono"
-          type="text"
-          placeholder="publication_name"
-          value={name}
-          disabled={mode === "alter"}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
+      <Guide id="db-platform.publications.name-field">
+        <div className="field">
+          <label htmlFor="pub-name">name</label>
+          <input
+            id="pub-name"
+            className="surface control mono"
+            type="text"
+            placeholder="publication_name"
+            value={name}
+            disabled={mode === "alter"}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+      </Guide>
 
       {mode === "create" ? (
-        <label className="teditor-null">
-          <input
-            type="checkbox"
-            checked={allTables}
-            onChange={(e) => setAllTables(e.target.checked)}
-          />{" "}
-          Publish ALL tables in the database
-        </label>
+        <Guide id="db-platform.publications.all-tables">
+          <label className="teditor-null">
+            <input
+              type="checkbox"
+              checked={allTables}
+              onChange={(e) => setAllTables(e.target.checked)}
+            />{" "}
+            Publish ALL tables in the database
+          </label>
+        </Guide>
       ) : null}
 
-      <div className="field">
-        <label>published operations</label>
-        <div className="campaign-actions">
-          {PUBLISH_OPS.map((o) => (
-            <label key={o.key} className="teditor-null">
-              <input
-                type="checkbox"
-                checked={publish[o.key]}
-                onChange={(e) => setPublish({ ...publish, [o.key]: e.target.checked })}
-              />{" "}
-              {o.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {tablePickerVisible ? (
+      <Guide id="db-platform.publications.operations">
         <div className="field">
-          <label>member tables</label>
-          <div className="pub-table-picker">
-            {availableTables.length === 0 ? (
-              <span className="teditor-test">No tables available.</span>
-            ) : (
-              availableTables.map((t) => {
-                const key = `${t.schema}.${t.name}`;
-                return (
-                  <label key={key} className="teditor-null">
-                    <input
-                      type="checkbox"
-                      checked={selected.has(key)}
-                      onChange={() => toggleTable(key)}
-                    />{" "}
-                    <span className="mono">{key}</span>
-                  </label>
-                );
-              })
-            )}
+          <label>published operations</label>
+          <div className="campaign-actions">
+            {PUBLISH_OPS.map((o) => (
+              <label key={o.key} className="teditor-null">
+                <input
+                  type="checkbox"
+                  checked={publish[o.key]}
+                  onChange={(e) => setPublish({ ...publish, [o.key]: e.target.checked })}
+                />{" "}
+                {o.label}
+              </label>
+            ))}
           </div>
         </div>
+      </Guide>
+
+      {tablePickerVisible ? (
+        <Guide id="db-platform.publications.member-tables">
+          <div className="field">
+            <label>member tables</label>
+            <div className="pub-table-picker">
+              {availableTables.length === 0 ? (
+                <span className="teditor-test">No tables available.</span>
+              ) : (
+                availableTables.map((t) => {
+                  const key = `${t.schema}.${t.name}`;
+                  return (
+                    <label key={key} className="teditor-null">
+                      <input
+                        type="checkbox"
+                        checked={selected.has(key)}
+                        onChange={() => toggleTable(key)}
+                      />{" "}
+                      <span className="mono">{key}</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </Guide>
       ) : null}
 
       {error ? (
@@ -459,9 +476,11 @@ function PublicationForm({
         >
           Cancel
         </button>
-        <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
-          {mode === "create" ? "Create publication" : "Save changes"}
-        </button>
+        <Guide id="db-platform.publications.submit">
+          <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
+            {mode === "create" ? "Create publication" : "Save changes"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

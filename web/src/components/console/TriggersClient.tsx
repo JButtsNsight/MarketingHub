@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { Guide } from "@/components/guide/Guide";
 import { DataTable, type Column } from "../ui/DataTable";
 import { StatCard } from "../ui/StatCard";
 import { Section } from "../ui/Section";
@@ -170,22 +171,26 @@ export function TriggersClient({
           const busy = busyKey === keyOf(t);
           return (
             <span className="dgrid-toolbar" style={{ justifyContent: "flex-end", padding: 0 }}>
-              <button
-                type="button"
-                className="type-chip"
-                disabled={busy}
-                onClick={() => void toggle(t)}
-              >
-                {t.enabled ? "Disable" : "Enable"}
-              </button>
-              <button
-                type="button"
-                className="type-chip"
-                disabled={busy}
-                onClick={() => void drop(t)}
-              >
-                Drop
-              </button>
+              <Guide id="db-platform.triggers.toggle">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={busy}
+                  onClick={() => void toggle(t)}
+                >
+                  {t.enabled ? "Disable" : "Enable"}
+                </button>
+              </Guide>
+              <Guide id="db-platform.triggers.drop">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={busy}
+                  onClick={() => void drop(t)}
+                >
+                  Drop
+                </button>
+              </Guide>
             </span>
           );
         },
@@ -210,18 +215,22 @@ export function TriggersClient({
         eyebrow="Triggers"
         title="Table triggers"
         actions={
-          <button type="button" className="type-chip" onClick={() => void refresh()}>
-            Refresh
-          </button>
+          <Guide id="db-platform.common.refresh">
+            <button type="button" className="type-chip" onClick={() => void refresh()}>
+              Refresh
+            </button>
+          </Guide>
         }
       >
-        <DataTable
-          columns={columns}
-          rows={triggers}
-          getRowKey={keyOf}
-          empty="No triggers in the exposed schemas."
-          paginate={50}
-        />
+        <Guide id="db-platform.triggers.table">
+          <DataTable
+            columns={columns}
+            rows={triggers}
+            getRowKey={keyOf}
+            empty="No triggers in the exposed schemas."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       {dialog}

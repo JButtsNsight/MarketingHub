@@ -7,6 +7,7 @@ import { CodeBlock } from "../ui/CodeBlock";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Section } from "../ui/Section";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Edge Functions console (Studio parity, Wave 5).
@@ -188,20 +189,24 @@ export function FunctionsConsole({
       align: "right",
       render: (f) => (
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-          <button
-            type="button"
-            className={openName === f.name ? "type-chip on" : "type-chip"}
-            onClick={() => setOpenName(openName === f.name ? null : f.name)}
-          >
-            {openName === f.name ? "Hide source" : "Source"}
-          </button>
-          <button
-            type="button"
-            className={target === f.name ? "type-chip on" : "type-chip"}
-            onClick={() => setTarget(f.name)}
-          >
-            Invoke
-          </button>
+          <Guide id="integrations.functions.source">
+            <button
+              type="button"
+              className={openName === f.name ? "type-chip on" : "type-chip"}
+              onClick={() => setOpenName(openName === f.name ? null : f.name)}
+            >
+              {openName === f.name ? "Hide source" : "Source"}
+            </button>
+          </Guide>
+          <Guide id="integrations.functions.pick-invoke">
+            <button
+              type="button"
+              className={target === f.name ? "type-chip on" : "type-chip"}
+              onClick={() => setTarget(f.name)}
+            >
+              Invoke
+            </button>
+          </Guide>
         </div>
       ),
     },
@@ -214,12 +219,14 @@ export function FunctionsConsole({
   return (
     <div className="stack">
       <Section eyebrow="Registry" title="Edge Functions">
-        <DataTable
-          columns={columns}
-          rows={functions}
-          getRowKey={(f) => f.name}
-          empty="No edge functions registered yet — the Wave-5 migration and the staged host fix script (seeding main / hello / embed) have not been applied."
-        />
+        <Guide id="integrations.functions.table">
+          <DataTable
+            columns={columns}
+            rows={functions}
+            getRowKey={(f) => f.name}
+            empty="No edge functions registered yet — the Wave-5 migration and the staged host fix script (seeding main / hello / embed) have not been applied."
+          />
+        </Guide>
       </Section>
 
       {openFn ? (
@@ -250,63 +257,71 @@ export function FunctionsConsole({
       >
         <div className="stack">
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="eyebrow">Function</span>
-              <select
-                value={target}
-                onChange={(e) => setTarget(e.target.value)}
-                disabled={functions.length === 0}
+            <Guide id="integrations.functions.target">
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="eyebrow">Function</span>
+                <select
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                  disabled={functions.length === 0}
+                >
+                  {functions.length === 0 ? (
+                    <option value="">No functions registered</option>
+                  ) : (
+                    functions.map((f) => (
+                      <option key={f.name} value={f.name}>
+                        {f.name}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </label>
+            </Guide>
+            <Guide id="integrations.functions.method">
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="eyebrow">Method</span>
+                <select
+                  value={method}
+                  onChange={(e) => {
+                    const next = e.target.value === "GET" ? "GET" : "POST";
+                    setMethod(next);
+                    if (next === "GET") setParseError(null);
+                  }}
+                >
+                  <option value="POST">POST</option>
+                  <option value="GET">GET</option>
+                </select>
+              </label>
+            </Guide>
+            <Guide id="integrations.functions.send-request">
+              <button
+                type="button"
+                className="type-chip"
+                onClick={send}
+                disabled={
+                  invoking ||
+                  !target ||
+                  (method === "POST" && parseError !== null)
+                }
               >
-                {functions.length === 0 ? (
-                  <option value="">No functions registered</option>
-                ) : (
-                  functions.map((f) => (
-                    <option key={f.name} value={f.name}>
-                      {f.name}
-                    </option>
-                  ))
-                )}
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="eyebrow">Method</span>
-              <select
-                value={method}
-                onChange={(e) => {
-                  const next = e.target.value === "GET" ? "GET" : "POST";
-                  setMethod(next);
-                  if (next === "GET") setParseError(null);
-                }}
-              >
-                <option value="POST">POST</option>
-                <option value="GET">GET</option>
-              </select>
-            </label>
-            <button
-              type="button"
-              className="type-chip"
-              onClick={send}
-              disabled={
-                invoking ||
-                !target ||
-                (method === "POST" && parseError !== null)
-              }
-            >
-              {invoking ? "Invoking…" : "Send request"}
-            </button>
+                {invoking ? "Invoking…" : "Send request"}
+              </button>
+            </Guide>
           </div>
 
           {method === "POST" ? (
-            <label style={{ display: "grid", gap: 4 }}>
-              <span className="eyebrow">JSON body</span>
-              <textarea
-                className="mono"
-                rows={6}
-                value={bodyText}
-                onChange={(e) => onBodyChange(e.target.value)}
-                spellCheck={false}
-              />
-            </label>
+            <Guide id="integrations.functions.body">
+              <label style={{ display: "grid", gap: 4 }}>
+                <span className="eyebrow">JSON body</span>
+                <textarea
+                  className="mono"
+                  rows={6}
+                  value={bodyText}
+                  onChange={(e) => onBodyChange(e.target.value)}
+                  spellCheck={false}
+                />
+              </label>
+            </Guide>
           ) : null}
 
           {parseError ? (
@@ -347,9 +362,11 @@ export function FunctionsConsole({
 
       <Section eyebrow="Logs" title="Logs">
         {/* Honest placeholder — no fake data, no dead controls. */}
-        <p className="teditor-test">
-          Function logs are edge-runtime container stdout — not surfaced here.
-        </p>
+        <Guide id="integrations.functions.logs-note">
+          <p className="teditor-test">
+            Function logs are edge-runtime container stdout — not surfaced here.
+          </p>
+        </Guide>
       </Section>
     </div>
   );

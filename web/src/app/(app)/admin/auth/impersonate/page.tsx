@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { AUTH_TABS } from "@/lib/console/tabs";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import { ImpersonateClient } from "./ImpersonateClient";
@@ -25,8 +26,12 @@ export default async function ImpersonatePage() {
 
   return (
     <>
-      <PageHeader title="User impersonation" />
-      <Tabs items={AUTH_TABS} />
+      <Guide id="auth-admin.impersonate.header">
+        <PageHeader title="User impersonation" />
+      </Guide>
+      <Guide id="auth-admin.auth.tabs">
+        <Tabs items={AUTH_TABS} />
+      </Guide>
       <ImpersonateClient />
     </>
   );

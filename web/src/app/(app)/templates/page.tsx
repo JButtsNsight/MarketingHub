@@ -7,6 +7,7 @@ import { SearchBar } from "@/components/templates/SearchBar";
 import { FilterChips } from "@/components/templates/FilterChips";
 import { TemplateGrid } from "@/components/templates/TemplateGrid";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 
 export const dynamic = "force-dynamic";
 
@@ -53,7 +54,9 @@ export default async function TemplatesPage({
   return (
     <section className="templates-page">
       <div className="page-head">
-        <h1>Templates</h1>
+        <Guide id="engagement.templates.heading">
+          <h1>Templates</h1>
+        </Guide>
         <div className="page-head-right">
           <span className="count mono">
             {templates.length}{" "}
@@ -63,9 +66,11 @@ export default async function TemplatesPage({
                 : "results"
               : "total"}
           </span>
-          <Link className="btn-primary" href="/templates/new">
-            Upload
-          </Link>
+          <Guide id="engagement.templates.upload">
+            <Link className="btn-primary" href="/templates/new">
+              Upload
+            </Link>
+          </Guide>
         </div>
       </div>
 
@@ -84,9 +89,11 @@ export default async function TemplatesPage({
               ? "No templates match the current search and filters — try clearing them."
               : "Upload your first campaign template to get started."}
           </p>
-          <Link className="btn-primary" href="/templates/new">
-            Upload a template
-          </Link>
+          <Guide id="engagement.templates.upload">
+            <Link className="btn-primary" href="/templates/new">
+              Upload a template
+            </Link>
+          </Guide>
         </Surface>
       )}
     </section>

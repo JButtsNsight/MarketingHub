@@ -8,6 +8,7 @@ import {
   type TemplateType,
 } from "@/lib/templates/schema";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /** Accepted file-drop extensions → content type stored with the upload. */
 const ACCEPTED = ".txt,.html,.eml";
@@ -119,118 +120,134 @@ export function UploadForm() {
 
   return (
     <Surface as="form" className="upload-form" glint onSubmit={onSubmit} noValidate>
-      <h1>Upload a template</h1>
+      <Guide id="engagement.upload.heading">
+        <h1>Upload a template</h1>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="tpl-name">Name</label>
-        <input
-          id="tpl-name"
-          className="surface control"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. Spring Promo 2026"
-        />
-      </div>
+      <Guide id="engagement.upload.name">
+        <div className="field">
+          <label htmlFor="tpl-name">Name</label>
+          <input
+            id="tpl-name"
+            className="surface control"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Spring Promo 2026"
+          />
+        </div>
+      </Guide>
 
       <div className="field-row">
-        <div className="field">
-          <label htmlFor="tpl-type">Type</label>
-          <select
-            id="tpl-type"
-            className="surface control"
-            value={type}
-            onChange={(e) => setType(e.target.value as TemplateType)}
-          >
-            {TEMPLATE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t === "text" ? "Text" : "Email"}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Guide id="engagement.upload.type">
+          <div className="field">
+            <label htmlFor="tpl-type">Type</label>
+            <select
+              id="tpl-type"
+              className="surface control"
+              value={type}
+              onChange={(e) => setType(e.target.value as TemplateType)}
+            >
+              {TEMPLATE_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {t === "text" ? "Text" : "Email"}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="tpl-category">Category</label>
-          <select
-            id="tpl-category"
-            className="surface control"
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-          >
-            {categoryOptions.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Guide id="engagement.upload.category">
+          <div className="field">
+            <label htmlFor="tpl-category">Category</label>
+            <select
+              id="tpl-category"
+              className="surface control"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+            >
+              {categoryOptions.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Guide>
       </div>
 
       {isEmail && (
-        <div className="field">
-          <label htmlFor="tpl-subject">Subject</label>
-          <input
-            id="tpl-subject"
-            className="surface control"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            placeholder="Email subject line"
-          />
-        </div>
+        <Guide id="engagement.upload.subject">
+          <div className="field">
+            <label htmlFor="tpl-subject">Subject</label>
+            <input
+              id="tpl-subject"
+              className="surface control"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              placeholder="Email subject line"
+            />
+          </div>
+        </Guide>
       )}
 
-      <div className="field">
-        <label htmlFor="tpl-tags">Tags</label>
-        <div className="tag-input surface control">
-          <ul className="tag-chips">
-            {tags.map((t) => (
-              <li key={t} className="tag-chip">
-                <span>{t}</span>
-                <button
-                  type="button"
-                  aria-label={`Remove tag ${t}`}
-                  onClick={() => removeTag(t)}
-                >
-                  ×
-                </button>
-              </li>
-            ))}
-          </ul>
-          <input
-            id="tpl-tags"
-            value={tagDraft}
-            onChange={(e) => setTagDraft(e.target.value)}
-            onKeyDown={onTagKeyDown}
-            onBlur={() => addTag(tagDraft)}
-            placeholder="Add a tag, press Enter"
+      <Guide id="engagement.upload.tags">
+        <div className="field">
+          <label htmlFor="tpl-tags">Tags</label>
+          <div className="tag-input surface control">
+            <ul className="tag-chips">
+              {tags.map((t) => (
+                <li key={t} className="tag-chip">
+                  <span>{t}</span>
+                  <button
+                    type="button"
+                    aria-label={`Remove tag ${t}`}
+                    onClick={() => removeTag(t)}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <input
+              id="tpl-tags"
+              value={tagDraft}
+              onChange={(e) => setTagDraft(e.target.value)}
+              onKeyDown={onTagKeyDown}
+              onBlur={() => addTag(tagDraft)}
+              placeholder="Add a tag, press Enter"
+            />
+          </div>
+        </div>
+      </Guide>
+
+      <Guide id="engagement.upload.body">
+        <div className="field">
+          <label htmlFor="tpl-body">Body</label>
+          <textarea
+            id="tpl-body"
+            className="surface control"
+            rows={10}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            placeholder="Paste template content, or drop a file below"
           />
         </div>
-      </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="tpl-body">Body</label>
-        <textarea
-          id="tpl-body"
-          className="surface control"
-          rows={10}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Paste template content, or drop a file below"
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="tpl-file">Or upload a file ({ACCEPTED})</label>
-        <input
-          ref={fileInputRef}
-          id="tpl-file"
-          type="file"
-          accept={ACCEPTED}
-          className="surface control"
-          onChange={(e) => onFile(e.target.files?.[0])}
-        />
-        {filename && <p className="field-note mono">Loaded: {filename}</p>}
-      </div>
+      <Guide id="engagement.upload.file">
+        <div className="field">
+          <label htmlFor="tpl-file">Or upload a file ({ACCEPTED})</label>
+          <input
+            ref={fileInputRef}
+            id="tpl-file"
+            type="file"
+            accept={ACCEPTED}
+            className="surface control"
+            onChange={(e) => onFile(e.target.files?.[0])}
+          />
+          {filename && <p className="field-note mono">Loaded: {filename}</p>}
+        </div>
+      </Guide>
 
       {error && (
         <p className="form-error" role="alert">
@@ -239,9 +256,11 @@ export function UploadForm() {
       )}
 
       <div className="form-actions">
-        <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? "Saving…" : "Save template"}
-        </button>
+        <Guide id="engagement.upload.save">
+          <button type="submit" className="btn-primary" disabled={submitting}>
+            {submitting ? "Saving…" : "Save template"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

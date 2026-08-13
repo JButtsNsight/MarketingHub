@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { Guide } from "@/components/guide/Guide";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Section } from "../ui/Section";
 import { StatCard } from "../ui/StatCard";
@@ -212,14 +213,16 @@ export function IndexesClient({
         ix.isPrimary ? (
           <span className="teditor-test">PK</span>
         ) : (
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => dropIndex(ix)}
-          >
-            Drop
-          </button>
+          <Guide id="db-platform.indexes.drop">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => dropIndex(ix)}
+            >
+              Drop
+            </button>
+          </Guide>
         ),
     },
   ];
@@ -241,16 +244,18 @@ export function IndexesClient({
         eyebrow="Database"
         title="Indexes"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setCreateOpen((v) => !v);
-              setError(null);
-            }}
-          >
-            {createOpen ? "Close" : "Create index"}
-          </button>
+          <Guide id="db-platform.indexes.create">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setCreateOpen((v) => !v);
+                setError(null);
+              }}
+            >
+              {createOpen ? "Close" : "Create index"}
+            </button>
+          </Guide>
         }
       >
         {createOpen ? (
@@ -274,29 +279,35 @@ export function IndexesClient({
         ) : null}
 
         <div className="dgrid-toolbar" role="search">
-          <input
-            className="surface control"
-            type="search"
-            aria-label="Filter indexes"
-            placeholder="Filter by index or table…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <Guide id="db-platform.indexes.filter">
+            <input
+              className="surface control"
+              type="search"
+              aria-label="Filter indexes"
+              placeholder="Filter by index or table…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </Guide>
           <span className="spacer" />
-          <button type="button" className="type-chip" onClick={refresh} disabled={busy}>
-            Refresh
-          </button>
+          <Guide id="db-platform.common.refresh">
+            <button type="button" className="type-chip" onClick={refresh} disabled={busy}>
+              Refresh
+            </button>
+          </Guide>
         </div>
 
         {/* `filtered` is memoized, so paging state survives unrelated re-renders
             and resets exactly when the query/data changes. */}
-        <DataTable
-          columns={columns}
-          rows={filtered}
-          getRowKey={(ix) => `${ix.schema}.${ix.table}.${ix.name}`}
-          empty="No indexes in the managed schemas."
-          paginate={50}
-        />
+        <Guide id="db-platform.indexes.table">
+          <DataTable
+            columns={columns}
+            rows={filtered}
+            getRowKey={(ix) => `${ix.schema}.${ix.table}.${ix.name}`}
+            empty="No indexes in the managed schemas."
+            paginate={50}
+          />
+        </Guide>
       </Section>
       {dialog}
     </div>
@@ -404,85 +415,99 @@ function CreateIndexPanel({
     <Surface className="teditor-insert" elevated={false}>
       <span className="eyebrow">New index</span>
       <div className="dgrid-toolbar">
-        <select
-          className="surface control"
-          aria-label="Table"
-          value={tableKey}
-          onChange={(e) => {
-            setTableKey(e.target.value);
-            setSelectedCols([]);
-          }}
-        >
-          {tables.map((t) => {
-            const key = `${t.schema}.${t.table}`;
-            return (
-              <option key={key} value={key}>
-                {key}
-              </option>
-            );
-          })}
-        </select>
-        <input
-          className="surface control mono"
-          type="text"
-          aria-label="Index name"
-          placeholder="index_name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-        <select
-          className="surface control"
-          aria-label="Index method"
-          value={method}
-          onChange={(e) => setMethod(e.target.value as IndexMethod)}
-        >
-          {INDEX_METHODS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-        <label className="teditor-null">
-          <input
-            type="checkbox"
-            checked={unique}
-            onChange={(e) => setUnique(e.target.checked)}
-          />{" "}
-          unique
-        </label>
-      </div>
-
-      <div className="dgrid-toolbar" role="group" aria-label="Columns">
-        {(selectedTable?.columns ?? []).map((col) => (
-          <button
-            key={col}
-            type="button"
-            className={selectedCols.includes(col) ? "type-chip on" : "type-chip"}
-            onClick={() => toggleColumn(col)}
+        <Guide id="db-platform.indexes.table-picker">
+          <select
+            className="surface control"
+            aria-label="Table"
+            value={tableKey}
+            onChange={(e) => {
+              setTableKey(e.target.value);
+              setSelectedCols([]);
+            }}
           >
-            {col}
-          </button>
-        ))}
+            {tables.map((t) => {
+              const key = `${t.schema}.${t.table}`;
+              return (
+                <option key={key} value={key}>
+                  {key}
+                </option>
+              );
+            })}
+          </select>
+        </Guide>
+        <Guide id="db-platform.indexes.name-field">
+          <input
+            className="surface control mono"
+            type="text"
+            aria-label="Index name"
+            placeholder="index_name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </Guide>
+        <Guide id="db-platform.indexes.method">
+          <select
+            className="surface control"
+            aria-label="Index method"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as IndexMethod)}
+          >
+            {INDEX_METHODS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </Guide>
+        <Guide id="db-platform.indexes.unique">
+          <label className="teditor-null">
+            <input
+              type="checkbox"
+              checked={unique}
+              onChange={(e) => setUnique(e.target.checked)}
+            />{" "}
+            unique
+          </label>
+        </Guide>
       </div>
 
-      <pre
-        className="mono"
-        style={{ whiteSpace: "pre-wrap", opacity: 0.8, margin: "0.4rem 0" }}
-      >
-        {previewDefinition({
-          schema: selectedTable?.schema ?? "",
-          table: selectedTable?.table ?? "",
-          name: name.trim(),
-          columns: selectedCols,
-          unique,
-          method,
-        })}
-      </pre>
+      <Guide id="db-platform.indexes.columns">
+        <div className="dgrid-toolbar" role="group" aria-label="Columns">
+          {(selectedTable?.columns ?? []).map((col) => (
+            <button
+              key={col}
+              type="button"
+              className={selectedCols.includes(col) ? "type-chip on" : "type-chip"}
+              onClick={() => toggleColumn(col)}
+            >
+              {col}
+            </button>
+          ))}
+        </div>
+      </Guide>
+
+      <Guide id="db-platform.indexes.preview">
+        <pre
+          className="mono"
+          style={{ whiteSpace: "pre-wrap", opacity: 0.8, margin: "0.4rem 0" }}
+        >
+          {previewDefinition({
+            schema: selectedTable?.schema ?? "",
+            table: selectedTable?.table ?? "",
+            name: name.trim(),
+            columns: selectedCols,
+            unique,
+            method,
+          })}
+        </pre>
+      </Guide>
 
       <div className="form-actions">
-        <button type="button" className="btn-primary" onClick={submit} disabled={busy || !canSubmit}>
-          Create index
-        </button>
+        <Guide id="db-platform.indexes.submit">
+          <button type="button" className="btn-primary" onClick={submit} disabled={busy || !canSubmit}>
+            Create index
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

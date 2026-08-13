@@ -9,6 +9,7 @@ import { StatCard } from "@/components/ui/StatCard";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 import { ListActions } from "@/components/campaigns/ListActions";
 
 // Reads request-time identity + live member rows; never prerender.
@@ -75,7 +76,11 @@ export default async function ContactListDetailPage({
     <>
       <PageHeader
         eyebrow="Contact list"
-        title={list.name}
+        title={
+          <Guide id="campaigns.list-detail.title">
+            <span>{list.name}</span>
+          </Guide>
+        }
         subtitle={
           <>
             <Badge
@@ -105,9 +110,11 @@ export default async function ContactListDetailPage({
         }
         actions={
           <>
-            <Link className="type-chip" href="/campaigns/lists">
-              All lists
-            </Link>
+            <Guide id="campaigns.list-detail.all-lists-link">
+              <Link className="type-chip" href="/campaigns/lists">
+                All lists
+              </Link>
+            </Guide>
             <ListActions listId={list.id} />
           </>
         }
@@ -116,35 +123,41 @@ export default async function ContactListDetailPage({
       <div className="stack">
         {list.source === "csv" ? (
           <>
-            <div className="stat-grid">
-              <StatCard
-                label="Contacts"
-                value={list.contact_count}
-                hint="usable numbers"
-                accent="var(--data-3)"
+            <Guide id="campaigns.list-detail.quality-cards">
+              <div className="stat-grid">
+                <StatCard
+                  label="Contacts"
+                  value={list.contact_count}
+                  hint="usable numbers"
+                  accent="var(--data-3)"
+                />
+                <StatCard label="Invalid" value={list.invalid_count} hint="unusable numbers" />
+                <StatCard
+                  label="Duplicates"
+                  value={list.duplicate_count}
+                  hint="first occurrence kept"
+                />
+              </div>
+            </Guide>
+            <Guide id="campaigns.list-detail.members-table">
+              <DataTable
+                columns={MEMBER_COLUMNS}
+                rows={members}
+                getRowKey={(m) => m.id}
+                empty="No rows in this list."
               />
-              <StatCard label="Invalid" value={list.invalid_count} hint="unusable numbers" />
-              <StatCard
-                label="Duplicates"
-                value={list.duplicate_count}
-                hint="first occurrence kept"
-              />
-            </div>
-            <DataTable
-              columns={MEMBER_COLUMNS}
-              rows={members}
-              getRowKey={(m) => m.id}
-              empty="No rows in this list."
-            />
+            </Guide>
           </>
         ) : (
-          <Surface className="empty-state" glint>
-            <h2>Live Monday membership</h2>
-            <p>
-              Recipients are fetched from the Monday board at campaign-creation
-              time.
-            </p>
-          </Surface>
+          <Guide id="campaigns.list-detail.live-monday">
+            <Surface className="empty-state" glint>
+              <h2>Live Monday membership</h2>
+              <p>
+                Recipients are fetched from the Monday board at campaign-creation
+                time.
+              </p>
+            </Surface>
+          </Guide>
         )}
       </div>
     </>

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useLiveTopic } from "@/lib/realtime/client";
 import { Badge } from "@/components/ui/Badge";
+import { Guide } from "@/components/guide/Guide";
 
 /** Coalesce a burst of change events into one refresh this long after the first. */
 export const REFRESH_DEBOUNCE_MS = 2_000;
@@ -59,12 +60,14 @@ export function LiveRefresher({
 
   if (status !== "live") return null;
   return (
-    <Badge
-      tone="var(--data-3)"
-      title="Realtime connected — this view refreshes itself"
-    >
-      Live
-    </Badge>
+    <Guide id="overview.live.badge">
+      <Badge
+        tone="var(--data-3)"
+        title="Realtime connected — this view refreshes itself"
+      >
+        Live
+      </Badge>
+    </Guide>
   );
 }
 

@@ -1,3 +1,4 @@
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
@@ -76,8 +77,12 @@ export default async function PublicationsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Publications" />
-      <Tabs items={DB_TABS} />
+      <Guide id="db-platform.publications.header">
+        <PageHeader eyebrow="Database" title="Publications" />
+      </Guide>
+      <Guide id="db-platform.common.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       {data ? (
         <PublicationsClient
@@ -85,13 +90,15 @@ export default async function PublicationsPage() {
           availableTables={data.availableTables}
         />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="db-platform.common.introspection-unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

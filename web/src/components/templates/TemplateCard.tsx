@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import type { Template } from "@/lib/templates/schema";
 import { Surface } from "../Surface";
 import { categoryColorVar } from "./categoryColor";
+import { Guide } from "@/components/guide/Guide";
 
 /** ISO timestamp → deterministic YYYY-MM-DD (mono, locale-independent). */
 function isoDate(ts: string): string {
@@ -19,9 +20,11 @@ export function TemplateCard({ template }: { template: Template }) {
 
   return (
     <Surface as="article" className="tpl-card" glint>
-      <Link className="tpl-card-link" href={`/templates/${template.id}`}>
-        <span className="tpl-name">{template.name}</span>
-      </Link>
+      <Guide id="engagement.templates.card">
+        <Link className="tpl-card-link" href={`/templates/${template.id}`}>
+          <span className="tpl-name">{template.name}</span>
+        </Link>
+      </Guide>
 
       <div className="tpl-meta">
         <span className="tpl-category chip" style={chipStyle}>

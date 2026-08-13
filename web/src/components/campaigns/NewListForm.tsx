@@ -9,6 +9,7 @@ import {
 } from "@/lib/contacts/csv";
 import { Surface } from "../Surface";
 import { Badge } from "../ui/Badge";
+import { Guide } from "@/components/guide/Guide";
 
 /** Shared "Monday is unconfigured" copy (matches the campaign form). */
 const MONDAY_UNCONFIGURED =
@@ -201,51 +202,61 @@ export function NewListForm() {
 
   return (
     <Surface as="form" className="upload-form" glint onSubmit={onSubmit} noValidate>
-      <h1>New contact list</h1>
+      <h1>
+        <Guide id="campaigns.lists-new.title">
+          <span>New contact list</span>
+        </Guide>
+      </h1>
 
       <div className="field">
         <span className="field-label">Source</span>
-        <Surface as="div" role="group" aria-label="List source" className="seg" elevated={false}>
-          <button
-            type="button"
-            className={mode === "csv" ? "seg-btn on" : "seg-btn"}
-            aria-pressed={mode === "csv"}
-            onClick={() => setMode("csv")}
-          >
-            Upload sheet
-          </button>
-          <button
-            type="button"
-            className={mode === "monday" ? "seg-btn on" : "seg-btn"}
-            aria-pressed={mode === "monday"}
-            onClick={() => setMode("monday")}
-          >
-            Link Monday board
-          </button>
-        </Surface>
+        <Guide id="campaigns.lists-new.source">
+          <Surface as="div" role="group" aria-label="List source" className="seg" elevated={false}>
+            <button
+              type="button"
+              className={mode === "csv" ? "seg-btn on" : "seg-btn"}
+              aria-pressed={mode === "csv"}
+              onClick={() => setMode("csv")}
+            >
+              Upload sheet
+            </button>
+            <button
+              type="button"
+              className={mode === "monday" ? "seg-btn on" : "seg-btn"}
+              aria-pressed={mode === "monday"}
+              onClick={() => setMode("monday")}
+            >
+              Link Monday board
+            </button>
+          </Surface>
+        </Guide>
       </div>
 
       <div className="field">
         <label htmlFor="list-name">List name</label>
-        <input
-          id="list-name"
-          className="surface control"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. August recall patients"
-        />
+        <Guide id="campaigns.lists-new.name">
+          <input
+            id="list-name"
+            className="surface control"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. August recall patients"
+          />
+        </Guide>
       </div>
 
       {mode === "csv" ? (
         <div className="field">
           <label htmlFor="list-file">Contacts file (.csv / .tsv)</label>
-          <input
-            id="list-file"
-            type="file"
-            accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
-            className="surface control"
-            onChange={(e) => onFile(e.target.files?.[0])}
-          />
+          <Guide id="campaigns.lists-new.file">
+            <input
+              id="list-file"
+              type="file"
+              accept=".csv,.tsv,.txt,text/csv,text/tab-separated-values,text/plain"
+              className="surface control"
+              onChange={(e) => onFile(e.target.files?.[0])}
+            />
+          </Guide>
           <p className="note">
             Needs a header row with a phone column ("phone", "mobile",
             "cell"…). A name column is used for {"{{name}}"} /{" "}
@@ -266,21 +277,25 @@ export function NewListForm() {
         <div className="field">
           <label htmlFor="list-board">Monday board</label>
           <div className="board-row">
-            <input
-              id="list-board"
-              className="surface control"
-              value={board}
-              onChange={(e) => setBoard(e.target.value)}
-              placeholder="Board id or pasted board URL"
-            />
-            <button
-              type="button"
-              className="type-chip"
-              onClick={onLoadBoard}
-              disabled={loadingBoard}
-            >
-              {loadingBoard ? "Loading…" : "Load board"}
-            </button>
+            <Guide id="campaigns.lists-new.board">
+              <input
+                id="list-board"
+                className="surface control"
+                value={board}
+                onChange={(e) => setBoard(e.target.value)}
+                placeholder="Board id or pasted board URL"
+              />
+            </Guide>
+            <Guide id="campaigns.lists-new.load-board">
+              <button
+                type="button"
+                className="type-chip"
+                onClick={onLoadBoard}
+                disabled={loadingBoard}
+              >
+                {loadingBoard ? "Loading…" : "Load board"}
+              </button>
+            </Guide>
           </div>
           {boardError ? (
             <p className="form-error" role="alert">
@@ -294,64 +309,70 @@ export function NewListForm() {
                 {preview.boardName}
               </p>
               <label htmlFor="list-phone-column">Phone column</label>
-              <select
-                id="list-phone-column"
-                className="surface control"
-                value={phoneColumnId}
-                onChange={(e) => setPhoneColumnId(e.target.value)}
-              >
-                {phoneColumnId === "" ? (
-                  <option value="">Choose a column…</option>
-                ) : null}
-                {[
-                  ...preview.phoneColumns,
-                  ...preview.columns.filter(
-                    (c) => !preview.phoneColumns.some((p) => p.id === c.id),
-                  ),
-                ].map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title} ({c.type})
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="list-timezone-column">
-                Timezone column · optional
-              </label>
-              <select
-                id="list-timezone-column"
-                className="surface control"
-                value={timezoneColumnId}
-                onChange={(e) => setTimezoneColumnId(e.target.value)}
-              >
-                <option value="">None — campaign zone</option>
-                {preview.columns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title} ({c.type})
-                  </option>
-                ))}
-              </select>
-              <label htmlFor="list-outcome-column">
-                Outcome column · optional · text columns only
-              </label>
-              <select
-                id="list-outcome-column"
-                className="surface control"
-                value={outcomeColumnId}
-                onChange={(e) => setOutcomeColumnId(e.target.value)}
-              >
-                <option value="">None — no write-back</option>
-                {/* Only writable text-like columns: the worker writes dated
-                    outcome strings via change_simple_column_value, which
-                    status/formula/mirror columns reject on every attempt
-                    (the API 400s a non-text pick for the same reason). */}
-                {preview.columns
-                  .filter((c) => c.type === "text" || c.type === "long_text")
-                  .map((c) => (
+              <Guide id="campaigns.lists-new.phone-column">
+                <select
+                  id="list-phone-column"
+                  className="surface control"
+                  value={phoneColumnId}
+                  onChange={(e) => setPhoneColumnId(e.target.value)}
+                >
+                  {phoneColumnId === "" ? (
+                    <option value="">Choose a column…</option>
+                  ) : null}
+                  {[
+                    ...preview.phoneColumns,
+                    ...preview.columns.filter(
+                      (c) => !preview.phoneColumns.some((p) => p.id === c.id),
+                    ),
+                  ].map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title} ({c.type})
                     </option>
                   ))}
-              </select>
+                </select>
+              </Guide>
+              <label htmlFor="list-timezone-column">
+                Timezone column · optional
+              </label>
+              <Guide id="campaigns.lists-new.timezone-column">
+                <select
+                  id="list-timezone-column"
+                  className="surface control"
+                  value={timezoneColumnId}
+                  onChange={(e) => setTimezoneColumnId(e.target.value)}
+                >
+                  <option value="">None — campaign zone</option>
+                  {preview.columns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.title} ({c.type})
+                    </option>
+                  ))}
+                </select>
+              </Guide>
+              <label htmlFor="list-outcome-column">
+                Outcome column · optional · text columns only
+              </label>
+              <Guide id="campaigns.lists-new.outcome-column">
+                <select
+                  id="list-outcome-column"
+                  className="surface control"
+                  value={outcomeColumnId}
+                  onChange={(e) => setOutcomeColumnId(e.target.value)}
+                >
+                  <option value="">None — no write-back</option>
+                  {/* Only writable text-like columns: the worker writes dated
+                      outcome strings via change_simple_column_value, which
+                      status/formula/mirror columns reject on every attempt
+                      (the API 400s a non-text pick for the same reason). */}
+                  {preview.columns
+                    .filter((c) => c.type === "text" || c.type === "long_text")
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.title} ({c.type})
+                      </option>
+                    ))}
+                </select>
+              </Guide>
             </>
           ) : null}
         </div>
@@ -364,9 +385,11 @@ export function NewListForm() {
       ) : null}
 
       <div className="form-actions">
-        <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? "Creating…" : "Create list"}
-        </button>
+        <Guide id="campaigns.lists-new.create">
+          <button type="submit" className="btn-primary" disabled={submitting}>
+            {submitting ? "Creating…" : "Create list"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Delete control for a contact list. Two-step confirm (no browser dialogs),
@@ -45,14 +46,16 @@ export function ListActions({ listId }: { listId: string }) {
 
   return (
     <div className="list-actions">
-      <button
-        type="button"
-        className="type-chip"
-        onClick={onDelete}
-        disabled={busy}
-      >
-        {busy ? "Deleting…" : confirming ? "Really delete?" : "Delete list"}
-      </button>
+      <Guide id="campaigns.list-detail.delete">
+        <button
+          type="button"
+          className="type-chip"
+          onClick={onDelete}
+          disabled={busy}
+        >
+          {busy ? "Deleting…" : confirming ? "Really delete?" : "Delete list"}
+        </button>
+      </Guide>
       {error ? (
         <p className="form-error" role="alert">
           {error}

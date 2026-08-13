@@ -15,6 +15,7 @@
 
 import Link from "next/link";
 import type { FtsChunkRow } from "@/lib/intel/schema";
+import { Guide } from "@/components/guide/Guide";
 import { Section } from "@/components/ui/Section";
 import {
   ANSWER_DISCLAIMER_TEXT,
@@ -35,36 +36,42 @@ export function RagAnswerPanel({
   if (phase.name === "none") return null;
 
   return (
-    <Section title="Answer" eyebrow="synthesis">
-      {phase.name === "pending" ? (
-        <p className="muted" role="status" aria-busy="true">
-          {SYNTHESIS_PENDING_TEXT}
-        </p>
-      ) : null}
-
-      {phase.name === "failed" ? (
-        <p className="note" role="alert">
-          {SYNTHESIS_FAILED_TEXT}
-        </p>
-      ) : null}
-
-      {phase.name === "timeout" ? (
-        <p className="note" role="alert">
-          {SYNTHESIS_TIMEOUT_TEXT}
-        </p>
-      ) : null}
-
-      {phase.name === "completed" ? (
-        <>
-          {/* Plain text on purpose — see the trust rules above. */}
-          <p style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-            {phase.result.answer}
+    <Guide id="intel.search.answer">
+      <Section title="Answer" eyebrow="synthesis">
+        {phase.name === "pending" ? (
+          <p className="muted" role="status" aria-busy="true">
+            {SYNTHESIS_PENDING_TEXT}
           </p>
-          <CitationChips citations={phase.result.citations} rows={rows} />
-          <p className="muted">{ANSWER_DISCLAIMER_TEXT}</p>
-        </>
-      ) : null}
-    </Section>
+        ) : null}
+
+        {phase.name === "failed" ? (
+          <Guide id="intel.search.answer-failed">
+            <p className="note" role="alert">
+              {SYNTHESIS_FAILED_TEXT}
+            </p>
+          </Guide>
+        ) : null}
+
+        {phase.name === "timeout" ? (
+          <Guide id="intel.search.answer-timeout">
+            <p className="note" role="alert">
+              {SYNTHESIS_TIMEOUT_TEXT}
+            </p>
+          </Guide>
+        ) : null}
+
+        {phase.name === "completed" ? (
+          <>
+            {/* Plain text on purpose — see the trust rules above. */}
+            <p style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {phase.result.answer}
+            </p>
+            <CitationChips citations={phase.result.citations} rows={rows} />
+            <p className="muted">{ANSWER_DISCLAIMER_TEXT}</p>
+          </>
+        ) : null}
+      </Section>
+    </Guide>
   );
 }
 
@@ -93,14 +100,15 @@ function CitationChips({
       {cited.map((n) => {
         const row = rows[n - 1];
         return (
-          <Link
-            key={n}
-            className="type-chip"
-            href={`/intel/documents/${row.document_id}`}
-            title={`${row.source_name} › ${row.document_title}`}
-          >
-            [{n}] {row.document_title}
-          </Link>
+          <Guide key={n} id="intel.search.citation">
+            <Link
+              className="type-chip"
+              href={`/intel/documents/${row.document_id}`}
+              title={`${row.source_name} › ${row.document_title}`}
+            >
+              [{n}] {row.document_title}
+            </Link>
+          </Guide>
         );
       })}
     </div>

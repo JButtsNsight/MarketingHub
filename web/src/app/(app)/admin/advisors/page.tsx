@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Surface } from "@/components/Surface";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import { runAdvisors, type AdvisorReport } from "@/lib/console/advisors";
 import { AdvisorsClient } from "@/components/console/AdvisorsClient";
@@ -36,21 +37,27 @@ export default async function AdvisorsPage() {
   if (!report) {
     return (
       <>
-        <PageHeader eyebrow="Admin" title="Advisors" />
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="auth-admin.advisors.header">
+          <PageHeader eyebrow="Admin" title="Advisors" />
+        </Guide>
+        <Guide id="auth-admin.advisors.unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
 
   return (
     <>
-      <PageHeader eyebrow="Admin" title="Advisors" />
+      <Guide id="auth-admin.advisors.header">
+        <PageHeader eyebrow="Admin" title="Advisors" />
+      </Guide>
       <AdvisorsClient initialReport={report} />
     </>
   );

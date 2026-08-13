@@ -20,6 +20,7 @@
 // task) never holds the panel hostage for the full deadline.
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 import {
   ASSISTANT_POLL_DEADLINE_MS,
   ASSISTANT_POLL_INTERVAL_MS,
@@ -152,25 +153,31 @@ export function AssistantPanel({
     <div className="nav-group">
       <span className="nav-group-label">Assistant</span>
       <form className="assistant-form" role="search" onSubmit={onSubmit}>
-        <input
-          className="surface control"
-          type="search"
-          aria-label="Ask the assistant"
-          placeholder="Ask about this database…"
-          maxLength={2000}
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-        />
-        <button type="submit" className="type-chip" disabled={!question.trim()}>
-          Ask
-        </button>
+        <Guide id="sql.assistant.question">
+          <input
+            className="surface control"
+            type="search"
+            aria-label="Ask the assistant"
+            placeholder="Ask about this database…"
+            maxLength={2000}
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+          />
+        </Guide>
+        <Guide id="sql.assistant.ask">
+          <button type="submit" className="type-chip" disabled={!question.trim()}>
+            Ask
+          </button>
+        </Guide>
       </form>
 
       {phase.name === "pending" ? (
         <p className="assistant-note">{ASSISTANT_PENDING_TEXT}</p>
       ) : null}
       {phase.name === "unavailable" ? (
-        <p className="assistant-note">{ASSISTANT_UNAVAILABLE_TEXT}</p>
+        <Guide id="sql.assistant.unavailable">
+          <p className="assistant-note">{ASSISTANT_UNAVAILABLE_TEXT}</p>
+        </Guide>
       ) : null}
       {phase.name === "failed" ? (
         <p className="assistant-note" role="alert">
@@ -208,13 +215,17 @@ function AnswerBlock({
       <p className="assistant-explanation">{explanation}</p>
       {sql !== null ? (
         <>
-          <pre className="assistant-sql mono">{sql}</pre>
+          <Guide id="sql.assistant.proposal">
+            <pre className="assistant-sql mono">{sql}</pre>
+          </Guide>
           {/* Insert-not-run: the ONLY action, and the label is honest — the
               proposal REPLACES the editor document (snippet/history idiom).
               Running stays the editor's classify → confirm-write flow. */}
-          <button type="button" className="type-chip" onClick={() => onInsert(sql)}>
-            Replace editor
-          </button>
+          <Guide id="sql.assistant.replace">
+            <button type="button" className="type-chip" onClick={() => onInsert(sql)}>
+              Replace editor
+            </button>
+          </Guide>
         </>
       ) : null}
     </div>

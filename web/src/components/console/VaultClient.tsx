@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { Guide } from "@/components/guide/Guide";
 import { Section } from "@/components/ui/Section";
 import { useConfirm } from "@/components/ui/AlertDialog";
 import type { VaultSecretMeta } from "@/lib/console/vault";
@@ -68,23 +69,25 @@ function ConfirmNameField({
 }) {
   const [value, setValue] = useState("");
   return (
-    <span className="field" style={{ display: "flex", marginTop: 10 }}>
-      <label htmlFor="confirm-secret-name">
-        Type <span className="mono">{expected}</span> to confirm
-      </label>
-      <input
-        id="confirm-secret-name"
-        className="surface control mono"
-        type="text"
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          valueRef.current = e.target.value;
-        }}
-      />
-    </span>
+    <Guide id="integrations.vault.confirm-name">
+      <span className="field" style={{ display: "flex", marginTop: 10 }}>
+        <label htmlFor="confirm-secret-name">
+          Type <span className="mono">{expected}</span> to confirm
+        </label>
+        <input
+          id="confirm-secret-name"
+          className="surface control mono"
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            valueRef.current = e.target.value;
+          }}
+        />
+      </span>
+    </Guide>
   );
 }
 
@@ -180,58 +183,64 @@ function SecretFormDialog({
           {editing ? `Edit secret "${labelOf(editing)}"` : "New secret"}
         </h2>
 
-        <div className="field">
-          <label htmlFor="secret-name">Name</label>
-          <input
-            id="secret-name"
-            className="surface control mono"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            maxLength={NAME_MAX}
-            autoFocus={editing == null}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <p className="field-note">
-            Unique handle for lookups (vault.secrets.name).
-          </p>
-        </div>
+        <Guide id="integrations.vault.field-name">
+          <div className="field">
+            <label htmlFor="secret-name">Name</label>
+            <input
+              id="secret-name"
+              className="surface control mono"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              maxLength={NAME_MAX}
+              autoFocus={editing == null}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+            />
+            <p className="field-note">
+              Unique handle for lookups (vault.secrets.name).
+            </p>
+          </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="secret-description">Description</label>
-          <input
-            id="secret-description"
-            className="surface control"
-            type="text"
-            autoComplete="off"
-            maxLength={DESCRIPTION_MAX}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-          <p className="field-note">
-            Optional — what this secret is for. Shown in the metadata list.
-          </p>
-        </div>
+        <Guide id="integrations.vault.field-description">
+          <div className="field">
+            <label htmlFor="secret-description">Description</label>
+            <input
+              id="secret-description"
+              className="surface control"
+              type="text"
+              autoComplete="off"
+              maxLength={DESCRIPTION_MAX}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+            <p className="field-note">
+              Optional — what this secret is for. Shown in the metadata list.
+            </p>
+          </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="secret-value">Value</label>
-          <input
-            id="secret-value"
-            className="surface control mono"
-            type="password"
-            autoComplete="new-password"
-            spellCheck={false}
-            maxLength={VALUE_MAX}
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-          />
-          <p className="field-note">
-            {editing
-              ? "The current value is never shown here. Saving re-encrypts and REPLACES it with what you type."
-              : "Encrypted at rest by supabase_vault. Shown again only through an audited per-secret reveal."}
-          </p>
-        </div>
+        <Guide id="integrations.vault.field-value">
+          <div className="field">
+            <label htmlFor="secret-value">Value</label>
+            <input
+              id="secret-value"
+              className="surface control mono"
+              type="password"
+              autoComplete="new-password"
+              spellCheck={false}
+              maxLength={VALUE_MAX}
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+            />
+            <p className="field-note">
+              {editing
+                ? "The current value is never shown here. Saving re-encrypts and REPLACES it with what you type."
+                : "Encrypted at rest by supabase_vault. Shown again only through an audited per-secret reveal."}
+            </p>
+          </div>
+        </Guide>
 
         {error ? (
           <p className="form-error" role="alert">
@@ -248,14 +257,16 @@ function SecretFormDialog({
           >
             Cancel
           </button>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => void submit()}
-            disabled={busy}
-          >
-            {editing ? "Save changes" : "Create secret"}
-          </button>
+          <Guide id="integrations.vault.save">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void submit()}
+              disabled={busy}
+            >
+              {editing ? "Save changes" : "Create secret"}
+            </button>
+          </Guide>
         </div>
       </div>
     </div>
@@ -443,9 +454,11 @@ export function VaultClient({
             <span className="mono" data-testid={`revealed-${s.id}`}>
               {revealed.value}
             </span>
-            <button type="button" className="type-chip" onClick={hideRevealed}>
-              Hide
-            </button>
+            <Guide id="integrations.vault.hide">
+              <button type="button" className="type-chip" onClick={hideRevealed}>
+                Hide
+              </button>
+            </Guide>
           </span>
         ) : (
           <span className="campaign-actions">
@@ -453,14 +466,16 @@ export function VaultClient({
             <span className="mono" aria-label="value hidden">
               {MASK}
             </span>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={busy}
-              onClick={() => void onReveal(s)}
-            >
-              Reveal…
-            </button>
+            <Guide id="integrations.vault.reveal">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={busy}
+                onClick={() => void onReveal(s)}
+              >
+                Reveal…
+              </button>
+            </Guide>
           </span>
         ),
     },
@@ -485,22 +500,26 @@ export function VaultClient({
       width: "160px",
       render: (s) => (
         <span className="campaign-actions">
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => setDialogState({ mode: "edit", secret: s })}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => void onDelete(s)}
-          >
-            Delete…
-          </button>
+          <Guide id="integrations.vault.edit">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => setDialogState({ mode: "edit", secret: s })}
+            >
+              Edit
+            </button>
+          </Guide>
+          <Guide id="integrations.vault.delete">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => void onDelete(s)}
+            >
+              Delete…
+            </button>
+          </Guide>
         </span>
       ),
     },
@@ -519,22 +538,26 @@ export function VaultClient({
         title="Secrets"
         description="Metadata only — values are revealed one at a time, never listed."
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setDialogState({ mode: "create" })}
-          >
-            New secret
-          </button>
+          <Guide id="integrations.vault.new-secret">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setDialogState({ mode: "create" })}
+            >
+              New secret
+            </button>
+          </Guide>
         }
       >
         <div className={busy ? "dgrid-busy" : undefined}>
-          <DataTable
-            columns={columns}
-            rows={secrets}
-            getRowKey={(s) => s.id}
-            empty="No secrets stored — create one."
-          />
+          <Guide id="integrations.vault.table">
+            <DataTable
+              columns={columns}
+              rows={secrets}
+              getRowKey={(s) => s.id}
+              empty="No secrets stored — create one."
+            />
+          </Guide>
         </div>
       </Section>
 

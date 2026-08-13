@@ -1,6 +1,7 @@
 import { Forbidden } from "@/components/ui/Forbidden";
 import { requireSectionUser } from "@/lib/requireSection";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Guide } from "@/components/guide/Guide";
 import { SourceDetail } from "@/components/intel/SourceDetail";
 import { getEmbeddingProviderInfo } from "../../provider-info";
 
@@ -29,7 +30,9 @@ export default async function IntelSourcePage({
 
   return (
     <>
-      <PageHeader title="Source" />
+      <Guide id="intel.source.header">
+        <PageHeader title="Source" />
+      </Guide>
       <SourceDetail sourceId={id} provider={provider} />
     </>
   );

@@ -7,6 +7,7 @@ import { Section } from "../ui/Section";
 import { StatCard } from "../ui/StatCard";
 import { Surface } from "../Surface";
 import { useConfirm, type ConfirmOptions } from "../ui/AlertDialog";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Policies (Studio → Auth → Policies / Database → Policies): browse the live
@@ -236,19 +237,23 @@ export function PoliciesClient({
         const key = policyKey(p);
         return (
           <span className="campaign-actions">
-            <button
-              type="button"
-              className="type-chip"
-              onClick={() => {
-                setCreating(false);
-                setEditingKey(editingKey === key ? null : key);
-              }}
-            >
-              {editingKey === key ? "Close" : "Edit"}
-            </button>
-            <button type="button" className="type-chip" onClick={() => void drop(p)}>
-              Drop
-            </button>
+            <Guide id="database.rls.edit-policy">
+              <button
+                type="button"
+                className="type-chip"
+                onClick={() => {
+                  setCreating(false);
+                  setEditingKey(editingKey === key ? null : key);
+                }}
+              >
+                {editingKey === key ? "Close" : "Edit"}
+              </button>
+            </Guide>
+            <Guide id="database.rls.drop-policy">
+              <button type="button" className="type-chip" onClick={() => void drop(p)}>
+                Drop
+              </button>
+            </Guide>
           </span>
         );
       },
@@ -261,21 +266,25 @@ export function PoliciesClient({
   return (
     <div className="stack">
       <div className="stat-grid">
-        <StatCard
-          label="RLS enabled"
-          value={rlsEnabled.length}
-          hint={`of ${tables.length} tables`}
-          accent="var(--data-3)"
-        />
-        <StatCard
-          label="Unprotected"
-          value={unprotected.length}
-          hint={
-            unprotected.length > 0
-              ? unprotected.map((t) => t.name).join(", ")
-              : "all covered"
-          }
-        />
+        <Guide id="database.rls.enabled-stat">
+          <StatCard
+            label="RLS enabled"
+            value={rlsEnabled.length}
+            hint={`of ${tables.length} tables`}
+            accent="var(--data-3)"
+          />
+        </Guide>
+        <Guide id="database.rls.unprotected-stat">
+          <StatCard
+            label="Unprotected"
+            value={unprotected.length}
+            hint={
+              unprotected.length > 0
+                ? unprotected.map((t) => t.name).join(", ")
+                : "all covered"
+            }
+          />
+        </Guide>
         <StatCard label="Policies" value={policies.length} accent="var(--data-2)" />
       </div>
 
@@ -286,13 +295,15 @@ export function PoliciesClient({
       ) : null}
 
       <Section eyebrow="Tables" title="RLS coverage">
-        <DataTable
-          columns={tableColumns}
-          rows={availableTables}
-          getRowKey={(t) => `${t.schema}.${t.name}`}
-          empty="No tables."
-          paginate={50}
-        />
+        <Guide id="database.rls.coverage-table">
+          <DataTable
+            columns={tableColumns}
+            rows={availableTables}
+            getRowKey={(t) => `${t.schema}.${t.name}`}
+            empty="No tables."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       {creating ? (
@@ -328,25 +339,29 @@ export function PoliciesClient({
         eyebrow="Policies"
         title="Active policies"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setEditingKey(null);
-              setCreating((v) => !v);
-            }}
-          >
-            {creating ? "Close" : "New policy"}
-          </button>
+          <Guide id="database.rls.new-policy">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setEditingKey(null);
+                setCreating((v) => !v);
+              }}
+            >
+              {creating ? "Close" : "New policy"}
+            </button>
+          </Guide>
         }
       >
-        <DataTable
-          columns={policyColumns}
-          rows={policies}
-          getRowKey={(p) => policyKey(p)}
-          empty="No policies reported."
-          paginate={50}
-        />
+        <Guide id="database.rls.policies-table">
+          <DataTable
+            columns={policyColumns}
+            rows={policies}
+            getRowKey={(p) => policyKey(p)}
+            empty="No policies reported."
+            paginate={50}
+          />
+        </Guide>
       </Section>
       {dialog}
     </div>
@@ -504,105 +519,115 @@ function PolicyForm({
       </span>
 
       {mode === "create" ? (
-        <div className="field">
-          <label htmlFor="pol-template">template</label>
-          <select
-            id="pol-template"
-            className="surface control"
-            value={templateId}
-            onChange={(e) => applyTemplate(e.target.value)}
-          >
-            <option value="">— start from scratch —</option>
-            {templates.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-          {selectedTemplate ? (
-            <p className="panel-desc">{selectedTemplate.description}</p>
-          ) : null}
-        </div>
+        <Guide id="database.rls.template">
+          <div className="field">
+            <label htmlFor="pol-template">template</label>
+            <select
+              id="pol-template"
+              className="surface control"
+              value={templateId}
+              onChange={(e) => applyTemplate(e.target.value)}
+            >
+              <option value="">— start from scratch —</option>
+              {templates.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+            {selectedTemplate ? (
+              <p className="panel-desc">{selectedTemplate.description}</p>
+            ) : null}
+          </div>
+        </Guide>
       ) : null}
 
-      <div className="field">
-        <label htmlFor="pol-table">table</label>
-        {mode === "create" ? (
-          <select
-            id="pol-table"
-            className="surface control mono"
-            value={tableKey}
-            onChange={(e) => setTableKey(e.target.value)}
-          >
-            {availableTables.length === 0 ? (
-              <option value="">No tables available</option>
-            ) : (
-              availableTables.map((t) => {
-                const key = `${t.schema}.${t.name}`;
-                return (
-                  <option key={key} value={key}>
-                    {key}
-                  </option>
-                );
-              })
-            )}
-          </select>
-        ) : (
+      <Guide id="database.rls.policy-table">
+        <div className="field">
+          <label htmlFor="pol-table">table</label>
+          {mode === "create" ? (
+            <select
+              id="pol-table"
+              className="surface control mono"
+              value={tableKey}
+              onChange={(e) => setTableKey(e.target.value)}
+            >
+              {availableTables.length === 0 ? (
+                <option value="">No tables available</option>
+              ) : (
+                availableTables.map((t) => {
+                  const key = `${t.schema}.${t.name}`;
+                  return (
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
+                  );
+                })
+              )}
+            </select>
+          ) : (
+            <input
+              id="pol-table"
+              className="surface control mono"
+              type="text"
+              value={tableKey}
+              disabled
+              readOnly
+            />
+          )}
+        </div>
+      </Guide>
+
+      <Guide id="database.rls.policy-name">
+        <div className="field">
+          <label htmlFor="pol-name">name</label>
           <input
-            id="pol-table"
+            id="pol-name"
             className="surface control mono"
             type="text"
-            value={tableKey}
-            disabled
-            readOnly
+            placeholder="policy_name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
-        )}
-      </div>
-
-      <div className="field">
-        <label htmlFor="pol-name">name</label>
-        <input
-          id="pol-name"
-          className="surface control mono"
-          type="text"
-          placeholder="policy_name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
+        </div>
+      </Guide>
 
       {mode === "create" ? (
         <div className="dgrid-toolbar">
-          <div className="field">
-            <label htmlFor="pol-command">command</label>
-            <select
-              id="pol-command"
-              className="surface control"
-              value={command}
-              onChange={(e) => setCommand(e.target.value)}
-            >
-              {COMMANDS.map((c) => (
-                <option key={c} value={c}>
-                  {c}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="pol-action">action</label>
-            <select
-              id="pol-action"
-              className="surface control"
-              value={action}
-              onChange={(e) => setAction(e.target.value)}
-            >
-              {ACTIONS.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-          </div>
+          <Guide id="database.rls.policy-command">
+            <div className="field">
+              <label htmlFor="pol-command">command</label>
+              <select
+                id="pol-command"
+                className="surface control"
+                value={command}
+                onChange={(e) => setCommand(e.target.value)}
+              >
+                {COMMANDS.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Guide>
+          <Guide id="database.rls.policy-action">
+            <div className="field">
+              <label htmlFor="pol-action">action</label>
+              <select
+                id="pol-action"
+                className="surface control"
+                value={action}
+                onChange={(e) => setAction(e.target.value)}
+              >
+                {ACTIONS.map((a) => (
+                  <option key={a} value={a}>
+                    {a}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </Guide>
         </div>
       ) : (
         <div className="campaign-actions">
@@ -616,41 +641,47 @@ function PolicyForm({
         </div>
       )}
 
-      <div className="field">
-        <label htmlFor="pol-roles">roles</label>
-        <input
-          id="pol-roles"
-          className="surface control mono"
-          type="text"
-          placeholder="public (comma-separated, e.g. authenticated, service_role)"
-          value={roles}
-          onChange={(e) => setRoles(e.target.value)}
-        />
-      </div>
+      <Guide id="database.rls.policy-roles">
+        <div className="field">
+          <label htmlFor="pol-roles">roles</label>
+          <input
+            id="pol-roles"
+            className="surface control mono"
+            type="text"
+            placeholder="public (comma-separated, e.g. authenticated, service_role)"
+            value={roles}
+            onChange={(e) => setRoles(e.target.value)}
+          />
+        </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="pol-using">using expression</label>
-        <textarea
-          id="pol-using"
-          className="surface control mono"
-          rows={2}
-          placeholder="e.g. (select auth.uid()) = user_id"
-          value={using}
-          onChange={(e) => setUsing(e.target.value)}
-        />
-      </div>
+      <Guide id="database.rls.policy-using">
+        <div className="field">
+          <label htmlFor="pol-using">using expression</label>
+          <textarea
+            id="pol-using"
+            className="surface control mono"
+            rows={2}
+            placeholder="e.g. (select auth.uid()) = user_id"
+            value={using}
+            onChange={(e) => setUsing(e.target.value)}
+          />
+        </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="pol-check">with check expression</label>
-        <textarea
-          id="pol-check"
-          className="surface control mono"
-          rows={2}
-          placeholder="e.g. (select auth.uid()) = user_id"
-          value={check}
-          onChange={(e) => setCheck(e.target.value)}
-        />
-      </div>
+      <Guide id="database.rls.policy-check">
+        <div className="field">
+          <label htmlFor="pol-check">with check expression</label>
+          <textarea
+            id="pol-check"
+            className="surface control mono"
+            rows={2}
+            placeholder="e.g. (select auth.uid()) = user_id"
+            value={check}
+            onChange={(e) => setCheck(e.target.value)}
+          />
+        </div>
+      </Guide>
 
       {error ? (
         <p className="form-error" role="alert">
@@ -667,9 +698,11 @@ function PolicyForm({
         >
           Cancel
         </button>
-        <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
-          {mode === "create" ? "Create policy" : "Save changes"}
-        </button>
+        <Guide id="database.rls.policy-submit">
+          <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
+            {mode === "create" ? "Create policy" : "Save changes"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

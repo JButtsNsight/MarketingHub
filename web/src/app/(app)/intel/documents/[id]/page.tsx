@@ -1,6 +1,7 @@
 import { Forbidden } from "@/components/ui/Forbidden";
 import { requireSectionUser } from "@/lib/requireSection";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Guide } from "@/components/guide/Guide";
 import { DocumentDetail } from "@/components/intel/DocumentDetail";
 import { getEmbeddingProviderInfo } from "../../provider-info";
 
@@ -28,7 +29,9 @@ export default async function IntelDocumentPage({
 
   return (
     <>
-      <PageHeader title="Document" />
+      <Guide id="intel.document.header">
+        <PageHeader title="Document" />
+      </Guide>
       <DocumentDetail documentId={id} provider={provider} />
     </>
   );

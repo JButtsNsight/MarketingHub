@@ -9,6 +9,7 @@ import { Section } from "../ui/Section";
 import { StatusPill, type StatusKind } from "../ui/StatusPill";
 import { Surface } from "../Surface";
 import { useConfirm } from "../ui/AlertDialog";
+import { Guide } from "@/components/guide/Guide";
 import {
   DEFAULT_BROADCAST_EVENTS,
   fetchRealtimeToken,
@@ -353,39 +354,43 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
   return (
     <div className="stack">
       {unreachable ? (
-        <Surface className="empty-state" elevated={false} role="alert">
-          <p>
-            <strong>Realtime unreachable — ALB route/env not applied yet.</strong>
-          </p>
-        </Surface>
+        <Guide id="integrations.realtime.unreachable">
+          <Surface className="empty-state" elevated={false} role="alert">
+            <p>
+              <strong>Realtime unreachable — ALB route/env not applied yet.</strong>
+            </p>
+          </Surface>
+        </Guide>
       ) : null}
 
       <Section eyebrow="Socket" title="Connection">
-        <div className="campaign-actions">
-          <span data-testid="rt-connection-status">
-            <StatusPill status={chip.kind}>{chip.label}</StatusPill>
-          </span>
-          <Badge>socket: {socketState}</Badge>
-          <Badge>
-            token:{" "}
-            {tokenState === "checking"
-              ? "checking…"
-              : tokenState === "ok"
-                ? "ok"
-                : "unreachable"}
-          </Badge>
-          <Badge>
-            heartbeat:{" "}
-            {heartbeat
-              ? `${heartbeat.status}${
-                  heartbeat.latencyMs != null
-                    ? ` · ${Math.round(heartbeat.latencyMs)}ms`
-                    : ""
-                }`
-              : "—"}
-          </Badge>
-          {joinedTopic ? <Badge tone="var(--data-2)">{joinedTopic}</Badge> : null}
-        </div>
+        <Guide id="integrations.realtime.connection">
+          <div className="campaign-actions">
+            <span data-testid="rt-connection-status">
+              <StatusPill status={chip.kind}>{chip.label}</StatusPill>
+            </span>
+            <Badge>socket: {socketState}</Badge>
+            <Badge>
+              token:{" "}
+              {tokenState === "checking"
+                ? "checking…"
+                : tokenState === "ok"
+                  ? "ok"
+                  : "unreachable"}
+            </Badge>
+            <Badge>
+              heartbeat:{" "}
+              {heartbeat
+                ? `${heartbeat.status}${
+                    heartbeat.latencyMs != null
+                      ? ` · ${Math.round(heartbeat.latencyMs)}ms`
+                      : ""
+                  }`
+                : "—"}
+            </Badge>
+            {joinedTopic ? <Badge tone="var(--data-2)">{joinedTopic}</Badge> : null}
+          </div>
+        </Guide>
       </Section>
 
       <Section
@@ -393,43 +398,53 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
         title="Join a channel"
         actions={
           joinedTopic ? (
-            <button type="button" className="type-chip" onClick={leave}>
-              Leave
-            </button>
+            <Guide id="integrations.realtime.leave">
+              <button type="button" className="type-chip" onClick={leave}>
+                Leave
+              </button>
+            </Guide>
           ) : null
         }
       >
-        <div className="field">
-          <label htmlFor="rt-topic">topic</label>
-          <input
-            id="rt-topic"
-            className="surface control mono"
-            type="text"
-            value={topicInput}
-            onChange={(e) => setTopicInput(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="rt-events">listen events (comma-separated)</label>
-          <input
-            id="rt-events"
-            className="surface control mono"
-            type="text"
-            value={eventsInput}
-            onChange={(e) => setEventsInput(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label className="teditor-null">
-            <input type="checkbox" checked readOnly disabled /> private (locked
-            on)
-          </label>
-        </div>
+        <Guide id="integrations.realtime.topic">
+          <div className="field">
+            <label htmlFor="rt-topic">topic</label>
+            <input
+              id="rt-topic"
+              className="surface control mono"
+              type="text"
+              value={topicInput}
+              onChange={(e) => setTopicInput(e.target.value)}
+            />
+          </div>
+        </Guide>
+        <Guide id="integrations.realtime.events">
+          <div className="field">
+            <label htmlFor="rt-events">listen events (comma-separated)</label>
+            <input
+              id="rt-events"
+              className="surface control mono"
+              type="text"
+              value={eventsInput}
+              onChange={(e) => setEventsInput(e.target.value)}
+            />
+          </div>
+        </Guide>
+        <Guide id="integrations.realtime.private">
+          <div className="field">
+            <label className="teditor-null">
+              <input type="checkbox" checked readOnly disabled /> private
+              (locked on)
+            </label>
+          </div>
+        </Guide>
         {!topicIsMh ? (
-          <p className="teditor-test">
-            This topic is outside <span className="mono">mh:*</span> — the
-            private-channel policies will refuse the join.
-          </p>
+          <Guide id="integrations.realtime.topic-warning">
+            <p className="teditor-test">
+              This topic is outside <span className="mono">mh:*</span> — the
+              private-channel policies will refuse the join.
+            </p>
+          </Guide>
         ) : null}
         {joinError ? (
           <p className="form-error" role="alert">
@@ -437,48 +452,56 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
           </p>
         ) : null}
         <div className="form-actions">
-          <button type="button" className="btn-primary" onClick={join}>
-            Join
-          </button>
+          <Guide id="integrations.realtime.join">
+            <button type="button" className="btn-primary" onClick={join}>
+              Join
+            </button>
+          </Guide>
         </div>
       </Section>
 
       <Section eyebrow="Broadcast" title="Send test broadcast">
-        <div className="field">
-          <label htmlFor="rt-send-event">event</label>
-          <input
-            id="rt-send-event"
-            className="surface control mono"
-            type="text"
-            value={sendEvent}
-            onChange={(e) => setSendEvent(e.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="rt-send-payload">payload (JSON object)</label>
-          <textarea
-            id="rt-send-payload"
-            className="surface control mono"
-            rows={4}
-            value={sendPayloadText}
-            onChange={(e) => setSendPayloadText(e.target.value)}
-          />
-        </div>
+        <Guide id="integrations.realtime.send-event">
+          <div className="field">
+            <label htmlFor="rt-send-event">event</label>
+            <input
+              id="rt-send-event"
+              className="surface control mono"
+              type="text"
+              value={sendEvent}
+              onChange={(e) => setSendEvent(e.target.value)}
+            />
+          </div>
+        </Guide>
+        <Guide id="integrations.realtime.send-payload">
+          <div className="field">
+            <label htmlFor="rt-send-payload">payload (JSON object)</label>
+            <textarea
+              id="rt-send-payload"
+              className="surface control mono"
+              rows={4}
+              value={sendPayloadText}
+              onChange={(e) => setSendPayloadText(e.target.value)}
+            />
+          </div>
+        </Guide>
         {sendError ? (
           <p className="form-error" role="alert">
             {sendError}
           </p>
         ) : null}
         <div className="form-actions">
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={joinedTopic === null}
-            title={joinedTopic === null ? "Join a channel first." : undefined}
-            onClick={() => void doSend()}
-          >
-            Send
-          </button>
+          <Guide id="integrations.realtime.send">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={joinedTopic === null}
+              title={joinedTopic === null ? "Join a channel first." : undefined}
+              onClick={() => void doSend()}
+            >
+              Send
+            </button>
+          </Guide>
         </div>
       </Section>
 
@@ -487,22 +510,26 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
         title="Who's here"
         actions={
           <>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={joinedTopic === null || tracked}
-              onClick={() => void doTrack()}
-            >
-              Track
-            </button>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={joinedTopic === null || !tracked}
-              onClick={() => void doUntrack()}
-            >
-              Untrack
-            </button>
+            <Guide id="integrations.realtime.track">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={joinedTopic === null || tracked}
+                onClick={() => void doTrack()}
+              >
+                Track
+              </button>
+            </Guide>
+            <Guide id="integrations.realtime.untrack">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={joinedTopic === null || !tracked}
+                onClick={() => void doUntrack()}
+              >
+                Untrack
+              </button>
+            </Guide>
           </>
         }
       >
@@ -527,31 +554,37 @@ export function RealtimeInspector({ userEmail }: { userEmail: string }) {
         title="Messages"
         description="Newest first, capped at 200 — select a row to inspect its payload."
         actions={
-          <button
-            type="button"
-            className="type-chip"
-            disabled={log.length === 0}
-            onClick={() => {
-              setLog([]);
-              setSelectedKeys(new Set());
-            }}
-          >
-            Clear
-          </button>
+          <Guide id="integrations.realtime.clear">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={log.length === 0}
+              onClick={() => {
+                setLog([]);
+                setSelectedKeys(new Set());
+              }}
+            >
+              Clear
+            </button>
+          </Guide>
         }
       >
         <div className="stack">
-          <DataGrid
-            columns={FEED_COLUMNS}
-            rows={rows}
-            getRowKey={(row) => String(row.seq)}
-            sort={sort}
-            onSortChange={setSort}
-            selectedKeys={selectedKeys}
-            onSelectionChange={setSelectedKeys}
-            empty="No messages yet."
-          />
-          <CodeBlock label="payload" code={viewerCode} />
+          <Guide id="integrations.realtime.feed">
+            <DataGrid
+              columns={FEED_COLUMNS}
+              rows={rows}
+              getRowKey={(row) => String(row.seq)}
+              sort={sort}
+              onSortChange={setSort}
+              selectedKeys={selectedKeys}
+              onSelectionChange={setSelectedKeys}
+              empty="No messages yet."
+            />
+          </Guide>
+          <Guide id="integrations.realtime.payload-viewer">
+            <CodeBlock label="payload" code={viewerCode} />
+          </Guide>
         </div>
       </Section>
 

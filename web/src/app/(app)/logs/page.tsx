@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 import { Forbidden } from "@/components/ui/Forbidden";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import { LOGS_TABS } from "@/lib/console/tabs";
@@ -58,15 +59,21 @@ export default async function LogsPage() {
     if (err instanceof AnalyticsUnavailableError) {
       return (
         <>
-          <PageHeader title="Logs" />
-          <Tabs items={LOGS_TABS} />
-          <Surface className="empty-state" glint>
-            <h2>Analytics unavailable</h2>
-            <p>
-              Logflare did not answer through the data API — nothing else is
-              affected.
-            </p>
-          </Surface>
+          <Guide id="observability.logs.page">
+            <PageHeader title="Logs" />
+          </Guide>
+          <Guide id="observability.logs.tabs">
+            <Tabs items={LOGS_TABS} />
+          </Guide>
+          <Guide id="observability.logs.unavailable">
+            <Surface className="empty-state" glint>
+              <h2>Analytics unavailable</h2>
+              <p>
+                Logflare did not answer through the data API — nothing else is
+                affected.
+              </p>
+            </Surface>
+          </Guide>
         </>
       );
     }
@@ -80,8 +87,12 @@ export default async function LogsPage() {
 
   return (
     <>
-      <PageHeader title="Logs" />
-      <Tabs items={LOGS_TABS} />
+      <Guide id="observability.logs.page">
+        <PageHeader title="Logs" />
+      </Guide>
+      <Guide id="observability.logs.tabs">
+        <Tabs items={LOGS_TABS} />
+      </Guide>
       <LogsClient
         sources={sources}
         initialEntries={initialEntries}

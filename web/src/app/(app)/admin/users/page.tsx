@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { UsersRoles } from "@/components/admin/UsersRoles";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 
@@ -24,7 +25,9 @@ export default async function AdminUsersPage() {
 
   return (
     <>
-      <PageHeader title="Users & Roles" />
+      <Guide id="auth-admin.roles.header">
+        <PageHeader title="Users & Roles" />
+      </Guide>
       <UsersRoles currentEmail={gate.user.email} />
     </>
   );

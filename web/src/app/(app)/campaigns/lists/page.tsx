@@ -3,6 +3,7 @@ import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getUserClient } from "@/lib/supabase";
 import { listContactLists } from "@/lib/contacts/repo";
 import type { ContactList } from "@/lib/contacts/schema";
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
@@ -19,7 +20,11 @@ const COLUMNS: Column<ContactList>[] = [
   {
     key: "name",
     header: "name",
-    render: (l) => <Link href={`/campaigns/lists/${l.id}`}>{l.name}</Link>,
+    render: (l) => (
+      <Guide id="campaigns.lists.open-list">
+        <Link href={`/campaigns/lists/${l.id}`}>{l.name}</Link>
+      </Guide>
+    ),
   },
   {
     key: "source",
@@ -78,34 +83,46 @@ export default async function ContactListsPage() {
     <>
       <PageHeader
         eyebrow="Build"
-        title="Contact lists"
+        title={
+          <Guide id="campaigns.lists.title">
+            <span>Contact lists</span>
+          </Guide>
+        }
         count={`${contactLists.length} total`}
         actions={
           <>
-            <Link className="type-chip" href="/campaigns">
-              Campaigns
-            </Link>
-            <Link className="btn-primary" href="/campaigns/lists/new">
-              New list
-            </Link>
+            <Guide id="campaigns.lists.campaigns-link">
+              <Link className="type-chip" href="/campaigns">
+                Campaigns
+              </Link>
+            </Guide>
+            <Guide id="campaigns.lists.new-link">
+              <Link className="btn-primary" href="/campaigns/lists/new">
+                New list
+              </Link>
+            </Guide>
           </>
         }
       />
 
       {contactLists.length > 0 ? (
-        <DataTable
-          columns={COLUMNS}
-          rows={contactLists}
-          getRowKey={(l) => l.id}
-          empty="No lists."
-        />
+        <Guide id="campaigns.lists.table">
+          <DataTable
+            columns={COLUMNS}
+            rows={contactLists}
+            getRowKey={(l) => l.id}
+            empty="No lists."
+          />
+        </Guide>
       ) : (
         <Surface className="empty-state" glint>
           <h2>No contact lists yet</h2>
           <p>Upload a CSV of contacts or link a Monday.com board.</p>
-          <Link className="btn-primary" href="/campaigns/lists/new">
-            New list
-          </Link>
+          <Guide id="campaigns.lists.new-link">
+            <Link className="btn-primary" href="/campaigns/lists/new">
+              New list
+            </Link>
+          </Guide>
         </Surface>
       )}
     </>

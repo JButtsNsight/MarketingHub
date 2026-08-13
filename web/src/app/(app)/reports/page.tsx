@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import {
   AnalyticsUnavailableError,
@@ -89,14 +90,18 @@ export default async function ReportsPage() {
   if (unreachable) {
     return (
       <>
-        <PageHeader title="Reports" />
-        <Surface className="empty-state" glint>
-          <h2>Analytics unavailable</h2>
-          <p>
-            Logflare did not answer through the data API — nothing else is
-            affected.
-          </p>
-        </Surface>
+        <Guide id="observability.reports.page">
+          <PageHeader title="Reports" />
+        </Guide>
+        <Guide id="observability.reports.unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Analytics unavailable</h2>
+            <p>
+              Logflare did not answer through the data API — nothing else is
+              affected.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
@@ -116,7 +121,9 @@ export default async function ReportsPage() {
 
   return (
     <>
-      <PageHeader title="Reports" />
+      <Guide id="observability.reports.page">
+        <PageHeader title="Reports" />
+      </Guide>
       <ReportsClient initial={initial} />
     </>
   );

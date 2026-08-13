@@ -6,6 +6,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Section } from "@/components/ui/Section";
 import { StatCard } from "@/components/ui/StatCard";
 import { Badge } from "@/components/ui/Badge";
+import { Guide } from "@/components/guide/Guide";
 import { useConfirm } from "@/components/ui/AlertDialog";
 import type { CronJob, CronRun } from "@/lib/console/cron";
 
@@ -182,21 +183,25 @@ export function CronClient({
       width: "170px",
       render: (j) => (
         <span className="cron-actions">
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => void refresh(j.jobid)}
-          >
-            Runs
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => void unscheduleJob(j)}
-          >
-            Unschedule
-          </button>
+          <Guide id="integrations.cron.job-runs">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => void refresh(j.jobid)}
+            >
+              Runs
+            </button>
+          </Guide>
+          <Guide id="integrations.cron.unschedule">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => void unscheduleJob(j)}
+            >
+              Unschedule
+            </button>
+          </Guide>
         </span>
       ),
     },
@@ -239,22 +244,24 @@ export function CronClient({
 
   return (
     <div className="stack">
-      <div className="stat-grid">
-        <StatCard label="Jobs" value={jobs.length} accent="var(--data-3)" />
-        <StatCard
-          label="Active"
-          value={activeCount}
-          hint={`of ${jobs.length}`}
-          accent="var(--data-2)"
-        />
-        {/* No accent: a failed run is an attention state, not a data point. */}
-        <StatCard
-          label="Failed runs"
-          value={failedCount}
-          hint={runsJobId != null ? `job ${runsJobId}` : "in shown history"}
-        />
-        <StatCard label="Runs shown" value={runs.length} accent="var(--data-1)" />
-      </div>
+      <Guide id="integrations.cron.stats">
+        <div className="stat-grid">
+          <StatCard label="Jobs" value={jobs.length} accent="var(--data-3)" />
+          <StatCard
+            label="Active"
+            value={activeCount}
+            hint={`of ${jobs.length}`}
+            accent="var(--data-2)"
+          />
+          {/* No accent: a failed run is an attention state, not a data point. */}
+          <StatCard
+            label="Failed runs"
+            value={failedCount}
+            hint={runsJobId != null ? `job ${runsJobId}` : "in shown history"}
+          />
+          <StatCard label="Runs shown" value={runs.length} accent="var(--data-1)" />
+        </div>
+      </Guide>
 
       {error ? (
         <p className="form-error" role="alert">
@@ -268,59 +275,69 @@ export function CronClient({
         description="Scheduling with an existing name replaces that job."
       >
         <div className="cron-form">
-          <div className="field">
-            <label htmlFor="cron-name">name</label>
-            <input
-              id="cron-name"
-              className="surface control mono"
-              type="text"
-              placeholder="refresh-mv"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="cron-schedule">schedule</label>
-            <input
-              id="cron-schedule"
-              className="surface control mono"
-              type="text"
-              placeholder="*/5 * * * *"
-              value={form.schedule}
-              onChange={(e) => setForm({ ...form, schedule: e.target.value })}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="cron-command">command</label>
-            <input
-              id="cron-command"
-              className="surface control mono"
-              type="text"
-              placeholder="select cron.schedule(...)  /  select pgmq.send(...)"
-              value={form.command}
-              onChange={(e) => setForm({ ...form, command: e.target.value })}
-            />
-          </div>
+          <Guide id="integrations.cron.job-name">
+            <div className="field">
+              <label htmlFor="cron-name">name</label>
+              <input
+                id="cron-name"
+                className="surface control mono"
+                type="text"
+                placeholder="refresh-mv"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </div>
+          </Guide>
+          <Guide id="integrations.cron.job-schedule">
+            <div className="field">
+              <label htmlFor="cron-schedule">schedule</label>
+              <input
+                id="cron-schedule"
+                className="surface control mono"
+                type="text"
+                placeholder="*/5 * * * *"
+                value={form.schedule}
+                onChange={(e) => setForm({ ...form, schedule: e.target.value })}
+              />
+            </div>
+          </Guide>
+          <Guide id="integrations.cron.job-command">
+            <div className="field">
+              <label htmlFor="cron-command">command</label>
+              <input
+                id="cron-command"
+                className="surface control mono"
+                type="text"
+                placeholder="select cron.schedule(...)  /  select pgmq.send(...)"
+                value={form.command}
+                onChange={(e) => setForm({ ...form, command: e.target.value })}
+              />
+            </div>
+          </Guide>
           <div className="form-actions">
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={busy}
-              onClick={() => void scheduleJob()}
-            >
-              Schedule job
-            </button>
+            <Guide id="integrations.cron.schedule-job">
+              <button
+                type="button"
+                className="btn-primary"
+                disabled={busy}
+                onClick={() => void scheduleJob()}
+              >
+                Schedule job
+              </button>
+            </Guide>
           </div>
         </div>
       </Section>
 
       <Section eyebrow="Jobs" title="Scheduled jobs">
-        <DataTable
-          columns={jobColumns}
-          rows={jobs}
-          getRowKey={(j) => String(j.jobid)}
-          empty="No cron jobs scheduled."
-        />
+        <Guide id="integrations.cron.jobs-table">
+          <DataTable
+            columns={jobColumns}
+            rows={jobs}
+            getRowKey={(j) => String(j.jobid)}
+            empty="No cron jobs scheduled."
+          />
+        </Guide>
       </Section>
 
       <Section
@@ -328,22 +345,26 @@ export function CronClient({
         title="Recent runs"
         actions={
           runsJobId != null ? (
-            <button
-              type="button"
-              className="type-chip"
-              onClick={() => void refresh(null)}
-            >
-              Show all jobs
-            </button>
+            <Guide id="integrations.cron.show-all-runs">
+              <button
+                type="button"
+                className="type-chip"
+                onClick={() => void refresh(null)}
+              >
+                Show all jobs
+              </button>
+            </Guide>
           ) : undefined
         }
       >
-        <DataTable
-          columns={runColumns}
-          rows={runs}
-          getRowKey={(r) => String(r.runid)}
-          empty="No run history."
-        />
+        <Guide id="integrations.cron.runs-table">
+          <DataTable
+            columns={runColumns}
+            rows={runs}
+            getRowKey={(r) => String(r.runid)}
+            empty="No run history."
+          />
+        </Guide>
       </Section>
 
       {dialog}

@@ -1910,3 +1910,46 @@ html[data-theme="dark"] .btn-primary:hover:not(:disabled) {
 html[data-theme="dark"] .masthead {
   background: var(--wash);
 }
+
+/* ---------------------------------------------------------------------------
+   Guided mode (plan 2026-08-13): opt-in hover documentation. The wrapper is
+   display:contents so annotating a control NEVER changes layout; the popover
+   renders in a body portal (position:fixed survives transformed ancestors).
+   With the mode on, annotated controls get a quiet dashed affordance so a new
+   user can see what is explainable before hovering anything. */
+.guide-wrap {
+  display: contents;
+}
+html[data-guided] .guide-wrap > * {
+  outline: 1px dashed var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+html[data-guided] .guide-wrap:hover > * {
+  outline-color: var(--accent);
+  outline-style: solid;
+}
+.guide-pop {
+  position: fixed;
+  z-index: 300; /* above the nav rail and sticky chrome; below nothing that matters */
+  max-width: 300px;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-family: var(--fu);
+  font-size: 12.5px;
+  line-height: 1.45;
+  pointer-events: none; /* never steals the hover from the control under it */
+}
+.guide-pop-title {
+  margin: 0 0 3px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.guide-pop-body {
+  margin: 0;
+  color: var(--ink-2);
+}

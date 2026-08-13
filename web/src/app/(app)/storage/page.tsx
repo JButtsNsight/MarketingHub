@@ -11,6 +11,7 @@ import {
 } from "@/lib/console/storage";
 import { StorageBrowser } from "@/components/console/StorageBrowser";
 import { BucketManager } from "@/components/storage/BucketManager";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live bucket listings; never prerender.
 export const dynamic = "force-dynamic";
@@ -53,11 +54,13 @@ export default async function StoragePage() {
   // rows below are static placeholders; ops docs carry the literal values.
   return (
     <>
-      <PageHeader
-        eyebrow="Build"
-        title="Storage"
-        count={`${buckets.length} bucket${buckets.length === 1 ? "" : "s"}`}
-      />
+      <Guide id="storage.page.header">
+        <PageHeader
+          eyebrow="Build"
+          title="Storage"
+          count={`${buckets.length} bucket${buckets.length === 1 ? "" : "s"}`}
+        />
+      </Guide>
 
       {buckets.length > 0 ? (
         <StorageBrowser
@@ -67,13 +70,15 @@ export default async function StoragePage() {
         />
       ) : (
         <>
-          <Surface className="empty-state" glint>
-            <h2>Storage unavailable</h2>
-            <p>
-              The Storage API did not answer (or no buckets exist yet) —
-              refresh in a moment.
-            </p>
-          </Surface>
+          <Guide id="storage.page.unavailable">
+            <Surface className="empty-state" glint>
+              <h2>Storage unavailable</h2>
+              <p>
+                The Storage API did not answer (or no buckets exist yet) —
+                refresh in a moment.
+              </p>
+            </Surface>
+          </Guide>
           {storageUp ? (
             // The API is up but bucketless — offer the create path (the full
             // browser appears on the next load once a bucket exists).
@@ -82,32 +87,34 @@ export default async function StoragePage() {
         </>
       )}
 
-      <Section
-        eyebrow="storage"
-        title="S3 protocol"
-        description="S3-compatible API, reachable from inside the VPC only."
-      >
-        <KeyValue
-          items={[
-            {
-              label: "endpoint",
-              value: "<SUPABASE_URL>/storage/v1/s3",
-              mono: true,
-            },
-            {
-              label: "region",
-              value:
-                "Host-managed — STORAGE_S3_REGION is set on the Supabase host.",
-            },
-            { label: "auth", value: "SigV4 (AWS Signature Version 4)" },
-            {
-              label: "credentials",
-              value:
-                "Host-managed — S3_PROTOCOL_ACCESS_KEY_ID / S3_PROTOCOL_ACCESS_KEY_SECRET are set on the Supabase host and are never exposed through this console.",
-            },
-          ]}
-        />
-      </Section>
+      <Guide id="storage.page.s3-info">
+        <Section
+          eyebrow="storage"
+          title="S3 protocol"
+          description="S3-compatible API, reachable from inside the VPC only."
+        >
+          <KeyValue
+            items={[
+              {
+                label: "endpoint",
+                value: "<SUPABASE_URL>/storage/v1/s3",
+                mono: true,
+              },
+              {
+                label: "region",
+                value:
+                  "Host-managed — STORAGE_S3_REGION is set on the Supabase host.",
+              },
+              { label: "auth", value: "SigV4 (AWS Signature Version 4)" },
+              {
+                label: "credentials",
+                value:
+                  "Host-managed — S3_PROTOCOL_ACCESS_KEY_ID / S3_PROTOCOL_ACCESS_KEY_SECRET are set on the Supabase host and are never exposed through this console.",
+              },
+            ]}
+          />
+        </Section>
+      </Guide>
     </>
   );
 }

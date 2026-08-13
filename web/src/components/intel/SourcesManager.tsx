@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "../Surface";
 import { deleteSource, listSources, IntelApiError } from "./api";
 import { ErrorState, LoadingState } from "./States";
@@ -68,7 +69,11 @@ export function SourcesManager() {
     {
       key: "name",
       header: "name",
-      render: (s) => <Link href={`/intel/sources/${s.id}`}>{s.name}</Link>,
+      render: (s) => (
+        <Guide id="intel.sources.name-link">
+          <Link href={`/intel/sources/${s.id}`}>{s.name}</Link>
+        </Guide>
+      ),
     },
     {
       key: "kind",
@@ -110,12 +115,16 @@ export function SourcesManager() {
       width: "190px",
       render: (s) => (
         <span className="campaign-actions">
-          <button type="button" className="type-chip" onClick={() => setForm(s)}>
-            Edit
-          </button>
-          <button type="button" className="type-chip" onClick={() => void onDelete(s.id)}>
-            {confirmingId === s.id ? "Really delete?" : "Delete"}
-          </button>
+          <Guide id="intel.sources.edit">
+            <button type="button" className="type-chip" onClick={() => setForm(s)}>
+              Edit
+            </button>
+          </Guide>
+          <Guide id="intel.sources.delete">
+            <button type="button" className="type-chip" onClick={() => void onDelete(s.id)}>
+              {confirmingId === s.id ? "Really delete?" : "Delete"}
+            </button>
+          </Guide>
         </span>
       ),
     },
@@ -128,9 +137,11 @@ export function SourcesManager() {
     <div className="stack">
       <div className="form-actions">
         {form === "closed" ? (
-          <button type="button" className="btn-primary" onClick={() => setForm("create")}>
-            New source
-          </button>
+          <Guide id="intel.sources.new">
+            <button type="button" className="btn-primary" onClick={() => setForm("create")}>
+              New source
+            </button>
+          </Guide>
         ) : null}
       </div>
 
@@ -157,12 +168,14 @@ export function SourcesManager() {
           <p>Create a source, then paste competitor text into it.</p>
         </Surface>
       ) : (
-        <DataTable
-          columns={columns}
-          rows={sources}
-          getRowKey={(s) => s.id}
-          empty="No sources."
-        />
+        <Guide id="intel.sources.table">
+          <DataTable
+            columns={columns}
+            rows={sources}
+            getRowKey={(s) => s.id}
+            empty="No sources."
+          />
+        </Guide>
       )}
     </div>
   );

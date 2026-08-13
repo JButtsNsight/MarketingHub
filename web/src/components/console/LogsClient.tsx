@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import type { LogEntry } from "@/lib/console/logs";
 
 /**
@@ -202,15 +203,17 @@ export function LogsClient({
       render: (row) => {
         const isOpen = expanded.has(row.key);
         return (
-          <button
-            type="button"
-            className="type-chip"
-            aria-expanded={isOpen}
-            aria-label={isOpen ? "Collapse metadata" : "Expand metadata"}
-            onClick={() => toggleExpanded(row.key)}
-          >
-            {isOpen ? "−" : "+"}
-          </button>
+          <Guide id="observability.logs.expand-row">
+            <button
+              type="button"
+              className="type-chip"
+              aria-expanded={isOpen}
+              aria-label={isOpen ? "Collapse metadata" : "Expand metadata"}
+              onClick={() => toggleExpanded(row.key)}
+            >
+              {isOpen ? "−" : "+"}
+            </button>
+          </Guide>
         );
       },
     },
@@ -255,105 +258,123 @@ export function LogsClient({
   return (
     <div className="stack">
       <div className="dgrid-toolbar" role="toolbar" aria-label="Log query">
-        <select
-          className="surface control teditor-fctl"
-          aria-label="Log source"
-          value={source}
-          disabled={loading}
-          onChange={(event) => changeSource(event.target.value)}
-        >
-          {sources.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
-        {PRESETS.map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={preset === value ? "type-chip on" : "type-chip"}
-            aria-pressed={preset === value}
+        <Guide id="observability.logs.source">
+          <select
+            className="surface control teditor-fctl"
+            aria-label="Log source"
+            value={source}
             disabled={loading}
-            onClick={() => {
-              if (value !== preset) changePreset(value);
-            }}
+            onChange={(event) => changeSource(event.target.value)}
           >
-            {value}
-          </button>
+            {sources.map((entry) => (
+              <option key={entry.id} value={entry.id}>
+                {entry.label}
+              </option>
+            ))}
+          </select>
+        </Guide>
+        {PRESETS.map((value) => (
+          <Guide key={value} id="observability.logs.range-preset">
+            <button
+              type="button"
+              className={preset === value ? "type-chip on" : "type-chip"}
+              aria-pressed={preset === value}
+              disabled={loading}
+              onClick={() => {
+                if (value !== preset) changePreset(value);
+              }}
+            >
+              {value}
+            </button>
+          </Guide>
         ))}
         <span className="spacer" />
-        <button
-          type="button"
-          className={tail ? "type-chip on" : "type-chip"}
-          aria-pressed={tail}
-          title="Poll for new entries every 10 seconds (pauses while the tab is hidden)"
-          onClick={() => setTail((prev) => !prev)}
-        >
-          Tail
-        </button>
-        <button
-          type="button"
-          className="type-chip"
-          disabled={loading}
-          onClick={() => void runQuery({ source, preset, severities, search })}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
+        <Guide id="observability.logs.tail">
+          <button
+            type="button"
+            className={tail ? "type-chip on" : "type-chip"}
+            aria-pressed={tail}
+            title="Poll for new entries every 10 seconds (pauses while the tab is hidden)"
+            onClick={() => setTail((prev) => !prev)}
+          >
+            Tail
+          </button>
+        </Guide>
+        <Guide id="observability.logs.refresh">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={loading}
+            onClick={() => void runQuery({ source, preset, severities, search })}
+          >
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+        </Guide>
       </div>
 
       <form className="dgrid-toolbar" role="search" onSubmit={submitSearch}>
         {severityValues.map((value) => (
-          <button
-            key={value}
-            type="button"
-            className={severities.includes(value) ? "type-chip on" : "type-chip"}
-            aria-pressed={severities.includes(value)}
-            disabled={loading}
-            onClick={() => toggleSeverity(value)}
-          >
-            {value}
-          </button>
+          <Guide key={value} id="observability.logs.severity-filter">
+            <button
+              type="button"
+              className={severities.includes(value) ? "type-chip on" : "type-chip"}
+              aria-pressed={severities.includes(value)}
+              disabled={loading}
+              onClick={() => toggleSeverity(value)}
+            >
+              {value}
+            </button>
+          </Guide>
         ))}
         <span className="spacer" />
-        <input
-          className="surface control teditor-fctl"
-          type="search"
-          aria-label="Search event message"
-          placeholder="Search event message"
-          maxLength={200}
-          value={search}
-          disabled={loading}
-          onChange={(event) => setSearch(event.target.value)}
-        />
-        <button type="submit" className="type-chip" disabled={loading}>
-          Search
-        </button>
+        <Guide id="observability.logs.search">
+          <input
+            className="surface control teditor-fctl"
+            type="search"
+            aria-label="Search event message"
+            placeholder="Search event message"
+            maxLength={200}
+            value={search}
+            disabled={loading}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </Guide>
+        <Guide id="observability.logs.search-submit">
+          <button type="submit" className="type-chip" disabled={loading}>
+            Search
+          </button>
+        </Guide>
       </form>
 
       {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+        <Guide id="observability.logs.query-error">
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        </Guide>
       ) : null}
 
       {unavailable ? (
-        <Surface className="empty-state" glint>
-          <h2>Analytics unavailable</h2>
-          <p>
-            The Logflare analytics service did not answer through the data API
-            — the staged Wave-6 enable (Kong analytics route + access token)
-            has not been applied yet. Logs will appear here once the operator
-            applies it.
-          </p>
-        </Surface>
+        <Guide id="observability.logs.unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Analytics unavailable</h2>
+            <p>
+              The Logflare analytics service did not answer through the data API
+              — the staged Wave-6 enable (Kong analytics route + access token)
+              has not been applied yet. Logs will appear here once the operator
+              applies it.
+            </p>
+          </Surface>
+        </Guide>
       ) : (
-        <DataTable
-          columns={columns}
-          rows={rows}
-          getRowKey={(row) => row.key}
-          empty={loading ? "Loading…" : "No log entries in this range."}
-        />
+        <Guide id="observability.logs.table">
+          <DataTable
+            columns={columns}
+            rows={rows}
+            getRowKey={(row) => row.key}
+            empty={loading ? "Loading…" : "No log entries in this range."}
+          />
+        </Guide>
       )}
     </div>
   );

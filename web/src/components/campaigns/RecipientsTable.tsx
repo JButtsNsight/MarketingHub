@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CampaignStatus, SmsCampaignRecipient } from "@/lib/sms/schema";
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { statusLabel, statusTone } from "./statusBadge";
@@ -136,23 +137,27 @@ export function RecipientsTable({
             {/* A canceled campaign will never send again — do not offer
                 Retry (the server 409s it anyway). */}
             {campaignStatus !== "canceled" ? (
+              <Guide id="campaigns.detail.retry">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={busyId === r.id}
+                  onClick={() => review(r.id, "retry")}
+                >
+                  Retry
+                </button>
+              </Guide>
+            ) : null}
+            <Guide id="campaigns.detail.mark-failed">
               <button
                 type="button"
                 className="type-chip"
                 disabled={busyId === r.id}
-                onClick={() => review(r.id, "retry")}
+                onClick={() => review(r.id, "mark_failed")}
               >
-                Retry
+                Mark failed
               </button>
-            ) : null}
-            <button
-              type="button"
-              className="type-chip"
-              disabled={busyId === r.id}
-              onClick={() => review(r.id, "mark_failed")}
-            >
-              Mark failed
-            </button>
+            </Guide>
           </span>
         ) : null,
     },
@@ -165,12 +170,14 @@ export function RecipientsTable({
           {error}
         </p>
       ) : null}
-      <DataTable
-        columns={columns}
-        rows={recipients}
-        getRowKey={(r) => r.id}
-        empty="No recipients."
-      />
+      <Guide id="campaigns.detail.recipients-table">
+        <DataTable
+          columns={columns}
+          rows={recipients}
+          getRowKey={(r) => r.id}
+          empty="No recipients."
+        />
+      </Guide>
     </>
   );
 }

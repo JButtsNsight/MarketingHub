@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireSectionUser } from "@/lib/requireSection";
 import { getUserClient } from "@/lib/supabase";
 import {
@@ -46,7 +47,9 @@ export default async function FunctionsPage() {
 
   return (
     <>
-      <PageHeader title="Edge Functions" />
+      <Guide id="integrations.functions.page">
+        <PageHeader title="Edge Functions" />
+      </Guide>
       <FunctionsConsole initialFunctions={functions} />
     </>
   );

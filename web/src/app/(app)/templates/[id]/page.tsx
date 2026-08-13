@@ -8,6 +8,7 @@ import { TemplatePreview } from "@/components/templates/TemplatePreview";
 import { TemplateEditor } from "@/components/templates/TemplateEditor";
 import { categoryColorVar } from "@/components/templates/categoryColor";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +43,14 @@ export default async function TemplateDetailPage({
   return (
     <article className="tpl-detail">
       <div className="page-head">
-        <h1>{template.name}</h1>
-        <Link className="type-chip" href="/templates">
-          Back to templates
-        </Link>
+        <Guide id="engagement.template.heading">
+          <h1>{template.name}</h1>
+        </Guide>
+        <Guide id="engagement.template.back">
+          <Link className="type-chip" href="/templates">
+            Back to templates
+          </Link>
+        </Guide>
       </div>
 
       <div className="tpl-detail-body">
@@ -54,9 +59,10 @@ export default async function TemplateDetailPage({
           <TemplateEditor key={template.updated_at} template={template} />
         </div>
 
-        <Surface as="aside" className="tpl-detail-meta" glint>
-          <h2>Details</h2>
-          <dl>
+        <Guide id="engagement.template.details">
+          <Surface as="aside" className="tpl-detail-meta" glint>
+            <h2>Details</h2>
+            <dl>
             <dt>Type</dt>
             <dd>{template.type === "email" ? "Email" : "Text"}</dd>
 
@@ -98,8 +104,9 @@ export default async function TemplateDetailPage({
                 {isoDate(template.updated_at)}
               </time>
             </dd>
-          </dl>
-        </Surface>
+            </dl>
+          </Surface>
+        </Guide>
       </div>
     </article>
   );

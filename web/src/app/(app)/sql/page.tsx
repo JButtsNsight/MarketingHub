@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireSectionUser } from "@/lib/requireSection";
 import { listHistory, listSnippets } from "@/lib/console/sql";
 import { SqlConsole } from "@/components/console/SqlConsole";
@@ -34,10 +35,12 @@ export default async function SqlPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Build"
-        title="SQL Editor"
-      />
+      <Guide id="sql.page.header">
+        <PageHeader
+          eyebrow="Build"
+          title="SQL Editor"
+        />
+      </Guide>
       <SqlConsole initialSnippets={snippets} initialHistory={history} />
     </>
   );

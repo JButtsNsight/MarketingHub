@@ -1,3 +1,4 @@
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
@@ -91,19 +92,25 @@ export default async function IndexesPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Indexes" />
-      <Tabs items={DB_TABS} />
+      <Guide id="db-platform.indexes.header">
+        <PageHeader eyebrow="Database" title="Indexes" />
+      </Guide>
+      <Guide id="db-platform.common.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       {indexes ? (
         <IndexesClient initialIndexes={indexes} tables={tables} />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="db-platform.common.introspection-unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

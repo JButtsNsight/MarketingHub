@@ -6,6 +6,7 @@ import { requireSectionUser } from "@/lib/requireSection";
 import { DB_TABS } from "@/lib/console/tabs";
 import { OBJECT_SCHEMAS } from "@/lib/console/dbobjects";
 import { listColumns, listTables } from "@/lib/console/pgmeta";
+import { Guide } from "@/components/guide/Guide";
 import {
   SchemaDesignerCanvas,
   type DesignerColumn,
@@ -132,19 +133,25 @@ export default async function SchemaDesignerPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Designer" />
-      <Tabs items={DB_TABS} />
+      <Guide id="database.designer.page">
+        <PageHeader eyebrow="Database" title="Designer" />
+      </Guide>
+      <Guide id="database.section.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       {model ? (
         <SchemaDesignerCanvas tables={model.tables} edges={model.edges} />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="database.section.introspection-missing">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Manual STOP-list entry. Collapsed to a button; expanded it POSTs the
@@ -61,65 +62,75 @@ export function AddSuppressionForm() {
 
   if (!open) {
     return (
-      <button
-        type="button"
-        className="btn-primary"
-        onClick={() => setOpen(true)}
-      >
-        Suppress a number
-      </button>
+      <Guide id="engagement.suppressions.add">
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setOpen(true)}
+        >
+          Suppress a number
+        </button>
+      </Guide>
     );
   }
 
   return (
     <Surface className="reschedule-pop" elevated={false}>
-      <div className="field">
-        <label htmlFor="suppress-phone">Phone (US)</label>
-        <input
-          id="suppress-phone"
-          type="tel"
-          className="surface control"
-          placeholder="(555) 555-0100"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="suppress-note">Why (kept in the audit trail)</label>
-        <input
-          id="suppress-note"
-          type="text"
-          className="surface control"
-          placeholder="e.g. asked to stop by phone"
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-        />
-      </div>
+      <Guide id="engagement.suppressions.phone">
+        <div className="field">
+          <label htmlFor="suppress-phone">Phone (US)</label>
+          <input
+            id="suppress-phone"
+            type="tel"
+            className="surface control"
+            placeholder="(555) 555-0100"
+            value={phone}
+            onChange={(e) => setPhone(e.target.value)}
+          />
+        </div>
+      </Guide>
+      <Guide id="engagement.suppressions.note">
+        <div className="field">
+          <label htmlFor="suppress-note">Why (kept in the audit trail)</label>
+          <input
+            id="suppress-note"
+            type="text"
+            className="surface control"
+            placeholder="e.g. asked to stop by phone"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        </div>
+      </Guide>
       {error ? (
         <p className="form-error" role="alert">
           {error}
         </p>
       ) : null}
       <div className="form-actions">
-        <button
-          type="button"
-          className="type-chip"
-          onClick={() => {
-            setOpen(false);
-            setError(null);
-          }}
-          disabled={busy}
-        >
-          Cancel
-        </button>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={onAdd}
-          disabled={busy}
-        >
-          Suppress
-        </button>
+        <Guide id="engagement.suppressions.cancel-add">
+          <button
+            type="button"
+            className="type-chip"
+            onClick={() => {
+              setOpen(false);
+              setError(null);
+            }}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+        </Guide>
+        <Guide id="engagement.suppressions.confirm-add">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={onAdd}
+            disabled={busy}
+          >
+            Suppress
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

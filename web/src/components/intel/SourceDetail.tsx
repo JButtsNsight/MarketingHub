@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { IntelSource } from "@/lib/intel/schema";
 import { DataTable, type Column } from "@/components/ui/DataTable";
+import { Guide } from "@/components/guide/Guide";
 import { KeyValue } from "@/components/ui/KeyValue";
 import { Section } from "@/components/ui/Section";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -87,14 +88,20 @@ export function SourceDetail({
     {
       key: "title",
       header: "document",
-      render: (d) => <Link href={`/intel/documents/${d.id}`}>{d.title}</Link>,
+      render: (d) => (
+        <Guide id="intel.documents.doc-link">
+          <Link href={`/intel/documents/${d.id}`}>{d.title}</Link>
+        </Guide>
+      ),
     },
     {
       key: "status",
       header: "status",
       width: "140px",
       render: (d) => (
-        <StatusPill status={documentStatusKind(d.status)}>{d.status}</StatusPill>
+        <Guide id="intel.documents.status">
+          <StatusPill status={documentStatusKind(d.status)}>{d.status}</StatusPill>
+        </Guide>
       ),
     },
     {
@@ -123,9 +130,11 @@ export function SourceDetail({
       align: "right",
       width: "130px",
       render: (d) => (
-        <button type="button" className="type-chip" onClick={() => void onDelete(d.id)}>
-          {confirmingId === d.id ? "Really delete?" : "Delete"}
-        </button>
+        <Guide id="intel.documents.delete">
+          <button type="button" className="type-chip" onClick={() => void onDelete(d.id)}>
+            {confirmingId === d.id ? "Really delete?" : "Delete"}
+          </button>
+        </Guide>
       ),
     },
   ];
@@ -139,7 +148,14 @@ export function SourceDetail({
             ...(source.kind === "url"
               ? [
                   { label: "URL", value: source.url ?? "—", mono: true },
-                  { label: "Ingestion", value: `paste-text only — ${URL_FETCH_NOTE}` },
+                  {
+                    label: "Ingestion",
+                    value: (
+                      <Guide id="intel.source.url-note">
+                        <span>paste-text only — {URL_FETCH_NOTE}</span>
+                      </Guide>
+                    ),
+                  },
                 ]
               : []),
             ...(source.notes ? [{ label: "Notes", value: source.notes }] : []),
@@ -152,15 +168,19 @@ export function SourceDetail({
         title="Documents"
         description={
           awaiting > 0 ? (
-            <>
-              {awaiting} awaiting embedding — {PENDING_NOTE}
-            </>
+            <Guide id="intel.documents.pending-note">
+              <span>
+                {awaiting} awaiting embedding — {PENDING_NOTE}
+              </span>
+            </Guide>
           ) : undefined
         }
         actions={
-          <button type="button" className="type-chip" onClick={() => void load()}>
-            Refresh
-          </button>
+          <Guide id="intel.documents.refresh">
+            <button type="button" className="type-chip" onClick={() => void load()}>
+              Refresh
+            </button>
+          </Guide>
         }
       >
         {deleteError ? (
@@ -175,12 +195,14 @@ export function SourceDetail({
             <p>Paste competitor text below to make it searchable.</p>
           </Surface>
         ) : (
-          <DataTable
-            columns={columns}
-            rows={documents}
-            getRowKey={(d) => d.id}
-            empty="No documents."
-          />
+          <Guide id="intel.source.documents-table">
+            <DataTable
+              columns={columns}
+              rows={documents}
+              getRowKey={(d) => d.id}
+              empty="No documents."
+            />
+          </Guide>
         )}
 
         <div className="form-actions">

@@ -13,6 +13,7 @@ import Tus from "@uppy/tus";
 
 import { Badge } from "../ui/Badge";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import {
   RESUMABLE_CHUNK_BYTES,
   RESUMABLE_ENDPOINT,
@@ -244,108 +245,118 @@ export function ResumableUploader({
   if (rows.length === 0 && rejections.length === 0) return null;
 
   return (
-    <div className="stack">
-      {rejections.map((r, i) => (
-        <p key={`${r.name}-${i}`} className="form-error" role="alert">
-          {r.name}: {r.reason}{" "}
-          <button
-            type="button"
-            className="type-chip"
-            aria-label={`Dismiss ${r.name}`}
-            onClick={() => setRejections((prev) => prev.filter((_, j) => j !== i))}
-          >
-            Dismiss
-          </button>
-        </p>
-      ))}
-
-      {rows.map((row) => (
-        <Surface
-          key={row.id}
-          elevated={false}
-          style={{ padding: "10px 14px" }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <span
-              className="mono"
-              style={{
-                flex: "1 1 auto",
-                minWidth: 0,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {row.objectName}
-            </span>
-            <span className="mono" style={{ color: "var(--muted)", fontSize: "12px" }}>
-              {formatBytes(row.bytesUploaded)} / {formatBytes(row.size)}
-            </span>
-            <span
-              role="progressbar"
-              aria-label={`Upload progress for ${row.objectName}`}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={row.percent}
-              style={{
-                flex: "0 0 auto",
-                width: "160px",
-                height: "6px",
-                borderRadius: "999px",
-                background: "var(--wash)",
-                overflow: "hidden",
-              }}
-            >
-              <span
-                style={{
-                  display: "block",
-                  height: "100%",
-                  width: `${row.percent}%`,
-                  background: row.status === "error" ? "var(--fail)" : "var(--accent)",
-                  transition: "width 0.2s ease",
-                }}
-              />
-            </span>
-            <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
-            <span className="campaign-actions">
-              {row.status === "uploading" || row.status === "paused" ? (
-                <button
-                  type="button"
-                  className="type-chip"
-                  aria-label={`${row.status === "paused" ? "Resume" : "Pause"} ${row.objectName}`}
-                  onClick={() => pauseResume(row.id)}
-                >
-                  {row.status === "paused" ? "Resume" : "Pause"}
-                </button>
-              ) : null}
-              {row.status === "error" ? (
-                <button
-                  type="button"
-                  className="type-chip"
-                  aria-label={`Retry ${row.objectName}`}
-                  onClick={() => retry(row.id)}
-                >
-                  Retry
-                </button>
-              ) : null}
+    <Guide id="storage.uploads.panel">
+      <div className="stack">
+        {rejections.map((r, i) => (
+          <Guide id="storage.uploads.rejection" key={`${r.name}-${i}`}>
+            <p className="form-error" role="alert">
+              {r.name}: {r.reason}{" "}
               <button
                 type="button"
                 className="type-chip"
-                aria-label={`Remove ${row.objectName}`}
-                onClick={() => remove(row.id)}
+                aria-label={`Dismiss ${r.name}`}
+                onClick={() => setRejections((prev) => prev.filter((_, j) => j !== i))}
               >
-                Remove
+                Dismiss
               </button>
-            </span>
-          </div>
-          {row.error ? (
-            <p className="form-error" role="alert">
-              {row.error}
             </p>
-          ) : null}
-        </Surface>
-      ))}
-    </div>
+          </Guide>
+        ))}
+  
+        {rows.map((row) => (
+          <Surface
+            key={row.id}
+            elevated={false}
+            style={{ padding: "10px 14px" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+              <span
+                className="mono"
+                style={{
+                  flex: "1 1 auto",
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {row.objectName}
+              </span>
+              <span className="mono" style={{ color: "var(--muted)", fontSize: "12px" }}>
+                {formatBytes(row.bytesUploaded)} / {formatBytes(row.size)}
+              </span>
+              <span
+                role="progressbar"
+                aria-label={`Upload progress for ${row.objectName}`}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={row.percent}
+                style={{
+                  flex: "0 0 auto",
+                  width: "160px",
+                  height: "6px",
+                  borderRadius: "999px",
+                  background: "var(--wash)",
+                  overflow: "hidden",
+                }}
+              >
+                <span
+                  style={{
+                    display: "block",
+                    height: "100%",
+                    width: `${row.percent}%`,
+                    background: row.status === "error" ? "var(--fail)" : "var(--accent)",
+                    transition: "width 0.2s ease",
+                  }}
+                />
+              </span>
+              <Badge tone={STATUS_TONE[row.status]}>{row.status}</Badge>
+              <span className="campaign-actions">
+                {row.status === "uploading" || row.status === "paused" ? (
+                  <Guide id="storage.uploads.pause">
+                    <button
+                      type="button"
+                      className="type-chip"
+                      aria-label={`${row.status === "paused" ? "Resume" : "Pause"} ${row.objectName}`}
+                      onClick={() => pauseResume(row.id)}
+                    >
+                      {row.status === "paused" ? "Resume" : "Pause"}
+                    </button>
+                  </Guide>
+                ) : null}
+                {row.status === "error" ? (
+                  <Guide id="storage.uploads.retry">
+                    <button
+                      type="button"
+                      className="type-chip"
+                      aria-label={`Retry ${row.objectName}`}
+                      onClick={() => retry(row.id)}
+                    >
+                      Retry
+                    </button>
+                  </Guide>
+                ) : null}
+                <Guide id="storage.uploads.remove">
+                  <button
+                    type="button"
+                    className="type-chip"
+                    aria-label={`Remove ${row.objectName}`}
+                    onClick={() => remove(row.id)}
+                  >
+                    Remove
+                  </button>
+                </Guide>
+              </span>
+            </div>
+            {row.error ? (
+              <p className="form-error" role="alert">
+                {row.error}
+              </p>
+            ) : null}
+          </Surface>
+        ))}
+      </div>
+    </Guide>
   );
 }
 

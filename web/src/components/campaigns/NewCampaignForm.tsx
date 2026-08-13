@@ -14,6 +14,7 @@ import {
   SEND_TIMEZONES,
 } from "@/lib/sms/schedule";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 // Compliance note (not user-facing, removed from the UI 2026-07-31 at owner
 // direction): SimpleTexting has signed no BAA, so message content must never
@@ -148,34 +149,42 @@ export function NewCampaignForm({
       onSubmit={onSubmit}
       noValidate
     >
-      <h1>New SMS campaign</h1>
+      <h1>
+        <Guide id="campaigns.new.title">
+          <span>New SMS campaign</span>
+        </Guide>
+      </h1>
 
       <div className="field">
         <label htmlFor="camp-name">Campaign name</label>
-        <input
-          id="camp-name"
-          className="surface control"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="e.g. August wellness recall"
-        />
+        <Guide id="campaigns.new.name">
+          <input
+            id="camp-name"
+            className="surface control"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. August wellness recall"
+          />
+        </Guide>
       </div>
 
       <div className="field">
         <label htmlFor="camp-template">Template</label>
-        <select
-          id="camp-template"
-          className="surface control"
-          value={templateId}
-          onChange={(e) => setTemplateId(e.target.value)}
-        >
-          <option value="">Choose a text template…</option>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.new.template">
+          <select
+            id="camp-template"
+            className="surface control"
+            value={templateId}
+            onChange={(e) => setTemplateId(e.target.value)}
+          >
+            <option value="">Choose a text template…</option>
+            {templates.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </Guide>
         {selectedTemplate ? (
           <>
             <pre className="code-pre mono">{selectedTemplate.body}</pre>
@@ -196,22 +205,24 @@ export function NewCampaignForm({
 
       <div className="field">
         <label htmlFor="camp-list">Contact list</label>
-        <select
-          id="camp-list"
-          className="surface control"
-          value={contactListId}
-          onChange={(e) => setContactListId(e.target.value)}
-        >
-          <option value="">Choose a contact list…</option>
-          {lists.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-              {l.source === "monday"
-                ? ` — Monday: ${l.monday_board_name ?? l.monday_board_id} (live)`
-                : ` — sheet, ${l.contact_count} contacts`}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.new.contact-list">
+          <select
+            id="camp-list"
+            className="surface control"
+            value={contactListId}
+            onChange={(e) => setContactListId(e.target.value)}
+          >
+            <option value="">Choose a contact list…</option>
+            {lists.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+                {l.source === "monday"
+                  ? ` — Monday: ${l.monday_board_name ?? l.monday_board_id} (live)`
+                  : ` — sheet, ${l.contact_count} contacts`}
+              </option>
+            ))}
+          </select>
+        </Guide>
         {selectedList ? (
           <p className="note">
             {selectedList.source === "monday" ? (
@@ -240,14 +251,16 @@ export function NewCampaignForm({
 
       <div className="field">
         <label htmlFor="camp-date">Send date (Mon–Fri)</label>
-        <input
-          id="camp-date"
-          type="date"
-          className="surface control"
-          value={sendDate}
-          min={minDate}
-          onChange={(e) => setSendDate(e.target.value)}
-        />
+        <Guide id="campaigns.new.send-date">
+          <input
+            id="camp-date"
+            type="date"
+            className="surface control"
+            value={sendDate}
+            min={minDate}
+            onChange={(e) => setSendDate(e.target.value)}
+          />
+        </Guide>
         {sendDate && !isWeekday(sendDate) ? (
           <p className="form-error" role="alert">
             Blasts only go out Monday–Friday.
@@ -257,18 +270,20 @@ export function NewCampaignForm({
 
       <div className="field">
         <label htmlFor="camp-zone">Time zone</label>
-        <select
-          id="camp-zone"
-          className="surface control"
-          value={sendTimezone}
-          onChange={(e) => setSendTimezone(e.target.value)}
-        >
-          {SEND_TIMEZONES.map((z) => (
-            <option key={z.id} value={z.id}>
-              {z.label}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.new.timezone">
+          <select
+            id="camp-zone"
+            className="surface control"
+            value={sendTimezone}
+            onChange={(e) => setSendTimezone(e.target.value)}
+          >
+            {SEND_TIMEZONES.map((z) => (
+              <option key={z.id} value={z.id}>
+                {z.label}
+              </option>
+            ))}
+          </select>
+        </Guide>
         {/* Hidden only when the list provably has no per-contact zones (a
             Monday list without a timezone column); CSV member zones are not
             on the list row, so the hint stays static there. */}
@@ -281,19 +296,21 @@ export function NewCampaignForm({
 
       <div className="field">
         <label htmlFor="camp-time">Send time</label>
-        <select
-          id="camp-time"
-          className="surface control"
-          value={sendTime}
-          onChange={(e) => setSendTime(e.target.value)}
-        >
-          <option value="">Choose a time slot…</option>
-          {SEND_SLOTS.map((s) => (
-            <option key={s} value={s}>
-              {formatSlot(s)}
-            </option>
-          ))}
-        </select>
+        <Guide id="campaigns.new.send-time">
+          <select
+            id="camp-time"
+            className="surface control"
+            value={sendTime}
+            onChange={(e) => setSendTime(e.target.value)}
+          >
+            <option value="">Choose a time slot…</option>
+            {SEND_SLOTS.map((s) => (
+              <option key={s} value={s}>
+                {formatSlot(s)}
+              </option>
+            ))}
+          </select>
+        </Guide>
         <p className="note">
           Blast slots run 8:00 AM – 1:00 PM in the chosen time zone, in
           30-minute increments.
@@ -307,9 +324,11 @@ export function NewCampaignForm({
       ) : null}
 
       <div className="form-actions">
-        <button type="submit" className="btn-primary" disabled={submitting}>
-          {submitting ? "Creating…" : "Create campaign"}
-        </button>
+        <Guide id="campaigns.new.create">
+          <button type="submit" className="btn-primary" disabled={submitting}>
+            {submitting ? "Creating…" : "Create campaign"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

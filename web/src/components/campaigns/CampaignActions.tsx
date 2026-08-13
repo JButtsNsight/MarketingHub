@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CampaignStatus } from "@/lib/sms/schema";
+import { Guide } from "@/components/guide/Guide";
 
 type CampaignAction = "pause" | "resume" | "cancel";
 
@@ -62,30 +63,36 @@ export function CampaignActions({
 
   return (
     <div className="campaign-actions">
-      <button
-        type="button"
-        className="type-chip"
-        disabled={busy || !canPause}
-        onClick={() => act("pause")}
-      >
-        Pause
-      </button>
-      <button
-        type="button"
-        className="type-chip"
-        disabled={busy || !canResume}
-        onClick={() => act("resume")}
-      >
-        Resume
-      </button>
-      <button
-        type="button"
-        className="type-chip"
-        disabled={busy || !canCancel}
-        onClick={() => act("cancel")}
-      >
-        Cancel
-      </button>
+      <Guide id="campaigns.detail.pause">
+        <button
+          type="button"
+          className="type-chip"
+          disabled={busy || !canPause}
+          onClick={() => act("pause")}
+        >
+          Pause
+        </button>
+      </Guide>
+      <Guide id="campaigns.detail.resume">
+        <button
+          type="button"
+          className="type-chip"
+          disabled={busy || !canResume}
+          onClick={() => act("resume")}
+        >
+          Resume
+        </button>
+      </Guide>
+      <Guide id="campaigns.detail.cancel">
+        <button
+          type="button"
+          className="type-chip"
+          disabled={busy || !canCancel}
+          onClick={() => act("cancel")}
+        >
+          Cancel
+        </button>
+      </Guide>
       {error ? (
         <p className="form-error" role="alert">
           {error}

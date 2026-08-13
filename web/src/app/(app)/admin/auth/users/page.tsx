@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Forbidden } from "@/components/ui/Forbidden";
 import { AuthUsersClient } from "@/components/console/AuthUsersClient";
+import { Guide } from "@/components/guide/Guide";
 import { AUTH_TABS } from "@/lib/console/tabs";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 
@@ -26,8 +27,12 @@ export default async function AuthUsersPage() {
 
   return (
     <>
-      <PageHeader title="Users" />
-      <Tabs items={AUTH_TABS} />
+      <Guide id="auth-admin.users.header">
+        <PageHeader title="Users" />
+      </Guide>
+      <Guide id="auth-admin.auth.tabs">
+        <Tabs items={AUTH_TABS} />
+      </Guide>
       <AuthUsersClient />
     </>
   );

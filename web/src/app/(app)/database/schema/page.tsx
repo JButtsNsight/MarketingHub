@@ -11,6 +11,7 @@ import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables, type EditorTable } from "@/lib/console/tables";
 import { listExtensions, type PgExtension } from "@/lib/console/pgmeta";
 import { DB_TABS } from "@/lib/console/tabs";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live introspection; never prerender.
 export const dynamic = "force-dynamic";
@@ -67,15 +68,21 @@ export default async function SchemaPage() {
   if (!tables) {
     return (
       <>
-        <PageHeader eyebrow="Database" title="Schema" />
-        <Tabs items={DB_TABS} />
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="database.schema.page">
+          <PageHeader eyebrow="Database" title="Schema" />
+        </Guide>
+        <Guide id="database.section.tabs">
+          <Tabs items={DB_TABS} />
+        </Guide>
+        <Guide id="database.section.introspection-missing">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
@@ -85,11 +92,15 @@ export default async function SchemaPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Database"
-        title="Schema"
-      />
-      <Tabs items={DB_TABS} />
+      <Guide id="database.schema.page">
+        <PageHeader
+          eyebrow="Database"
+          title="Schema"
+        />
+      </Guide>
+      <Guide id="database.section.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       <div className="stack">
         <div className="stat-grid">
@@ -112,7 +123,9 @@ export default async function SchemaPage() {
           >
             {/* Client island: pages the table sections 10 at a time (the
                 unbounded dimension of this page) with the shared pager. */}
-            <SchemaTableList tables={tables.filter((t) => t.schema === schema)} />
+            <Guide id="database.schema.table-list">
+              <SchemaTableList tables={tables.filter((t) => t.schema === schema)} />
+            </Guide>
           </Section>
         ))}
 
@@ -121,15 +134,17 @@ export default async function SchemaPage() {
           title="Extensions"
           description="Installed extensions carry a version badge; the rest are available to enable."
         >
-          <DataTable
-            columns={EXTENSION_COLUMNS}
-            rows={[
-              ...installed,
-              ...extensions.filter((e) => !e.installed_version),
-            ].slice(0, 60)}
-            getRowKey={(e) => e.name}
-            empty="No extensions reported."
-          />
+          <Guide id="database.schema.extensions-table">
+            <DataTable
+              columns={EXTENSION_COLUMNS}
+              rows={[
+                ...installed,
+                ...extensions.filter((e) => !e.installed_version),
+              ].slice(0, 60)}
+              getRowKey={(e) => e.name}
+              empty="No extensions reported."
+            />
+          </Guide>
         </Section>
       </div>
     </>

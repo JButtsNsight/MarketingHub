@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Section } from "../ui/Section";
@@ -170,9 +171,11 @@ export function WebhooksClient({
       align: "right",
       width: "110px",
       render: (h) => (
-        <button type="button" className="type-chip" onClick={() => void drop(h)}>
-          Drop
-        </button>
+        <Guide id="db-platform.webhooks.drop">
+          <button type="button" className="type-chip" onClick={() => void drop(h)}>
+            Drop
+          </button>
+        </Guide>
       ),
     },
   ];
@@ -181,21 +184,23 @@ export function WebhooksClient({
 
   return (
     <div className="stack">
-      <Surface className="empty-state" elevated={false}>
-        <p>
-          {ready ? (
-            <>
-              The <span className="mono">pg_net</span> scoping migration is
-              applied — webhook creation is enabled.
-            </>
-          ) : (
-            <strong>
-              The <span className="mono">pg_net</span> scoping migration is not
-              applied yet — creating a webhook is refused.
-            </strong>
-          )}
-        </p>
-      </Surface>
+      <Guide id="db-platform.webhooks.pg-net-status">
+        <Surface className="empty-state" elevated={false}>
+          <p>
+            {ready ? (
+              <>
+                The <span className="mono">pg_net</span> scoping migration is
+                applied — webhook creation is enabled.
+              </>
+            ) : (
+              <strong>
+                The <span className="mono">pg_net</span> scoping migration is not
+                applied yet — creating a webhook is refused.
+              </strong>
+            )}
+          </p>
+        </Surface>
+      </Guide>
 
       <div className="stat-grid">
         <StatCard label="Webhooks" value={webhooks.length} accent="var(--data-2)" />
@@ -228,24 +233,28 @@ export function WebhooksClient({
         eyebrow="Trigger → http_request"
         title="Webhooks"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={!ready}
-            title={ready ? undefined : "Apply the pg_net scoping migration first."}
-            onClick={() => setCreating((v) => !v)}
-          >
-            {creating ? "Close" : "New webhook"}
-          </button>
+          <Guide id="db-platform.webhooks.create">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={!ready}
+              title={ready ? undefined : "Apply the pg_net scoping migration first."}
+              onClick={() => setCreating((v) => !v)}
+            >
+              {creating ? "Close" : "New webhook"}
+            </button>
+          </Guide>
         }
       >
-        <DataTable
-          columns={columns}
-          rows={webhooks}
-          getRowKey={(h) => `${h.schema}.${h.table}.${h.name}`}
-          empty="No database webhooks."
-          paginate={50}
-        />
+        <Guide id="db-platform.webhooks.table">
+          <DataTable
+            columns={columns}
+            rows={webhooks}
+            getRowKey={(h) => `${h.schema}.${h.table}.${h.name}`}
+            empty="No database webhooks."
+            paginate={50}
+          />
+        </Guide>
       </Section>
       {dialog}
     </div>
@@ -395,95 +404,107 @@ function WebhookForm({
     <Surface className="teditor-insert" elevated={false}>
       <span className="eyebrow">New webhook</span>
 
-      <div className="field">
-        <label htmlFor="wh-name">name</label>
-        <input
-          id="wh-name"
-          className="surface control mono"
-          type="text"
-          placeholder="webhook_name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="wh-table">table</label>
-        {availableTables.length === 0 ? (
-          <span className="teditor-test">No tables available.</span>
-        ) : (
-          <select
-            id="wh-table"
+      <Guide id="db-platform.webhooks.name-field">
+        <div className="field">
+          <label htmlFor="wh-name">name</label>
+          <input
+            id="wh-name"
             className="surface control mono"
-            value={tableKey}
-            onChange={(e) => setTableKey(e.target.value)}
-          >
-            {availableTables.map((t) => {
-              const key = `${t.schema}.${t.name}`;
-              return (
-                <option key={key} value={key}>
-                  {key}
-                </option>
-              );
-            })}
-          </select>
-        )}
-      </div>
-
-      <div className="field">
-        <label>events</label>
-        <div className="campaign-actions">
-          {EVENT_OPTIONS.map((e) => (
-            <label key={e} className="teditor-null">
-              <input
-                type="checkbox"
-                checked={events.has(e)}
-                onChange={() => toggleEvent(e)}
-              />{" "}
-              {e}
-            </label>
-          ))}
+            type="text"
+            placeholder="webhook_name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
         </div>
-      </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="wh-method">method</label>
-        <select
-          id="wh-method"
-          className="surface control mono"
-          value={method}
-          onChange={(e) => setMethod(e.target.value as WebhookMethodOption)}
-        >
-          {METHOD_OPTIONS.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-      </div>
+      <Guide id="db-platform.webhooks.table-picker">
+        <div className="field">
+          <label htmlFor="wh-table">table</label>
+          {availableTables.length === 0 ? (
+            <span className="teditor-test">No tables available.</span>
+          ) : (
+            <select
+              id="wh-table"
+              className="surface control mono"
+              value={tableKey}
+              onChange={(e) => setTableKey(e.target.value)}
+            >
+              {availableTables.map((t) => {
+                const key = `${t.schema}.${t.name}`;
+                return (
+                  <option key={key} value={key}>
+                    {key}
+                  </option>
+                );
+              })}
+            </select>
+          )}
+        </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="wh-url">url</label>
-        <input
-          id="wh-url"
-          className="surface control mono"
-          type="text"
-          placeholder="https://example.com/hook"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-      </div>
+      <Guide id="db-platform.webhooks.events">
+        <div className="field">
+          <label>events</label>
+          <div className="campaign-actions">
+            {EVENT_OPTIONS.map((e) => (
+              <label key={e} className="teditor-null">
+                <input
+                  type="checkbox"
+                  checked={events.has(e)}
+                  onChange={() => toggleEvent(e)}
+                />{" "}
+                {e}
+              </label>
+            ))}
+          </div>
+        </div>
+      </Guide>
 
-      <div className="field">
-        <label htmlFor="wh-headers">headers (JSON, optional)</label>
-        <textarea
-          id="wh-headers"
-          className="surface control mono"
-          rows={4}
-          value={headersText}
-          onChange={(e) => setHeadersText(e.target.value)}
-        />
-      </div>
+      <Guide id="db-platform.webhooks.method">
+        <div className="field">
+          <label htmlFor="wh-method">method</label>
+          <select
+            id="wh-method"
+            className="surface control mono"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as WebhookMethodOption)}
+          >
+            {METHOD_OPTIONS.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+      </Guide>
+
+      <Guide id="db-platform.webhooks.url">
+        <div className="field">
+          <label htmlFor="wh-url">url</label>
+          <input
+            id="wh-url"
+            className="surface control mono"
+            type="text"
+            placeholder="https://example.com/hook"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+          />
+        </div>
+      </Guide>
+
+      <Guide id="db-platform.webhooks.headers">
+        <div className="field">
+          <label htmlFor="wh-headers">headers (JSON, optional)</label>
+          <textarea
+            id="wh-headers"
+            className="surface control mono"
+            rows={4}
+            value={headersText}
+            onChange={(e) => setHeadersText(e.target.value)}
+          />
+        </div>
+      </Guide>
 
       {error ? (
         <p className="form-error" role="alert">
@@ -500,9 +521,11 @@ function WebhookForm({
         >
           Cancel
         </button>
-        <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
-          Create webhook
-        </button>
+        <Guide id="db-platform.webhooks.submit">
+          <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
+            Create webhook
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

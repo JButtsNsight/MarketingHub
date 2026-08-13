@@ -1,5 +1,6 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireSectionUser } from "@/lib/requireSection";
 import { RealtimeInspector } from "@/components/console/RealtimeInspector";
 
@@ -24,7 +25,9 @@ export default async function RealtimePage() {
 
   return (
     <>
-      <PageHeader title="Realtime" />
+      <Guide id="integrations.realtime.page">
+        <PageHeader title="Realtime" />
+      </Guide>
       <RealtimeInspector userEmail={user.email} />
     </>
   );

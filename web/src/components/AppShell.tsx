@@ -3,6 +3,8 @@ import Link from "next/link";
 import type { SectionId } from "@/lib/authGroups";
 import { Nav } from "./Nav";
 import { ThemeToggle } from "./ThemeToggle";
+import { GuidedToggle } from "./GuidedToggle";
+import { Guide } from "./guide/Guide";
 
 /**
  * The console shell: a masthead with the MARKETING HUB wordmark (links home) and the
@@ -28,11 +30,18 @@ export function AppShell({
   return (
     <div className="app-shell">
       <header className="masthead">
-        <Link href="/overview" className="word word-link">
-          Marketing Hub
-        </Link>
+        <Guide id="nav.shell.wordmark">
+          <Link href="/overview" className="word word-link">
+            Marketing Hub
+          </Link>
+        </Guide>
         <div className="masthead-right">
-          <ThemeToggle />
+          <Guide id="nav.shell.guided-toggle">
+            <GuidedToggle />
+          </Guide>
+          <Guide id="nav.shell.theme-toggle">
+            <ThemeToggle />
+          </Guide>
           {user}
         </div>
       </header>

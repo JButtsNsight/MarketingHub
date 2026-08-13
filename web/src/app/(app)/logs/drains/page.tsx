@@ -5,6 +5,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { RefList, type RefRow } from "@/components/ui/RefList";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import { LOGS_TABS } from "@/lib/console/tabs";
 
@@ -151,27 +152,37 @@ export default async function LogDrainsPage() {
 
   return (
     <>
-      <PageHeader title="Log Drains" />
-      <Tabs items={LOGS_TABS} />
+      <Guide id="observability.drains.page">
+        <PageHeader title="Log Drains" />
+      </Guide>
+      <Guide id="observability.logs.tabs">
+        <Tabs items={LOGS_TABS} />
+      </Guide>
 
       <div className="stack">
         <Section
           eyebrow="Capability"
           title="Drains are real upstream — and off here"
         >
-          <RefList items={CAPABILITY_ROWS} />
+          <Guide id="observability.drains.capability">
+            <RefList items={CAPABILITY_ROWS} />
+          </Guide>
         </Section>
 
         <Section eyebrow="Coverage" title="What does the drain job instead">
-          <RefList items={COVERAGE_ROWS} />
+          <Guide id="observability.drains.coverage">
+            <RefList items={COVERAGE_ROWS} />
+          </Guide>
         </Section>
 
         <Section eyebrow="Pipeline" title="vector → Logflare routing map">
-          <DataTable
-            columns={PIPELINE_COLUMNS}
-            rows={PIPELINE_ROUTES}
-            getRowKey={(r) => r.consoleSource}
-          />
+          <Guide id="observability.drains.pipeline-table">
+            <DataTable
+              columns={PIPELINE_COLUMNS}
+              rows={PIPELINE_ROUTES}
+              getRowKey={(r) => r.consoleSource}
+            />
+          </Guide>
         </Section>
       </div>
     </>

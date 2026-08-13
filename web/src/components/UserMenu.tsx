@@ -1,3 +1,4 @@
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "./Surface";
 
 /**
@@ -12,12 +13,16 @@ import { Surface } from "./Surface";
 export function UserMenu({ email }: { email: string }) {
   return (
     <Surface className="user-menu">
-      <span className="user-menu-email mono" title={email}>
-        {email}
-      </span>
-      <a className="user-menu-signout" href="/logout">
-        Sign out
-      </a>
+      <Guide id="nav.user.email">
+        <span className="user-menu-email mono" title={email}>
+          {email}
+        </span>
+      </Guide>
+      <Guide id="nav.user.sign-out">
+        <a className="user-menu-signout" href="/logout">
+          Sign out
+        </a>
+      </Guide>
     </Surface>
   );
 }

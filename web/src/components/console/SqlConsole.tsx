@@ -5,6 +5,7 @@ import { SqlEditor } from "../ui/SqlEditor";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Badge } from "../ui/Badge";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import { AssistantPanel } from "./AssistantPanel";
 
 /**
@@ -200,105 +201,133 @@ export function SqlConsole({
   return (
     <div className="sqlconsole">
       <div className="sqlconsole-main">
-        <SqlEditor value={doc} onChange={updateDoc} onRun={() => void run(false)} />
+        <Guide id="sql.editor.input">
+          <SqlEditor value={doc} onChange={updateDoc} onRun={() => void run(false)} />
+        </Guide>
 
         <div className="dgrid-toolbar">
           {needsConfirm ? (
             <>
-              <span className="form-error" role="alert">
-                This statement modifies the database — confirm to run it.
-              </span>
+              <Guide id="sql.editor.write-warning">
+                <span className="form-error" role="alert">
+                  This statement modifies the database — confirm to run it.
+                </span>
+              </Guide>
+              <Guide id="sql.editor.run-write">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  disabled={running}
+                  onClick={() => void run(true)}
+                >
+                  Run write
+                </button>
+              </Guide>
+              <Guide id="sql.editor.cancel-write">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setNeedsConfirm(false)}
+                >
+                  Cancel
+                </button>
+              </Guide>
+            </>
+          ) : (
+            <Guide id="sql.editor.run">
               <button
                 type="button"
                 className="btn-primary"
-                disabled={running}
-                onClick={() => void run(true)}
+                disabled={running || !doc.trim()}
+                onClick={() => void run(false)}
               >
-                Run write
+                {running ? "Running…" : "Run (⌘⏎)"}
               </button>
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => setNeedsConfirm(false)}
-              >
-                Cancel
-              </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="btn-primary"
-              disabled={running || !doc.trim()}
-              onClick={() => void run(false)}
-            >
-              {running ? "Running…" : "Run (⌘⏎)"}
-            </button>
+            </Guide>
           )}
           <span className="spacer" />
           {result ? (
             <>
-              <span className="teditor-test mono">
-                {result.rowCount.toLocaleString()} row
-                {result.rowCount === 1 ? "" : "s"}
-                {result.truncated ? " (showing first 1,000)" : ""} ·{" "}
-                {result.durationMs} ms
-              </span>
-              <button type="button" className="type-chip" onClick={exportCsv}>
-                Export CSV
-              </button>
+              <Guide id="sql.editor.result-meta">
+                <span className="teditor-test mono">
+                  {result.rowCount.toLocaleString()} row
+                  {result.rowCount === 1 ? "" : "s"}
+                  {result.truncated ? " (showing first 1,000)" : ""} ·{" "}
+                  {result.durationMs} ms
+                </span>
+              </Guide>
+              <Guide id="sql.editor.export-csv">
+                <button type="button" className="type-chip" onClick={exportCsv}>
+                  Export CSV
+                </button>
+              </Guide>
             </>
           ) : null}
           {saveOpen ? (
             <>
-              <input
-                className="surface control teditor-fctl"
-                type="text"
-                aria-label="Snippet name"
-                placeholder="snippet name"
-                value={saveName}
-                onChange={(e) => setSaveName(e.target.value)}
-              />
-              <button type="button" className="type-chip" onClick={() => void saveSnippet()}>
-                Save
-              </button>
+              <Guide id="sql.editor.snippet-name">
+                <input
+                  className="surface control teditor-fctl"
+                  type="text"
+                  aria-label="Snippet name"
+                  placeholder="snippet name"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                />
+              </Guide>
+              <Guide id="sql.editor.snippet-save">
+                <button type="button" className="type-chip" onClick={() => void saveSnippet()}>
+                  Save
+                </button>
+              </Guide>
+              <Guide id="sql.editor.snippet-cancel">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setSaveOpen(false)}
+                >
+                  Cancel
+                </button>
+              </Guide>
+            </>
+          ) : (
+            <Guide id="sql.editor.save-snippet">
               <button
                 type="button"
                 className="type-chip"
-                onClick={() => setSaveOpen(false)}
+                onClick={() => setSaveOpen(true)}
               >
-                Cancel
+                Save snippet
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="type-chip"
-              onClick={() => setSaveOpen(true)}
-            >
-              Save snippet
-            </button>
+            </Guide>
           )}
         </div>
 
         {error ? (
-          <p className="form-error mono" role="alert">
-            {error}
-          </p>
+          <Guide id="sql.editor.error">
+            <p className="form-error mono" role="alert">
+              {error}
+            </p>
+          </Guide>
         ) : null}
 
         {result ? (
           result.rows.length > 0 ? (
-            <DataTable
-              columns={resultColumns}
-              rows={result.rows}
-              getRowKey={(_, i) => String(i)}
-              empty="No rows."
-            />
+            <Guide id="sql.editor.results">
+              <DataTable
+                columns={resultColumns}
+                rows={result.rows}
+                getRowKey={(_, i) => String(i)}
+                empty="No rows."
+              />
+            </Guide>
           ) : (
-            <Surface className="empty-state" glint>
-              <h2>Success — no rows</h2>
-              <p>The statement ran without returning rows.</p>
-            </Surface>
+            <Guide id="sql.editor.no-rows">
+              <Surface className="empty-state" glint>
+                <h2>Success — no rows</h2>
+                <p>The statement ran without returning rows.</p>
+              </Surface>
+            </Guide>
           )
         ) : null}
       </div>
@@ -311,76 +340,88 @@ export function SqlConsole({
 
         <div className="nav-group">
           <span className="nav-group-label">Snippets</span>
-          <ul className="nav-list">
-            {snippets.length === 0 ? (
-              <li className="teditor-test">Nothing saved yet.</li>
-            ) : (
-              snippets.map((s) => (
-                <li key={s.id} className="sqlconsole-snippet">
-                  <button
-                    type="button"
-                    className="nav-link"
-                    title={s.sql}
-                    onClick={() => updateDoc(s.sql)}
-                  >
-                    <span className="teditor-tname">{s.name}</span>
-                  </button>
-                  {armedSnippet === s.id ? (
-                    <button
-                      type="button"
-                      className="type-chip"
-                      onClick={() => void deleteSnippet(s.id)}
-                    >
-                      Confirm ✕
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="type-chip"
-                      aria-label={`Delete snippet ${s.name}`}
-                      onClick={() => setArmedSnippet(s.id)}
-                    >
-                      ✕
-                    </button>
-                  )}
-                </li>
-              ))
-            )}
-          </ul>
+          <Guide id="sql.snippets.list">
+            <ul className="nav-list">
+              {snippets.length === 0 ? (
+                <li className="teditor-test">Nothing saved yet.</li>
+              ) : (
+                snippets.map((s) => (
+                  <li key={s.id} className="sqlconsole-snippet">
+                    <Guide id="sql.snippets.load">
+                      <button
+                        type="button"
+                        className="nav-link"
+                        title={s.sql}
+                        onClick={() => updateDoc(s.sql)}
+                      >
+                        <span className="teditor-tname">{s.name}</span>
+                      </button>
+                    </Guide>
+                    {armedSnippet === s.id ? (
+                      <Guide id="sql.snippets.delete-confirm">
+                        <button
+                          type="button"
+                          className="type-chip"
+                          onClick={() => void deleteSnippet(s.id)}
+                        >
+                          Confirm ✕
+                        </button>
+                      </Guide>
+                    ) : (
+                      <Guide id="sql.snippets.delete">
+                        <button
+                          type="button"
+                          className="type-chip"
+                          aria-label={`Delete snippet ${s.name}`}
+                          onClick={() => setArmedSnippet(s.id)}
+                        >
+                          ✕
+                        </button>
+                      </Guide>
+                    )}
+                  </li>
+                ))
+              )}
+            </ul>
+          </Guide>
         </div>
 
         <div className="nav-group">
           <span className="nav-group-label">History</span>
-          <ul className="nav-list">
-            {history.length === 0 ? (
-              <li className="teditor-test">No runs yet.</li>
-            ) : (
-              history.slice(0, 25).map((entry) => (
-                <li key={entry.id}>
-                  <button
-                    type="button"
-                    className="nav-link sqlconsole-hentry"
-                    title={entry.sql}
-                    onClick={() => updateDoc(entry.sql)}
-                  >
-                    <span className="teditor-tname mono">
-                      {entry.sql.length > 36
-                        ? `${entry.sql.slice(0, 35)}…`
-                        : entry.sql}
-                    </span>
-                    <span className="teditor-test">
-                      {stamp(entry.ran_at)} ·{" "}
-                      {entry.error ? (
-                        <Badge tone="var(--fail)">error</Badge>
-                      ) : (
-                        `${entry.row_count ?? 0} rows`
-                      )}
-                    </span>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
+          <Guide id="sql.history.list">
+            <ul className="nav-list">
+              {history.length === 0 ? (
+                <li className="teditor-test">No runs yet.</li>
+              ) : (
+                history.slice(0, 25).map((entry) => (
+                  <li key={entry.id}>
+                    <Guide id="sql.history.entry">
+                      <button
+                        type="button"
+                        className="nav-link sqlconsole-hentry"
+                        title={entry.sql}
+                        onClick={() => updateDoc(entry.sql)}
+                      >
+                        <span className="teditor-tname mono">
+                          {entry.sql.length > 36
+                            ? `${entry.sql.slice(0, 35)}…`
+                            : entry.sql}
+                        </span>
+                        <span className="teditor-test">
+                          {stamp(entry.ran_at)} ·{" "}
+                          {entry.error ? (
+                            <Badge tone="var(--fail)">error</Badge>
+                          ) : (
+                            `${entry.row_count ?? 0} rows`
+                          )}
+                        </span>
+                      </button>
+                    </Guide>
+                  </li>
+                ))
+              )}
+            </ul>
+          </Guide>
         </div>
       </Surface>
     </div>

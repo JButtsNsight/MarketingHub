@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireSectionUser } from "@/lib/requireSection";
 import { listSecrets, type VaultSecretMeta } from "@/lib/console/vault";
 import { VaultClient } from "@/components/console/VaultClient";
@@ -44,23 +45,33 @@ export default async function VaultPage() {
   if (!secrets) {
     return (
       <>
-        <PageHeader title="Vault" />
-        <Tabs items={INTEGRATION_TABS} />
-        <Surface className="empty-state" glint>
-          <h2>Vault unreachable</h2>
-          <p>
-            vault.secrets did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="integrations.vault.page">
+          <PageHeader title="Vault" />
+        </Guide>
+        <Guide id="integrations.section.tabs">
+          <Tabs items={INTEGRATION_TABS} />
+        </Guide>
+        <Guide id="integrations.vault.unreachable">
+          <Surface className="empty-state" glint>
+            <h2>Vault unreachable</h2>
+            <p>
+              vault.secrets did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
 
   return (
     <>
-      <PageHeader title="Vault" />
-      <Tabs items={INTEGRATION_TABS} />
+      <Guide id="integrations.vault.page">
+        <PageHeader title="Vault" />
+      </Guide>
+      <Guide id="integrations.section.tabs">
+        <Tabs items={INTEGRATION_TABS} />
+      </Guide>
       <VaultClient initialSecrets={secrets} />
     </>
   );

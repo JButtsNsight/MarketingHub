@@ -11,6 +11,7 @@ import {
   getExplicitZoneCounts,
   zoneChip,
 } from "@/lib/sms/zoneStats";
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
@@ -84,16 +85,24 @@ export default async function SchedulePage() {
     <>
       <PageHeader
         eyebrow="Build"
-        title="Blast schedule"
+        title={
+          <Guide id="campaigns.schedule.title">
+            <span>Blast schedule</span>
+          </Guide>
+        }
         count={`${campaigns.length} on the calendar`}
         actions={
           <>
-            <Link className="type-chip" href="/campaigns">
-              Campaigns
-            </Link>
-            <Link className="btn-primary" href="/campaigns/new">
-              New campaign
-            </Link>
+            <Guide id="campaigns.schedule.campaigns-link">
+              <Link className="type-chip" href="/campaigns">
+                Campaigns
+              </Link>
+            </Guide>
+            <Guide id="campaigns.schedule.new-link">
+              <Link className="btn-primary" href="/campaigns/new">
+                New campaign
+              </Link>
+            </Guide>
           </>
         }
       />
@@ -103,33 +112,37 @@ export default async function SchedulePage() {
       {campaigns.length > 0 ? (
         <div className="stack">
           {Array.from(byDate.entries()).map(([date, dayCampaigns]) => (
-            <Surface as="section" className="panel schedule-day" key={date} glint>
-              <h2 className="schedule-day-head">
-                {humanDate(date)} <span className="mono muted">{date}</span>
-              </h2>
-              <ul className="schedule-day-list">
-                {dayCampaigns.map((c) => {
-                  const zones = zonesFor(c);
-                  return (
-                    <li key={c.id} className="schedule-entry">
-                      <span className="mono schedule-slot">
-                        {formatSlot(c.send_time)} {zoneAbbr(c.send_timezone)}
-                      </span>
-                      {zones ? (
-                        <Badge title={zones.title}>{zones.label}</Badge>
-                      ) : null}
-                      <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
-                      <Badge tone={statusTone(c.status)}>
-                        {statusLabel(c.status)}
-                      </Badge>
-                      <span className="mono muted">
-                        {pendingCount(c)} of {totalRecipients(c)} to send
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Surface>
+            <Guide id="campaigns.schedule.day" key={date}>
+              <Surface as="section" className="panel schedule-day" glint>
+                <h2 className="schedule-day-head">
+                  {humanDate(date)} <span className="mono muted">{date}</span>
+                </h2>
+                <ul className="schedule-day-list">
+                  {dayCampaigns.map((c) => {
+                    const zones = zonesFor(c);
+                    return (
+                      <li key={c.id} className="schedule-entry">
+                        <span className="mono schedule-slot">
+                          {formatSlot(c.send_time)} {zoneAbbr(c.send_timezone)}
+                        </span>
+                        {zones ? (
+                          <Badge title={zones.title}>{zones.label}</Badge>
+                        ) : null}
+                        <Guide id="campaigns.schedule.open-campaign">
+                          <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
+                        </Guide>
+                        <Badge tone={statusTone(c.status)}>
+                          {statusLabel(c.status)}
+                        </Badge>
+                        <span className="mono muted">
+                          {pendingCount(c)} of {totalRecipients(c)} to send
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </Surface>
+            </Guide>
           ))}
         </div>
       ) : (
@@ -139,9 +152,11 @@ export default async function SchedulePage() {
             Scheduled, paused, and sending campaigns appear here, grouped by
             send day.
           </p>
-          <Link className="btn-primary" href="/campaigns/new">
-            New campaign
-          </Link>
+          <Guide id="campaigns.schedule.new-link">
+            <Link className="btn-primary" href="/campaigns/new">
+              New campaign
+            </Link>
+          </Guide>
         </Surface>
       )}
     </>

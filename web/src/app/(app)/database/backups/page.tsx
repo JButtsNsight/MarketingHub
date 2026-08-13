@@ -1,6 +1,7 @@
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 import { Forbidden } from "@/components/ui/Forbidden";
 import { requireSectionUser } from "@/lib/requireSection";
 import {
@@ -45,15 +46,21 @@ export default async function BackupsPage() {
   if (!snapshot) {
     return (
       <>
-        <PageHeader title="Backups" />
-        <Tabs items={DB_TABS} />
-        <Surface className="empty-state" glint>
-          <h2>Backup status unreachable</h2>
-          <p>
-            No pgBackRest snapshot to read — the host reporter cron is not
-            installed yet.
-          </p>
-        </Surface>
+        <Guide id="observability.backups.page">
+          <PageHeader title="Backups" />
+        </Guide>
+        <Guide id="observability.backups.tabs">
+          <Tabs items={DB_TABS} />
+        </Guide>
+        <Guide id="observability.backups.unreachable">
+          <Surface className="empty-state" glint>
+            <h2>Backup status unreachable</h2>
+            <p>
+              No pgBackRest snapshot to read — the host reporter cron is not
+              installed yet.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
@@ -69,8 +76,12 @@ export default async function BackupsPage() {
 
   return (
     <>
-      <PageHeader title="Backups" />
-      <Tabs items={DB_TABS} />
+      <Guide id="observability.backups.page">
+        <PageHeader title="Backups" />
+      </Guide>
+      <Guide id="observability.backups.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
       <BackupsClient
         initialSnapshot={snapshot}
         initialLastArchivedAt={lastArchivedAt}

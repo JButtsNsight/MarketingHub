@@ -4,6 +4,7 @@ import { countSuppressions, listSuppressions } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { AddSuppressionForm } from "@/components/campaigns/AddSuppressionForm";
 import { SuppressionsTable } from "@/components/campaigns/SuppressionsTable";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live STOP-list rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -38,23 +39,29 @@ export default async function SuppressionsPage({
     <>
       <PageHeader
         eyebrow="Engage"
-        title="Suppressions"
+        title={
+          <Guide id="engagement.suppressions.heading">
+            <span>Suppressions</span>
+          </Guide>
+        }
         count={`${total} suppressed`}
         actions={<AddSuppressionForm />}
       />
 
       <div className="stack">
-        <form method="get" className="field" role="search">
-          <label htmlFor="suppressions-q">Search by digits</label>
-          <input
-            id="suppressions-q"
-            name="q"
-            type="search"
-            className="surface control"
-            placeholder="e.g. 555 0100"
-            defaultValue={q ?? ""}
-          />
-        </form>
+        <Guide id="engagement.suppressions.search">
+          <form method="get" className="field" role="search">
+            <label htmlFor="suppressions-q">Search by digits</label>
+            <input
+              id="suppressions-q"
+              name="q"
+              type="search"
+              className="surface control"
+              placeholder="e.g. 555 0100"
+              defaultValue={q ?? ""}
+            />
+          </form>
+        </Guide>
 
         <SuppressionsTable suppressions={suppressions} />
       </div>

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import type { SmsSuppression } from "@/lib/sms/schema";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
+import { Guide } from "@/components/guide/Guide";
 
 /** Manual entries carry their provenance in raw ({added_by, note}). */
 function manualMeta(s: SmsSuppression): { addedBy?: string; note?: string } {
@@ -107,30 +108,36 @@ export function SuppressionsTable({
           <span className="campaign-actions">
             {armedPhone === s.phone_e164 ? (
               <>
-                <button
-                  type="button"
-                  className="type-chip"
-                  disabled={busyPhone === s.phone_e164}
-                  onClick={() => remove(s.phone_e164)}
-                >
-                  Confirm remove
-                </button>
-                <button
-                  type="button"
-                  className="type-chip"
-                  onClick={() => setArmedPhone(null)}
-                >
-                  Keep
-                </button>
+                <Guide id="engagement.suppressions.confirm-remove">
+                  <button
+                    type="button"
+                    className="type-chip"
+                    disabled={busyPhone === s.phone_e164}
+                    onClick={() => remove(s.phone_e164)}
+                  >
+                    Confirm remove
+                  </button>
+                </Guide>
+                <Guide id="engagement.suppressions.keep">
+                  <button
+                    type="button"
+                    className="type-chip"
+                    onClick={() => setArmedPhone(null)}
+                  >
+                    Keep
+                  </button>
+                </Guide>
               </>
             ) : (
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => setArmedPhone(s.phone_e164)}
-              >
-                Remove
-              </button>
+              <Guide id="engagement.suppressions.remove">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setArmedPhone(s.phone_e164)}
+                >
+                  Remove
+                </button>
+              </Guide>
             )}
           </span>
         ) : null,
@@ -144,12 +151,14 @@ export function SuppressionsTable({
           {error}
         </p>
       ) : null}
-      <DataTable
-        columns={columns}
-        rows={suppressions}
-        getRowKey={(s) => s.phone_e164}
-        empty="No suppressed numbers match."
-      />
+      <Guide id="engagement.suppressions.table">
+        <DataTable
+          columns={columns}
+          rows={suppressions}
+          getRowKey={(s) => s.phone_e164}
+          empty="No suppressed numbers match."
+        />
+      </Guide>
     </>
   );
 }

@@ -1,6 +1,7 @@
 import { Forbidden } from "@/components/ui/Forbidden";
 import { requireSectionUser } from "@/lib/requireSection";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Guide } from "@/components/guide/Guide";
 import { SearchPanel } from "@/components/intel/SearchPanel";
 import { SourcesManager } from "@/components/intel/SourcesManager";
 
@@ -26,7 +27,9 @@ export default async function IntelPage() {
 
   return (
     <>
-      <PageHeader title="Competitor Intel" />
+      <Guide id="intel.home.header">
+        <PageHeader title="Competitor Intel" />
+      </Guide>
       <div className="stack">
         <SearchPanel />
         <div className="stack">

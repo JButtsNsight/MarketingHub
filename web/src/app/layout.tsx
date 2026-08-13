@@ -21,6 +21,9 @@ export const metadata = {
 // Restore the persisted theme before first paint to avoid a flash.
 const themeBootstrap = `(function(){try{var t=localStorage.getItem('mh-theme');document.documentElement.dataset.theme=(t==='light'||t==='dark')?t:'${DEFAULT_THEME}';}catch(_){document.documentElement.dataset.theme='${DEFAULT_THEME}';}})();`;
 
+// Restore persisted guided mode the same way (default off — attribute absent).
+const guidedBootstrap = `(function(){try{if(localStorage.getItem('mh-guided')==='on')document.documentElement.dataset.guided='on';}catch(_){}})();`;
+
 /**
  * Root layout: the document shell only. The authenticated app chrome lives in
  * the (app) route group's layout; the (auth) login route renders bare here.
@@ -33,6 +36,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" data-theme={DEFAULT_THEME} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <script dangerouslySetInnerHTML={{ __html: guidedBootstrap }} />
       </head>
       <body>{children}</body>
     </html>

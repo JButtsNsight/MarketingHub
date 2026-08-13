@@ -4,6 +4,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { RefList, type RefRow } from "@/components/ui/RefList";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 
 // Static reference content, but the page still reads request-time identity
@@ -189,30 +190,40 @@ export default async function CloudFeaturesPage() {
 
   return (
     <>
-      <PageHeader title="Cloud Features" />
+      <Guide id="auth-admin.cloud.header">
+        <PageHeader title="Cloud Features" />
+      </Guide>
 
       <div className="stack">
         <Section eyebrow="Posture" title="Cloud-platform features, honestly N/A">
-          <DataTable
-            columns={FEATURE_COLUMNS}
-            rows={CLOUD_FEATURES}
-            getRowKey={(r) => r.feature}
-          />
+          <Guide id="auth-admin.cloud.features-table">
+            <DataTable
+              columns={FEATURE_COLUMNS}
+              rows={CLOUD_FEATURES}
+              getRowKey={(r) => r.feature}
+            />
+          </Guide>
         </Section>
 
         <Section eyebrow="Capability" title="Why these cannot exist here">
-          <RefList items={CAPABILITY_ROWS} />
+          <Guide id="auth-admin.cloud.capability-list">
+            <RefList items={CAPABILITY_ROWS} />
+          </Guide>
         </Section>
 
         <Section eyebrow="Coverage" title="What covers it here">
-          <RefList items={COVERAGE_ROWS} />
+          <Guide id="auth-admin.cloud.coverage-list">
+            <RefList items={COVERAGE_ROWS} />
+          </Guide>
         </Section>
 
         <Section
           eyebrow="Equivalent"
           title="AI Assistant — our equivalent is live"
         >
-          <RefList items={ASSISTANT_ROWS} />
+          <Guide id="auth-admin.cloud.assistant-list">
+            <RefList items={ASSISTANT_ROWS} />
+          </Guide>
         </Section>
       </div>
     </>

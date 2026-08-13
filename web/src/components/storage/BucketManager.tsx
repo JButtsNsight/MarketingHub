@@ -6,6 +6,7 @@ import { DataTable, type Column } from "../ui/DataTable";
 import { Section } from "../ui/Section";
 import { useConfirm } from "../ui/AlertDialog";
 import { BucketFormDialog, type BucketRow } from "./BucketFormDialog";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Bucket management (Studio parity): create/edit through the settings dialog,
@@ -50,23 +51,25 @@ function ConfirmNameField({
 }) {
   const [value, setValue] = useState("");
   return (
-    <span className="field" style={{ display: "flex", marginTop: 10 }}>
-      <label htmlFor="confirm-bucket-name">
-        Type <span className="mono">{expected}</span> to confirm
-      </label>
-      <input
-        id="confirm-bucket-name"
-        className="surface control mono"
-        type="text"
-        autoComplete="off"
-        spellCheck={false}
-        value={value}
-        onChange={(e) => {
-          setValue(e.target.value);
-          valueRef.current = e.target.value;
-        }}
-      />
-    </span>
+    <Guide id="storage.buckets.confirm-name">
+      <span className="field" style={{ display: "flex", marginTop: 10 }}>
+        <label htmlFor="confirm-bucket-name">
+          Type <span className="mono">{expected}</span> to confirm
+        </label>
+        <input
+          id="confirm-bucket-name"
+          className="surface control mono"
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={value}
+          onChange={(e) => {
+            setValue(e.target.value);
+            valueRef.current = e.target.value;
+          }}
+        />
+      </span>
+    </Guide>
   );
 }
 
@@ -228,29 +231,35 @@ export function BucketManager({
       width: "220px",
       render: (b) => (
         <span className="campaign-actions">
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => setDialogState({ mode: "edit", bucket: b })}
-          >
-            Edit
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => void onEmpty(b)}
-          >
-            Empty
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy}
-            onClick={() => void onDelete(b)}
-          >
-            Delete…
-          </button>
+          <Guide id="storage.buckets.edit">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => setDialogState({ mode: "edit", bucket: b })}
+            >
+              Edit
+            </button>
+          </Guide>
+          <Guide id="storage.buckets.empty">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => void onEmpty(b)}
+            >
+              Empty
+            </button>
+          </Guide>
+          <Guide id="storage.buckets.delete">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy}
+              onClick={() => void onDelete(b)}
+            >
+              Delete…
+            </button>
+          </Guide>
         </span>
       ),
     },
@@ -262,13 +271,15 @@ export function BucketManager({
         eyebrow="storage"
         title="Buckets"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setDialogState({ mode: "create" })}
-          >
-            New bucket
-          </button>
+          <Guide id="storage.buckets.new">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setDialogState({ mode: "create" })}
+            >
+              New bucket
+            </button>
+          </Guide>
         }
       >
         {error ? (
@@ -277,12 +288,14 @@ export function BucketManager({
           </p>
         ) : null}
         <div className={busy ? "dgrid-busy" : undefined}>
-          <DataTable
-            columns={columns}
-            rows={buckets}
-            getRowKey={(b) => b.id}
-            empty="No buckets yet — create one."
-          />
+          <Guide id="storage.buckets.table">
+            <DataTable
+              columns={columns}
+              rows={buckets}
+              getRowKey={(b) => b.id}
+              empty="No buckets yet — create one."
+            />
+          </Guide>
         </div>
       </Section>
 

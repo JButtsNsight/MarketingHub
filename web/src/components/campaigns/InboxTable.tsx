@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import type { InboundMessageWithCampaign } from "@/lib/sms/repo";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
+import { Guide } from "@/components/guide/Guide";
 
 /** Keep message cells scannable; the full text stays in the cell title. */
 const BODY_MAX = 120;
@@ -88,9 +89,11 @@ export function InboxTable({
             width: "220px",
             render: (m) =>
               m.campaign ? (
-                <Link href={`/campaigns/${m.campaign.id}`}>
-                  {m.campaign.name}
-                </Link>
+                <Guide id="engagement.inbox.campaign-link">
+                  <Link href={`/campaigns/${m.campaign.id}`}>
+                    {m.campaign.name}
+                  </Link>
+                </Guide>
               ) : (
                 "—"
               ),
@@ -113,19 +116,21 @@ export function InboxTable({
       header: "",
       width: "140px",
       render: (m) => (
-        <button
-          type="button"
-          className="type-chip"
-          disabled={busyId === m.id}
-          title={
-            m.handled && m.handled_by
-              ? `handled by ${m.handled_by}`
-              : undefined
-          }
-          onClick={() => setHandled(m.id, !m.handled)}
-        >
-          {m.handled ? "Reopen" : "Mark handled"}
-        </button>
+        <Guide id="engagement.inbox.toggle-handled">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={busyId === m.id}
+            title={
+              m.handled && m.handled_by
+                ? `handled by ${m.handled_by}`
+                : undefined
+            }
+            onClick={() => setHandled(m.id, !m.handled)}
+          >
+            {m.handled ? "Reopen" : "Mark handled"}
+          </button>
+        </Guide>
       ),
     },
   ];
@@ -137,12 +142,14 @@ export function InboxTable({
           {error}
         </p>
       ) : null}
-      <DataTable
-        columns={columns}
-        rows={messages}
-        getRowKey={(m) => m.id}
-        empty="No replies yet."
-      />
+      <Guide id="engagement.inbox.table">
+        <DataTable
+          columns={columns}
+          rows={messages}
+          getRowKey={(m) => m.id}
+          empty="No replies yet."
+        />
+      </Guide>
     </>
   );
 }

@@ -7,6 +7,7 @@ import { StatCard } from "../ui/StatCard";
 import { DataTable, type Column } from "../ui/DataTable";
 import { LineChart } from "../ui/LineChart";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import type {
   ApiErrorRatePoint,
   ApiRequestVolumePoint,
@@ -222,9 +223,11 @@ function ChartPanel({
   let body: React.ReactNode;
   if (state.rows == null) {
     body = (
-      <p className="form-error" role="alert">
-        {state.error ?? "query failed"}
-      </p>
+      <Guide id="observability.reports.panel-error">
+        <p className="form-error" role="alert">
+          {state.error ?? "query failed"}
+        </p>
+      </Guide>
     );
   } else if (state.rows.length === 0) {
     body = <p className="panel-desc">No data in range.</p>;
@@ -314,67 +317,80 @@ export function ReportsClient({ initial }: { initial: ReportsData }) {
     <div className="stack">
       <div className="dgrid-toolbar" role="toolbar" aria-label="Time range">
         {PRESETS.map((p) => (
-          <button
-            key={p}
-            type="button"
-            className={preset === p ? "type-chip on" : "type-chip"}
-            aria-pressed={preset === p}
-            disabled={loading}
-            onClick={() => {
-              if (p !== preset) void run(p);
-            }}
-          >
-            {p}
-          </button>
+          <Guide key={p} id="observability.reports.range-preset">
+            <button
+              type="button"
+              className={preset === p ? "type-chip on" : "type-chip"}
+              aria-pressed={preset === p}
+              disabled={loading}
+              onClick={() => {
+                if (p !== preset) void run(p);
+              }}
+            >
+              {p}
+            </button>
+          </Guide>
         ))}
         <span className="spacer" />
-        <button
-          type="button"
-          className="type-chip"
-          disabled={loading}
-          onClick={() => void run(preset)}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
+        <Guide id="observability.reports.refresh">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={loading}
+            onClick={() => void run(preset)}
+          >
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+        </Guide>
       </div>
 
       {unreachable ? (
-        <Surface className="empty-state" glint>
-          <h2>Analytics unavailable</h2>
-          <p>
-            Logflare did not answer through the data API — the staged W6
-            analytics route/token apply is still pending, or the service is
-            unreachable. Nothing else in the console is affected.
-          </p>
-        </Surface>
+        <Guide id="observability.reports.unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Analytics unavailable</h2>
+            <p>
+              Logflare did not answer through the data API — the staged W6
+              analytics route/token apply is still pending, or the service is
+              unreachable. Nothing else in the console is affected.
+            </p>
+          </Surface>
+        </Guide>
       ) : (
         <>
           <div className="stat-grid">
-            <StatCard
-              label="API requests"
-              value={requests ?? "—"}
-              hint="via Kong edge logs"
-              accent="var(--data-1)"
-            />
+            <Guide id="observability.reports.stat-requests">
+              <StatCard
+                label="API requests"
+                value={requests ?? "—"}
+                hint="via Kong edge logs"
+                accent="var(--data-1)"
+              />
+            </Guide>
             {/* Error rate is an attention number — text ink, no accent
                 (data-pool only on StatCards; --fail is Badge-reserved). */}
-            <StatCard
-              label="Error rate"
-              value={errorRate}
-              hint="responses with status ≥ 400"
-            />
-            <StatCard
-              label="Auth events"
-              value={authTotal ?? "—"}
-              hint="GoTrue log events"
-              accent="var(--data-4)"
-            />
-            <StatCard
-              label="Service log lines"
-              value={serviceTotal ?? "—"}
-              hint="realtime + storage"
-              accent="var(--data-3)"
-            />
+            <Guide id="observability.reports.stat-error-rate">
+              <StatCard
+                label="Error rate"
+                value={errorRate}
+                hint="responses with status ≥ 400"
+              />
+            </Guide>
+            <Guide id="observability.reports.stat-auth-events">
+              <StatCard
+                label="Auth events"
+                value={authTotal ?? "—"}
+                hint="GoTrue log events"
+                accent="var(--data-4)"
+              />
+            </Guide>
+            <Guide id="observability.reports.stat-service-lines">
+              <StatCard
+                label="Service log lines"
+                value={serviceTotal ?? "—"}
+                hint="realtime + storage"
+                accent="var(--data-3)"
+              />
+            </Guide>
           </div>
 
           {/* Charts sit two-up on wide screens (single column under 900px,
@@ -383,72 +399,80 @@ export function ReportsClient({ initial }: { initial: ReportsData }) {
               renders at half width. The top-routes table below stays
               full-width — its path column genuinely needs the room. */}
           <div className="split-2">
-            <ChartPanel
-              id="rpt-requests"
+            <Guide id="observability.reports.chart-requests">
+              <ChartPanel
+                id="rpt-requests"
               title="API request volume"
               description={`Requests through Kong per ${interval}, from the edge logs.`}
-              color="var(--data-1)"
-              state={data.volume}
-              range={data.range}
-              fold={(rows) =>
-                totalsBy(
-                  rows as ApiRequestVolumePoint[],
-                  (r) => r.bucket,
-                  (r) => r.total,
-                )
-              }
-            />
+                color="var(--data-1)"
+                state={data.volume}
+                range={data.range}
+                fold={(rows) =>
+                  totalsBy(
+                    rows as ApiRequestVolumePoint[],
+                    (r) => r.bucket,
+                    (r) => r.total,
+                  )
+                }
+              />
+            </Guide>
 
-            <ChartPanel
-              id="rpt-errors"
-              title="API error rate"
-              description={`Percentage of edge responses with status ≥ 400 per ${interval} bucket.`}
-              color="var(--data-2)"
-              state={data.errorRates}
-              range={data.range}
-              fold={(rows) =>
-                totalsBy(
-                  rows as ApiErrorRatePoint[],
-                  (r) => r.bucket,
-                  (r) =>
-                    r.total > 0
-                      ? Math.round((r.errors4xx / r.total) * 1000) / 10
-                      : 0,
-                )
-              }
-            />
+            <Guide id="observability.reports.chart-errors">
+              <ChartPanel
+                id="rpt-errors"
+                title="API error rate"
+                description={`Percentage of edge responses with status ≥ 400 per ${interval} bucket.`}
+                color="var(--data-2)"
+                state={data.errorRates}
+                range={data.range}
+                fold={(rows) =>
+                  totalsBy(
+                    rows as ApiErrorRatePoint[],
+                    (r) => r.bucket,
+                    (r) =>
+                      r.total > 0
+                        ? Math.round((r.errors4xx / r.total) * 1000) / 10
+                        : 0,
+                  )
+                }
+              />
+            </Guide>
 
-            <ChartPanel
-              id="rpt-auth"
-              title="Auth events"
-              description={`GoTrue log events per ${interval}, all levels combined.`}
-              color="var(--data-4)"
-              state={data.authEvents}
-              range={data.range}
-              fold={(rows) =>
-                totalsBy(
-                  rows as AuthEventPoint[],
-                  (r) => r.bucket,
-                  (r) => r.count,
-                )
-              }
-            />
+            <Guide id="observability.reports.chart-auth">
+              <ChartPanel
+                id="rpt-auth"
+                title="Auth events"
+                description={`GoTrue log events per ${interval}, all levels combined.`}
+                color="var(--data-4)"
+                state={data.authEvents}
+                range={data.range}
+                fold={(rows) =>
+                  totalsBy(
+                    rows as AuthEventPoint[],
+                    (r) => r.bucket,
+                    (r) => r.count,
+                  )
+                }
+              />
+            </Guide>
 
-            <ChartPanel
-              id="rpt-services"
-              title="Realtime & Storage log volume"
-              description={`Log lines from the realtime and storage services per ${interval}, all levels combined.`}
-              color="var(--data-3)"
-              state={data.serviceVolume}
-              range={data.range}
-              fold={(rows) =>
-                totalsBy(
-                  rows as ServiceLogVolumePoint[],
-                  (r) => r.bucket,
-                  (r) => r.count,
-                )
-              }
-            />
+            <Guide id="observability.reports.chart-services">
+              <ChartPanel
+                id="rpt-services"
+                title="Realtime & Storage log volume"
+                description={`Log lines from the realtime and storage services per ${interval}, all levels combined.`}
+                color="var(--data-3)"
+                state={data.serviceVolume}
+                range={data.range}
+                fold={(rows) =>
+                  totalsBy(
+                    rows as ServiceLogVolumePoint[],
+                    (r) => r.bucket,
+                    (r) => r.count,
+                  )
+                }
+              />
+            </Guide>
           </div>
 
           <Section
@@ -457,16 +481,20 @@ export function ReportsClient({ initial }: { initial: ReportsData }) {
             description="Most-requested method + path pairs in the selected range (top 20)."
           >
             {data.topRoutes.rows == null ? (
-              <p className="form-error" role="alert">
-                {data.topRoutes.error ?? "query failed"}
-              </p>
+              <Guide id="observability.reports.panel-error">
+                <p className="form-error" role="alert">
+                  {data.topRoutes.error ?? "query failed"}
+                </p>
+              </Guide>
             ) : (
-              <DataTable
-                columns={ROUTE_COLUMNS}
-                rows={data.topRoutes.rows}
-                getRowKey={(r) => `${r.method} ${r.path}`}
-                empty="No requests in range."
-              />
+              <Guide id="observability.reports.top-routes">
+                <DataTable
+                  columns={ROUTE_COLUMNS}
+                  rows={data.topRoutes.rows}
+                  getRowKey={(r) => `${r.method} ${r.path}`}
+                  empty="No requests in range."
+                />
+              </Guide>
             )}
           </Section>
         </>

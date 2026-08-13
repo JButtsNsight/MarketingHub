@@ -7,6 +7,7 @@ import type { AttentionRecipient } from "@/lib/sms/repo";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { statusLabel, statusTone } from "./statusBadge";
+import { Guide } from "@/components/guide/Guide";
 
 /** Keep error cells scannable; the full text stays in the cell title. */
 const ERROR_MAX = 70;
@@ -75,7 +76,9 @@ export function AttentionTable({ rows }: { rows: AttentionRecipient[] }) {
       width: "200px",
       render: (r) =>
         r.campaign ? (
-          <Link href={`/campaigns/${r.campaign.id}`}>{r.campaign.name}</Link>
+          <Guide id="engagement.review.campaign-link">
+            <Link href={`/campaigns/${r.campaign.id}`}>{r.campaign.name}</Link>
+          </Guide>
         ) : (
           <span className="mono">{r.campaign_id}</span>
         ),
@@ -127,33 +130,39 @@ export function AttentionTable({ rows }: { rows: AttentionRecipient[] }) {
         return (
           <span className="campaign-actions">
             {canRetry ? (
-              <button
-                type="button"
-                className="type-chip"
-                disabled={busyId === r.id}
-                onClick={() => review(r, "retry")}
-              >
-                Retry
-              </button>
+              <Guide id="engagement.review.retry">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={busyId === r.id}
+                  onClick={() => review(r, "retry")}
+                >
+                  Retry
+                </button>
+              </Guide>
             ) : null}
             {ambiguous ? (
               <>
-                <button
-                  type="button"
-                  className="type-chip"
-                  disabled={busyId === r.id}
-                  onClick={() => review(r, "mark_sent")}
-                >
-                  Mark sent
-                </button>
-                <button
-                  type="button"
-                  className="type-chip"
-                  disabled={busyId === r.id}
-                  onClick={() => review(r, "mark_failed")}
-                >
-                  Mark failed
-                </button>
+                <Guide id="engagement.review.mark-sent">
+                  <button
+                    type="button"
+                    className="type-chip"
+                    disabled={busyId === r.id}
+                    onClick={() => review(r, "mark_sent")}
+                  >
+                    Mark sent
+                  </button>
+                </Guide>
+                <Guide id="engagement.review.mark-failed">
+                  <button
+                    type="button"
+                    className="type-chip"
+                    disabled={busyId === r.id}
+                    onClick={() => review(r, "mark_failed")}
+                  >
+                    Mark failed
+                  </button>
+                </Guide>
               </>
             ) : null}
           </span>
@@ -169,12 +178,14 @@ export function AttentionTable({ rows }: { rows: AttentionRecipient[] }) {
           {error}
         </p>
       ) : null}
-      <DataTable
-        columns={columns}
-        rows={rows}
-        getRowKey={(r) => r.id}
-        empty="Nothing needs attention."
-      />
+      <Guide id="engagement.review.table">
+        <DataTable
+          columns={columns}
+          rows={rows}
+          getRowKey={(r) => r.id}
+          empty="Nothing needs attention."
+        />
+      </Guide>
     </>
   );
 }

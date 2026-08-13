@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Guide } from "@/components/guide/Guide";
 
 const DEBOUNCE_MS = 300;
 
@@ -35,15 +36,17 @@ export function SearchBar() {
   }, [value, pathname, router, searchParams]);
 
   return (
-    <div className="search-bar surface control">
-      <input
-        type="search"
-        aria-label="Search templates"
-        placeholder="Search templates…"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-      />
-    </div>
+    <Guide id="engagement.templates.search">
+      <div className="search-bar surface control">
+        <input
+          type="search"
+          aria-label="Search templates"
+          placeholder="Search templates…"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+        />
+      </div>
+    </Guide>
   );
 }
 

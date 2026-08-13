@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { Template } from "@/lib/templates/schema";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Renders a template's content.
@@ -18,7 +19,11 @@ export function TemplatePreview({ template }: { template: Template }) {
   const [showSource, setShowSource] = useState(false);
 
   if (template.type === "text") {
-    return <pre className="preview-text surface mono">{template.body}</pre>;
+    return (
+      <Guide id="engagement.template.preview">
+        <pre className="preview-text surface mono">{template.body}</pre>
+      </Guide>
+    );
   }
 
   return (
@@ -28,24 +33,30 @@ export function TemplatePreview({ template }: { template: Template }) {
           <span className="preview-subject-label">Subject</span>
           {template.subject}
         </p>
-        <button
-          type="button"
-          className="type-chip"
-          onClick={() => setShowSource((s) => !s)}
-        >
-          {showSource ? "View preview" : "View source"}
-        </button>
+        <Guide id="engagement.template.view-source">
+          <button
+            type="button"
+            className="type-chip"
+            onClick={() => setShowSource((s) => !s)}
+          >
+            {showSource ? "View preview" : "View source"}
+          </button>
+        </Guide>
       </div>
 
       {showSource ? (
-        <pre className="preview-source surface mono">{template.body}</pre>
+        <Guide id="engagement.template.preview">
+          <pre className="preview-source surface mono">{template.body}</pre>
+        </Guide>
       ) : (
-        <iframe
-          className="preview-frame surface"
-          title={`Email preview: ${template.name}`}
-          sandbox=""
-          srcDoc={template.body}
-        />
+        <Guide id="engagement.template.preview">
+          <iframe
+            className="preview-frame surface"
+            title={`Email preview: ${template.name}`}
+            sandbox=""
+            srcDoc={template.body}
+          />
+        </Guide>
       )}
     </div>
   );

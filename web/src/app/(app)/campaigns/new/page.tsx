@@ -5,6 +5,7 @@ import { listTemplates } from "@/lib/templates/repo";
 import { listContactLists } from "@/lib/contacts/repo";
 import { NewCampaignForm } from "@/components/campaigns/NewCampaignForm";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live template/list rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -40,9 +41,11 @@ export default async function NewCampaignPage() {
             A campaign needs an audience — upload a CSV or link a Monday.com
             board first.
           </p>
-          <Link className="btn-primary" href="/campaigns/lists/new">
-            Create a contact list
-          </Link>
+          <Guide id="campaigns.new.create-list-link">
+            <Link className="btn-primary" href="/campaigns/lists/new">
+              Create a contact list
+            </Link>
+          </Guide>
         </Surface>
       </div>
     );

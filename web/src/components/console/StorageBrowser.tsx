@@ -14,6 +14,7 @@ import {
   TransformPreview,
   isTransformableType,
 } from "../storage/TransformPreview";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * The Storage browser (Studio parity): bucket picker, breadcrumb folder path,
@@ -246,28 +247,32 @@ export function StorageBrowser({
       header: "name",
       render: (e) =>
         e.isFolder ? (
-          <button
-            type="button"
-            className="storage-folder"
-            onClick={() => setPrefix(e.path)}
-          >
-            {e.name}/
-          </button>
+          <Guide id="storage.browser.folder">
+            <button
+              type="button"
+              className="storage-folder"
+              onClick={() => setPrefix(e.path)}
+            >
+              {e.name}/
+            </button>
+          </Guide>
         ) : renaming === e.path ? (
-          <span className="campaign-actions">
-            <input
-              className="surface control teditor-fctl"
-              aria-label={`New path for ${e.name}`}
-              value={renameTo}
-              onChange={(ev) => setRenameTo(ev.target.value)}
-            />
-            <button type="button" className="type-chip" onClick={() => void move(e.path)}>
-              Save
-            </button>
-            <button type="button" className="type-chip" onClick={() => setRenaming(null)}>
-              Cancel
-            </button>
-          </span>
+          <Guide id="storage.browser.rename-editor">
+            <span className="campaign-actions">
+              <input
+                className="surface control teditor-fctl"
+                aria-label={`New path for ${e.name}`}
+                value={renameTo}
+                onChange={(ev) => setRenameTo(ev.target.value)}
+              />
+              <button type="button" className="type-chip" onClick={() => void move(e.path)}>
+                Save
+              </button>
+              <button type="button" className="type-chip" onClick={() => setRenaming(null)}>
+                Cancel
+              </button>
+            </span>
+          </Guide>
         ) : (
           <span className="mono">{e.name}</span>
         ),
@@ -302,32 +307,38 @@ export function StorageBrowser({
         e.isFolder ? null : (
           <span className="campaign-actions">
             {isTransformableType(e.mimetype) ? (
+              <Guide id="storage.browser.preview">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setPreview(preview?.path === e.path ? null : e)}
+                >
+                  {preview?.path === e.path ? "Hide" : "Preview"}
+                </button>
+              </Guide>
+            ) : null}
+            <Guide id="storage.browser.download">
+              <a
+                className="type-chip"
+                href={`/api/console/storage/download?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(e.path)}`}
+              >
+                Download
+              </a>
+            </Guide>
+            <Guide id="storage.browser.rename">
               <button
                 type="button"
                 className="type-chip"
-                onClick={() => setPreview(preview?.path === e.path ? null : e)}
+                onClick={() => {
+                  setRenaming(e.path);
+                  setRenameTo(e.path);
+                }}
               >
-                {preview?.path === e.path ? "Hide" : "Preview"}
+                Rename
               </button>
-            ) : null}
-            <a
-              className="type-chip"
-              href={`/api/console/storage/download?bucket=${encodeURIComponent(bucket)}&path=${encodeURIComponent(e.path)}`}
-            >
-              Download
-            </a>
-            <button
-              type="button"
-              className="type-chip"
-              onClick={() => {
-                setRenaming(e.path);
-                setRenameTo(e.path);
-              }}
-            >
-              Rename
-            </button>
+            </Guide>
             {armedDelete === e.path ? (
-              <>
+              <Guide id="storage.browser.confirm-delete">
                 <button
                   type="button"
                   className="type-chip"
@@ -342,15 +353,17 @@ export function StorageBrowser({
                 >
                   Keep
                 </button>
-              </>
+              </Guide>
             ) : (
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => setArmedDelete(e.path)}
-              >
-                Delete
-              </button>
+              <Guide id="storage.browser.delete">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setArmedDelete(e.path)}
+                >
+                  Delete
+                </button>
+              </Guide>
             )}
           </span>
         ),
@@ -360,86 +373,92 @@ export function StorageBrowser({
   return (
     <div className="stack">
       <div className="dgrid-toolbar">
-        <select
-          className="surface control teditor-fctl"
-          aria-label="Bucket"
-          value={bucket}
-          onChange={(e) => {
-            setBucket(e.target.value);
-            setPrefix("");
-          }}
-        >
-          {buckets.map((b) => (
-            <option key={b.id} value={b.name}>
-              {b.name}
-              {b.public ? " (public)" : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          className="type-chip"
-          onClick={() => setCreatingBucket(true)}
-        >
-          New bucket
-        </button>
+        <Guide id="storage.browser.bucket-picker">
+          <select
+            className="surface control teditor-fctl"
+            aria-label="Bucket"
+            value={bucket}
+            onChange={(e) => {
+              setBucket(e.target.value);
+              setPrefix("");
+            }}
+          >
+            {buckets.map((b) => (
+              <option key={b.id} value={b.name}>
+                {b.name}
+                {b.public ? " (public)" : ""}
+              </option>
+            ))}
+          </select>
+        </Guide>
+        <Guide id="storage.buckets.new">
+          <button
+            type="button"
+            className="type-chip"
+            onClick={() => setCreatingBucket(true)}
+          >
+            New bucket
+          </button>
+        </Guide>
 
         {/* A location, not controls: muted path with ancestor links and the
             current segment as plain text. Styles are inline (component-scoped);
             the storage-path class is only a hook for optional theme polish. */}
-        <nav
-          className="storage-path"
-          aria-label="Breadcrumb"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: "6px",
-            minWidth: 0,
-            fontFamily: "var(--fm)",
-            fontSize: "13px",
-            color: "var(--muted)",
-          }}
-        >
-          {crumbs.map((c, i) => {
-            const current = i === crumbs.length - 1;
-            return (
-              <span
-                key={`${c.prefix}-${i}`}
-                style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}
-              >
-                {i > 0 ? (
-                  <span aria-hidden="true" style={{ color: "var(--faint)" }}>
-                    /
-                  </span>
-                ) : null}
-                {current ? (
-                  <span aria-current="page" style={{ color: "var(--ink)" }}>
-                    {c.label}
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setPrefix(c.prefix)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      margin: 0,
-                      padding: 0,
-                      font: "inherit",
-                      color: "inherit",
-                      cursor: "pointer",
-                      textDecoration: "underline",
-                      textUnderlineOffset: "3px",
-                      textDecorationColor: "var(--faint)",
-                    }}
-                  >
-                    {c.label}
-                  </button>
-                )}
-              </span>
-            );
-          })}
-        </nav>
+        <Guide id="storage.browser.breadcrumb">
+          <nav
+            className="storage-path"
+            aria-label="Breadcrumb"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              minWidth: 0,
+              fontFamily: "var(--fm)",
+              fontSize: "13px",
+              color: "var(--muted)",
+            }}
+          >
+            {crumbs.map((c, i) => {
+              const current = i === crumbs.length - 1;
+              return (
+                <span
+                  key={`${c.prefix}-${i}`}
+                  style={{ display: "flex", alignItems: "center", gap: "6px", minWidth: 0 }}
+                >
+                  {i > 0 ? (
+                    <span aria-hidden="true" style={{ color: "var(--faint)" }}>
+                      /
+                    </span>
+                  ) : null}
+                  {current ? (
+                    <span aria-current="page" style={{ color: "var(--ink)" }}>
+                      {c.label}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPrefix(c.prefix)}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        margin: 0,
+                        padding: 0,
+                        font: "inherit",
+                        color: "inherit",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                        textUnderlineOffset: "3px",
+                        textDecorationColor: "var(--faint)",
+                      }}
+                    >
+                      {c.label}
+                    </button>
+                  )}
+                </span>
+              );
+            })}
+          </nav>
+        </Guide>
 
         <span className="spacer" />
         <input
@@ -452,14 +471,16 @@ export function StorageBrowser({
             if (file) void upload(file);
           }}
         />
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={uploading}
-          onClick={() => fileInput.current?.click()}
-        >
-          {uploading ? "Uploading…" : "Upload file"}
-        </button>
+        <Guide id="storage.browser.upload">
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={uploading}
+            onClick={() => fileInput.current?.click()}
+          >
+            {uploading ? "Uploading…" : "Upload file"}
+          </button>
+        </Guide>
       </div>
 
       {error ? (
@@ -489,12 +510,14 @@ export function StorageBrowser({
       ) : null}
 
       <div className={loading ? "dgrid-busy" : undefined}>
-        <DataTable
-          columns={columns}
-          rows={entries}
-          getRowKey={(e) => e.path}
-          empty="This location is empty."
-        />
+        <Guide id="storage.browser.objects">
+          <DataTable
+            columns={columns}
+            rows={entries}
+            getRowKey={(e) => e.path}
+            empty="This location is empty."
+          />
+        </Guide>
       </div>
 
       <BucketManager

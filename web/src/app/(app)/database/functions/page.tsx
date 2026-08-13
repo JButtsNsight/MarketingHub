@@ -1,3 +1,4 @@
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
@@ -44,19 +45,25 @@ export default async function FunctionsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Functions" />
-      <Tabs items={DB_TABS} />
+      <Guide id="db-platform.functions.header">
+        <PageHeader eyebrow="Database" title="Functions" />
+      </Guide>
+      <Guide id="db-platform.common.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       {functions ? (
         <FunctionsClient initialFunctions={functions} />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="db-platform.common.introspection-unavailable">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

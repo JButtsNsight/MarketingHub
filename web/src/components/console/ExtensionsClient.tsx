@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { useConfirm } from "../ui/AlertDialog";
@@ -152,23 +153,27 @@ export function ExtensionsClient({
       width: "160px",
       render: (e) =>
         e.installed_version ? (
-          <button
-            type="button"
-            className="type-chip"
-            disabled={busy === e.name}
-            onClick={() => void drop(e)}
-          >
-            {busy === e.name ? "Working…" : "Drop"}
-          </button>
+          <Guide id="db-platform.extensions.drop">
+            <button
+              type="button"
+              className="type-chip"
+              disabled={busy === e.name}
+              onClick={() => void drop(e)}
+            >
+              {busy === e.name ? "Working…" : "Drop"}
+            </button>
+          </Guide>
         ) : (
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy === e.name}
-            onClick={() => void enable(e)}
-          >
-            {busy === e.name ? "Working…" : "Enable"}
-          </button>
+          <Guide id="db-platform.extensions.enable">
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={busy === e.name}
+              onClick={() => void enable(e)}
+            >
+              {busy === e.name ? "Working…" : "Enable"}
+            </button>
+          </Guide>
         ),
     },
   ];
@@ -180,13 +185,15 @@ export function ExtensionsClient({
           {error}
         </p>
       ) : null}
-      <DataTable
-        columns={columns}
-        rows={extensions}
-        getRowKey={(e) => e.name}
-        empty="No extensions reported."
-        paginate={50}
-      />
+      <Guide id="db-platform.extensions.table">
+        <DataTable
+          columns={columns}
+          rows={extensions}
+          getRowKey={(e) => e.name}
+          empty="No extensions reported."
+          paginate={50}
+        />
+      </Guide>
       {dialog}
     </div>
   );

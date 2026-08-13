@@ -6,6 +6,7 @@ import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables } from "@/lib/console/tables";
 import { listPolicies, POLICY_TEMPLATES } from "@/lib/console/policies";
 import { DB_TABS } from "@/lib/console/tabs";
+import { Guide } from "@/components/guide/Guide";
 import {
   PoliciesClient,
   type PolicyDto,
@@ -110,8 +111,12 @@ export default async function RlsPage() {
 
   return (
     <>
-      <PageHeader eyebrow="Database" title="Policies" />
-      <Tabs items={DB_TABS} />
+      <Guide id="database.rls.page">
+        <PageHeader eyebrow="Database" title="Policies" />
+      </Guide>
+      <Guide id="database.section.tabs">
+        <Tabs items={DB_TABS} />
+      </Guide>
 
       {data ? (
         <PoliciesClient
@@ -120,13 +125,15 @@ export default async function RlsPage() {
           templates={templates}
         />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="database.section.introspection-missing">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

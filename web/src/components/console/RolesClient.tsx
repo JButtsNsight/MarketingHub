@@ -2,6 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 
+import { Guide } from "@/components/guide/Guide";
 import { DataTable, type Column } from "../ui/DataTable";
 import { StatCard } from "../ui/StatCard";
 import { Section } from "../ui/Section";
@@ -246,33 +247,39 @@ export function RolesClient({
       render: (r) => {
         if (isProtected(r.name)) {
           return (
-            <span className="muted" title="Platform-critical role — manage via migration/SQL editor">
-              protected
-            </span>
+            <Guide id="db-platform.roles.protected">
+              <span className="muted" title="Platform-critical role — manage via migration/SQL editor">
+                protected
+              </span>
+            </Guide>
           );
         }
         const rowBusy = busy === r.name;
         return (
           <span className="dgrid-toolbar" style={rightToolbar}>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={rowBusy}
-              onClick={() => {
-                setCreateOpen(false);
-                setAlterName((cur) => (cur === r.name ? null : r.name));
-              }}
-            >
-              {alterName === r.name ? "Close" : "Alter"}
-            </button>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={rowBusy}
-              onClick={() => void dropRole(r)}
-            >
-              Drop
-            </button>
+            <Guide id="db-platform.roles.alter">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={rowBusy}
+                onClick={() => {
+                  setCreateOpen(false);
+                  setAlterName((cur) => (cur === r.name ? null : r.name));
+                }}
+              >
+                {alterName === r.name ? "Close" : "Alter"}
+              </button>
+            </Guide>
+            <Guide id="db-platform.roles.drop">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={rowBusy}
+                onClick={() => void dropRole(r)}
+              >
+                Drop
+              </button>
+            </Guide>
           </span>
         );
       },
@@ -319,16 +326,18 @@ export function RolesClient({
         eyebrow="Roles"
         title="Database roles"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => {
-              setAlterName(null);
-              setCreateOpen((v) => !v);
-            }}
-          >
-            {createOpen ? "Close" : "Create role"}
-          </button>
+          <Guide id="db-platform.roles.create">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setAlterName(null);
+                setCreateOpen((v) => !v);
+              }}
+            >
+              {createOpen ? "Close" : "Create role"}
+            </button>
+          </Guide>
         }
       >
         {createOpen ? (
@@ -350,31 +359,37 @@ export function RolesClient({
             onSubmit={submitAlter}
           />
         ) : null}
-        <DataTable
-          columns={roleColumns}
-          rows={roles}
-          getRowKey={(r) => r.name}
-          empty="No roles."
-          paginate={50}
-        />
+        <Guide id="db-platform.roles.table">
+          <DataTable
+            columns={roleColumns}
+            rows={roles}
+            getRowKey={(r) => r.name}
+            empty="No roles."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       <Section
         eyebrow="Memberships"
         title="Role memberships"
         actions={
-          <button type="button" className="type-chip" onClick={() => void refresh()}>
-            Refresh
-          </button>
+          <Guide id="db-platform.common.refresh">
+            <button type="button" className="type-chip" onClick={() => void refresh()}>
+              Refresh
+            </button>
+          </Guide>
         }
       >
-        <DataTable
-          columns={membershipColumns}
-          rows={memberships}
-          getRowKey={(m, i) => `${m.role}->${m.member}-${i}`}
-          empty="No role memberships (pg_auth_members is empty)."
-          paginate={50}
-        />
+        <Guide id="db-platform.roles.memberships-table">
+          <DataTable
+            columns={membershipColumns}
+            rows={memberships}
+            getRowKey={(m, i) => `${m.role}->${m.member}-${i}`}
+            empty="No role memberships (pg_auth_members is empty)."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       {dialog}
@@ -382,13 +397,13 @@ export function RolesClient({
   );
 }
 
-const BOOLEAN_ATTRS: Array<{ key: FlagKey; label: string }> = [
-  { key: "canLogin", label: "Can login" },
-  { key: "isSuperuser", label: "Superuser" },
-  { key: "canCreateRole", label: "Create roles" },
-  { key: "canCreateDb", label: "Create databases" },
-  { key: "isReplication", label: "Replication" },
-  { key: "bypassRls", label: "Bypass RLS" },
+const BOOLEAN_ATTRS: Array<{ key: FlagKey; label: string; guideId: string }> = [
+  { key: "canLogin", label: "Can login", guideId: "db-platform.roles.attr-login" },
+  { key: "isSuperuser", label: "Superuser", guideId: "db-platform.roles.attr-superuser" },
+  { key: "canCreateRole", label: "Create roles", guideId: "db-platform.roles.attr-createrole" },
+  { key: "canCreateDb", label: "Create databases", guideId: "db-platform.roles.attr-createdb" },
+  { key: "isReplication", label: "Replication", guideId: "db-platform.roles.attr-replication" },
+  { key: "bypassRls", label: "Bypass RLS", guideId: "db-platform.roles.attr-bypassrls" },
 ];
 
 /**
@@ -443,97 +458,109 @@ function RoleForm({
       </span>
       <div className="teditor-insert-grid">
         {mode === "create" ? (
-          <div className="field">
-            <label htmlFor="role-name">name</label>
-            <input
-              id="role-name"
-              className="surface control mono"
-              type="text"
-              placeholder="new_role"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </div>
+          <Guide id="db-platform.roles.name-field">
+            <div className="field">
+              <label htmlFor="role-name">name</label>
+              <input
+                id="role-name"
+                className="surface control mono"
+                type="text"
+                placeholder="new_role"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+          </Guide>
         ) : null}
 
         {BOOLEAN_ATTRS.map((attr) => (
-          <div className="field" key={attr.key}>
-            <label htmlFor={`role-${attr.key}`}>{attr.label}</label>
-            <label className="teditor-null">
-              <input
-                id={`role-${attr.key}`}
-                type="checkbox"
-                checked={flags[attr.key]}
-                onChange={(e) =>
-                  setFlags((f) => ({ ...f, [attr.key]: e.target.checked }))
-                }
-              />{" "}
-              {flags[attr.key] ? "yes" : "no"}
-            </label>
-          </div>
+          <Guide id={attr.guideId} key={attr.key}>
+            <div className="field">
+              <label htmlFor={`role-${attr.key}`}>{attr.label}</label>
+              <label className="teditor-null">
+                <input
+                  id={`role-${attr.key}`}
+                  type="checkbox"
+                  checked={flags[attr.key]}
+                  onChange={(e) =>
+                    setFlags((f) => ({ ...f, [attr.key]: e.target.checked }))
+                  }
+                />{" "}
+                {flags[attr.key] ? "yes" : "no"}
+              </label>
+            </div>
+          </Guide>
         ))}
 
-        <div className="field">
-          <label htmlFor="role-connlimit">
-            connection limit
-            <span className="teditor-test mono"> -1 = unlimited</span>
-          </label>
-          <input
-            id="role-connlimit"
-            className="surface control mono"
-            type="number"
-            min={-1}
-            value={connLimit}
-            onChange={(e) => setConnLimit(e.target.value)}
-          />
-        </div>
+        <Guide id="db-platform.roles.conn-limit">
+          <div className="field">
+            <label htmlFor="role-connlimit">
+              connection limit
+              <span className="teditor-test mono"> -1 = unlimited</span>
+            </label>
+            <input
+              id="role-connlimit"
+              className="surface control mono"
+              type="number"
+              min={-1}
+              value={connLimit}
+              onChange={(e) => setConnLimit(e.target.value)}
+            />
+          </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="role-validuntil">
-            valid until
-            <span className="teditor-test mono"> timestamp; blank = no expiry</span>
-          </label>
-          <input
-            id="role-validuntil"
-            className="surface control mono"
-            type="text"
-            placeholder="2027-01-01 00:00:00+00"
-            value={validUntil}
-            onChange={(e) => setValidUntil(e.target.value)}
-          />
-        </div>
+        <Guide id="db-platform.roles.valid-until">
+          <div className="field">
+            <label htmlFor="role-validuntil">
+              valid until
+              <span className="teditor-test mono"> timestamp; blank = no expiry</span>
+            </label>
+            <input
+              id="role-validuntil"
+              className="surface control mono"
+              type="text"
+              placeholder="2027-01-01 00:00:00+00"
+              value={validUntil}
+              onChange={(e) => setValidUntil(e.target.value)}
+            />
+          </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="role-password">
-            password
-            <span className="teditor-test mono">
-              {mode === "alter" ? " blank = unchanged" : " optional"}
-            </span>
-          </label>
-          <input
-            id="role-password"
-            className="surface control mono"
-            type="password"
-            autoComplete="new-password"
-            placeholder={mode === "alter" ? "leave blank to keep" : "optional"}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-        </div>
+        <Guide id="db-platform.roles.password">
+          <div className="field">
+            <label htmlFor="role-password">
+              password
+              <span className="teditor-test mono">
+                {mode === "alter" ? " blank = unchanged" : " optional"}
+              </span>
+            </label>
+            <input
+              id="role-password"
+              className="surface control mono"
+              type="password"
+              autoComplete="new-password"
+              placeholder={mode === "alter" ? "leave blank to keep" : "optional"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+        </Guide>
       </div>
 
       <div className="form-actions">
         <button type="button" className="type-chip" onClick={onCancel} disabled={busy}>
           Cancel
         </button>
-        <button
-          type="button"
-          className="btn-primary"
-          onClick={submit}
-          disabled={busy || !nameValid}
-        >
-          {busy ? "Working…" : mode === "create" ? "Create role" : "Save changes"}
-        </button>
+        <Guide id="db-platform.roles.form-submit">
+          <button
+            type="button"
+            className="btn-primary"
+            onClick={submit}
+            disabled={busy || !nameValid}
+          >
+            {busy ? "Working…" : mode === "create" ? "Create role" : "Save changes"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

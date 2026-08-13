@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Transform preview for a selected Storage object (Studio parity): width /
@@ -187,10 +188,12 @@ export function TransformPreview({
     return (
       <Surface className="storage-preview" glint>
         <span className="eyebrow">{path}</span>
-        <p className="note">
-          Transforms aren&apos;t available for this file type
-          {contentType ? ` (${contentType})` : ""}.
-        </p>
+        <Guide id="storage.transform.no-transforms">
+          <p className="note">
+            Transforms aren&apos;t available for this file type
+            {contentType ? ` (${contentType})` : ""}.
+          </p>
+        </Guide>
         {previewable ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={inlineFallbackSrc} alt={name} />
@@ -204,55 +207,65 @@ export function TransformPreview({
       <span className="eyebrow">{path}</span>
 
       <div className="dgrid-toolbar">
-        <input
-          type="number"
-          className="surface control teditor-fctl"
-          aria-label="Width (px)"
-          placeholder="width"
-          min={DIMENSION_MIN}
-          max={DIMENSION_MAX}
-          value={width}
-          onChange={(e) => setWidth(e.target.value)}
-        />
-        <input
-          type="number"
-          className="surface control teditor-fctl"
-          aria-label="Height (px)"
-          placeholder="height"
-          min={DIMENSION_MIN}
-          max={DIMENSION_MAX}
-          value={height}
-          onChange={(e) => setHeight(e.target.value)}
-        />
-        <select
-          className="surface control teditor-fctl"
-          aria-label="Resize mode"
-          value={resize}
-          onChange={(e) => setResize(e.target.value as ResizeMode)}
-        >
-          <option value="cover">cover</option>
-          <option value="contain">contain</option>
-          <option value="fill">fill</option>
-        </select>
-        <input
-          type="number"
-          className="surface control teditor-fctl"
-          aria-label="Quality"
-          placeholder="quality"
-          min={QUALITY_MIN}
-          max={QUALITY_MAX}
-          value={quality}
-          onChange={(e) => setQuality(e.target.value)}
-        />
-        <select
-          className="surface control teditor-fctl"
-          aria-label="Format"
-          value={format}
-          onChange={(e) => setFormat(e.target.value as FormatOption)}
-        >
-          <option value="origin">origin</option>
-          <option value="avif">avif</option>
-        </select>
+        <Guide id="storage.transform.width">
+          <input
+            type="number"
+            className="surface control teditor-fctl"
+            aria-label="Width (px)"
+            placeholder="width"
+            min={DIMENSION_MIN}
+            max={DIMENSION_MAX}
+            value={width}
+            onChange={(e) => setWidth(e.target.value)}
+          />
+        </Guide>
+        <Guide id="storage.transform.height">
+          <input
+            type="number"
+            className="surface control teditor-fctl"
+            aria-label="Height (px)"
+            placeholder="height"
+            min={DIMENSION_MIN}
+            max={DIMENSION_MAX}
+            value={height}
+            onChange={(e) => setHeight(e.target.value)}
+          />
+        </Guide>
+        <Guide id="storage.transform.resize">
+          <select
+            className="surface control teditor-fctl"
+            aria-label="Resize mode"
+            value={resize}
+            onChange={(e) => setResize(e.target.value as ResizeMode)}
+          >
+            <option value="cover">cover</option>
+            <option value="contain">contain</option>
+            <option value="fill">fill</option>
+          </select>
+        </Guide>
+        <Guide id="storage.transform.quality">
+          <input
+            type="number"
+            className="surface control teditor-fctl"
+            aria-label="Quality"
+            placeholder="quality"
+            min={QUALITY_MIN}
+            max={QUALITY_MAX}
+            value={quality}
+            onChange={(e) => setQuality(e.target.value)}
+          />
+        </Guide>
+        <Guide id="storage.transform.format">
+          <select
+            className="surface control teditor-fctl"
+            aria-label="Format"
+            value={format}
+            onChange={(e) => setFormat(e.target.value as FormatOption)}
+          >
+            <option value="origin">origin</option>
+            <option value="avif">avif</option>
+          </select>
+        </Guide>
       </div>
 
       {error ? (
@@ -263,9 +276,11 @@ export function TransformPreview({
 
       {unavailable ? (
         <>
-          <p className="note" role="status">
-            Image transformations are unavailable on this deployment.
-          </p>
+          <Guide id="storage.transform.unavailable">
+            <p className="note" role="status">
+              Image transformations are unavailable on this deployment.
+            </p>
+          </Guide>
           {previewable ? (
             // Transforms down ≠ preview down — the untransformed inline proxy
             // needs no imgproxy, so rasters keep displaying.
@@ -284,9 +299,11 @@ export function TransformPreview({
 
       <div className="campaign-actions">
         <span className="note mono">{url}</span>
-        <button type="button" className="type-chip" onClick={() => void copy()}>
-          {copied ? "Copied" : "Copy URL"}
-        </button>
+        <Guide id="storage.transform.copy-url">
+          <button type="button" className="type-chip" onClick={() => void copy()}>
+            {copied ? "Copied" : "Copy URL"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

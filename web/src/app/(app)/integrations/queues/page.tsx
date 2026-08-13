@@ -2,6 +2,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs, type TabItem } from "@/components/ui/Tabs";
 import { Surface } from "@/components/Surface";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireSectionUser } from "@/lib/requireSection";
 import { allQueueMetrics, listQueues } from "@/lib/console/queues";
 import {
@@ -65,23 +66,33 @@ export default async function QueuesPage() {
   if (!rows) {
     return (
       <>
-        <PageHeader eyebrow="Integrations" title="Queues" />
-        <Tabs items={INTEGRATIONS_TABS} />
-        <Surface className="empty-state" glint>
-          <h2>pgmq unavailable</h2>
-          <p>
-            The queue API did not answer through postgres-meta — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="integrations.queues.page">
+          <PageHeader eyebrow="Integrations" title="Queues" />
+        </Guide>
+        <Guide id="integrations.section.tabs">
+          <Tabs items={INTEGRATIONS_TABS} />
+        </Guide>
+        <Guide id="integrations.queues.unavailable">
+          <Surface className="empty-state" glint>
+            <h2>pgmq unavailable</h2>
+            <p>
+              The queue API did not answer through postgres-meta — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       </>
     );
   }
 
   return (
     <>
-      <PageHeader eyebrow="Integrations" title="Queues" />
-      <Tabs items={INTEGRATIONS_TABS} />
+      <Guide id="integrations.queues.page">
+        <PageHeader eyebrow="Integrations" title="Queues" />
+      </Guide>
+      <Guide id="integrations.section.tabs">
+        <Tabs items={INTEGRATIONS_TABS} />
+      </Guide>
       <QueuesClient initialQueues={rows} />
     </>
   );

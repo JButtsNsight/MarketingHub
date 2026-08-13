@@ -4,6 +4,7 @@ import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { RefList } from "@/components/ui/RefList";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import {
   SERVICES,
@@ -45,49 +46,65 @@ export default async function InfrastructurePage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Infrastructure"
-        title="Architecture"
-      />
+      <Guide id="integrations.infrastructure.page">
+        <PageHeader
+          eyebrow="Infrastructure"
+          title="Architecture"
+        />
+      </Guide>
 
-      <p className="ref-note" style={{ marginBottom: "18px" }}>
-        <Badge>reference</Badge>
-        <span>{REFERENCE_DISCLAIMER}</span>
-      </p>
+      <Guide id="integrations.infrastructure.reference-note">
+        <p className="ref-note" style={{ marginBottom: "18px" }}>
+          <Badge>reference</Badge>
+          <span>{REFERENCE_DISCLAIMER}</span>
+        </p>
+      </Guide>
 
       <div className="stack">
         <Section eyebrow="Compute" title="Services">
-          <DataTable
-            columns={SERVICE_COLUMNS}
-            rows={SERVICES}
-            getRowKey={(s) => s.name}
-          />
+          <Guide id="integrations.infrastructure.services">
+            <DataTable
+              columns={SERVICE_COLUMNS}
+              rows={SERVICES}
+              getRowKey={(s) => s.name}
+            />
+          </Guide>
           <p className="note">{NOT_ENABLED}</p>
         </Section>
 
         <Section eyebrow="Storage" title="Buckets">
-          <DataTable
-            columns={BUCKET_COLUMNS}
-            rows={BUCKETS}
-            getRowKey={(b) => b.name}
-          />
+          <Guide id="integrations.infrastructure.buckets">
+            <DataTable
+              columns={BUCKET_COLUMNS}
+              rows={BUCKETS}
+              getRowKey={(b) => b.name}
+            />
+          </Guide>
         </Section>
 
         <Section eyebrow="Security" title="Posture">
-          <RefList items={SECURITY_POSTURE} />
+          <Guide id="integrations.infrastructure.security">
+            <RefList items={SECURITY_POSTURE} />
+          </Guide>
         </Section>
 
         <div className="split-2">
           <Section eyebrow="Resilience" title="Backups & DR">
-            <RefList items={BACKUPS_DR} />
+            <Guide id="integrations.infrastructure.backups">
+              <RefList items={BACKUPS_DR} />
+            </Guide>
           </Section>
           <Section eyebrow="Telemetry" title="Observability">
-            <RefList items={OBSERVABILITY} />
+            <Guide id="integrations.infrastructure.observability">
+              <RefList items={OBSERVABILITY} />
+            </Guide>
           </Section>
         </div>
 
         <Section eyebrow="Network" title="Topology">
-          <RefList items={NETWORK} />
+          <Guide id="integrations.infrastructure.network">
+            <RefList items={NETWORK} />
+          </Guide>
         </Section>
       </div>
     </>

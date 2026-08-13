@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Studio-parity bucket create/edit dialog. Name is immutable after creation
@@ -194,106 +195,116 @@ export function BucketFormDialog(props: BucketFormDialogProps) {
         aria-labelledby="bucket-dialog-title"
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 id="bucket-dialog-title" className="alert-title">
-          {editing ? `Edit bucket "${editing.name}"` : "New bucket"}
-        </h2>
+        <Guide id="storage.bucket-form.title">
+          <h2 id="bucket-dialog-title" className="alert-title">
+            {editing ? `Edit bucket "${editing.name}"` : "New bucket"}
+          </h2>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="bucket-name">Bucket name</label>
-          <input
-            id="bucket-name"
-            className="surface control mono"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            value={editing ? editing.name : name}
-            disabled={editing != null}
-            autoFocus={editing == null}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <p className="field-note">
-            {editing
-              ? "Bucket names are immutable — the Storage API has no rename."
-              : "Immutable after creation. Letters, digits, dots, dashes, underscores."}
-          </p>
-        </div>
-
-        <div className="field">
-          <label htmlFor="bucket-public">
+        <Guide id="storage.bucket-form.name">
+          <div className="field">
+            <label htmlFor="bucket-name">Bucket name</label>
             <input
-              id="bucket-public"
-              type="checkbox"
-              checked={isPublic}
-              onChange={(e) => setIsPublic(e.target.checked)}
-            />{" "}
-            Public bucket
-          </label>
-          {isPublic ? (
-            <p
-              className="field-note"
-              role="note"
-              style={{ color: "var(--warn)" }}
-            >
-              Public means anyone with an object&apos;s URL can read it — no
-              sign-in, no signed URL, no expiry. Only make a bucket public when
-              every file in it is meant for the open internet.
-            </p>
-          ) : (
-            <p className="field-note">
-              Private — objects are only reachable through signed URLs.
-            </p>
-          )}
-        </div>
-
-        <div className="field">
-          <label htmlFor="bucket-size-limit">File size limit</label>
-          <div className="field-row">
-            <input
-              id="bucket-size-limit"
+              id="bucket-name"
               className="surface control mono"
-              type="number"
-              min="0"
-              step="any"
-              placeholder="no per-bucket limit"
-              value={sizeValue}
-              onChange={(e) => setSizeValue(e.target.value)}
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={editing ? editing.name : name}
+              disabled={editing != null}
+              autoFocus={editing == null}
+              onChange={(e) => setName(e.target.value)}
             />
-            <select
-              className="surface control"
-              aria-label="Unit"
-              value={sizeUnit}
-              onChange={(e) => setSizeUnit(e.target.value as UnitId)}
-            >
-              {UNITS.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.label}
-                </option>
-              ))}
-            </select>
+            <p className="field-note">
+              {editing
+                ? "Bucket names are immutable — the Storage API has no rename."
+                : "Immutable after creation. Letters, digits, dots, dashes, underscores."}
+            </p>
           </div>
-          <p className="field-note">
-            Per-object cap for this bucket. Leave empty for none — the
-            server&apos;s global limit always applies.
-          </p>
-        </div>
+        </Guide>
 
-        <div className="field">
-          <label htmlFor="bucket-mime-types">Allowed MIME types</label>
-          <input
-            id="bucket-mime-types"
-            className="surface control mono"
-            type="text"
-            autoComplete="off"
-            spellCheck={false}
-            placeholder="image/png, image/*"
-            value={mimeText}
-            onChange={(e) => setMimeText(e.target.value)}
-          />
-          <p className="field-note">
-            Comma-separated; wildcards like image/* work. Leave empty to accept
-            every type.
-          </p>
-        </div>
+        <Guide id="storage.bucket-form.public">
+          <div className="field">
+            <label htmlFor="bucket-public">
+              <input
+                id="bucket-public"
+                type="checkbox"
+                checked={isPublic}
+                onChange={(e) => setIsPublic(e.target.checked)}
+              />{" "}
+              Public bucket
+            </label>
+            {isPublic ? (
+              <p
+                className="field-note"
+                role="note"
+                style={{ color: "var(--warn)" }}
+              >
+                Public means anyone with an object&apos;s URL can read it — no
+                sign-in, no signed URL, no expiry. Only make a bucket public when
+                every file in it is meant for the open internet.
+              </p>
+            ) : (
+              <p className="field-note">
+                Private — objects are only reachable through signed URLs.
+              </p>
+            )}
+          </div>
+        </Guide>
+
+        <Guide id="storage.bucket-form.size-limit">
+          <div className="field">
+            <label htmlFor="bucket-size-limit">File size limit</label>
+            <div className="field-row">
+              <input
+                id="bucket-size-limit"
+                className="surface control mono"
+                type="number"
+                min="0"
+                step="any"
+                placeholder="no per-bucket limit"
+                value={sizeValue}
+                onChange={(e) => setSizeValue(e.target.value)}
+              />
+              <select
+                className="surface control"
+                aria-label="Unit"
+                value={sizeUnit}
+                onChange={(e) => setSizeUnit(e.target.value as UnitId)}
+              >
+                {UNITS.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <p className="field-note">
+              Per-object cap for this bucket. Leave empty for none — the
+              server&apos;s global limit always applies.
+            </p>
+          </div>
+        </Guide>
+
+        <Guide id="storage.bucket-form.mime-types">
+          <div className="field">
+            <label htmlFor="bucket-mime-types">Allowed MIME types</label>
+            <input
+              id="bucket-mime-types"
+              className="surface control mono"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="image/png, image/*"
+              value={mimeText}
+              onChange={(e) => setMimeText(e.target.value)}
+            />
+            <p className="field-note">
+              Comma-separated; wildcards like image/* work. Leave empty to accept
+              every type.
+            </p>
+          </div>
+        </Guide>
 
         {error ? (
           <p className="form-error" role="alert">
@@ -302,22 +313,26 @@ export function BucketFormDialog(props: BucketFormDialogProps) {
         ) : null}
 
         <div className="form-actions">
-          <button
-            type="button"
-            className="type-chip"
-            onClick={cancel}
-            disabled={busy}
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => void submit()}
-            disabled={busy}
-          >
-            {editing ? "Save changes" : "Create bucket"}
-          </button>
+          <Guide id="storage.bucket-form.cancel">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={cancel}
+              disabled={busy}
+            >
+              Cancel
+            </button>
+          </Guide>
+          <Guide id="storage.bucket-form.save">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => void submit()}
+              disabled={busy}
+            >
+              {editing ? "Save changes" : "Create bucket"}
+            </button>
+          </Guide>
         </div>
       </div>
     </div>

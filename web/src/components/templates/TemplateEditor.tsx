@@ -8,6 +8,7 @@ import {
 } from "@/lib/templates/schema";
 import { unsupportedMergeFields } from "@/lib/sms/render";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Inline template editor. Collapsed to an "Edit template" button; expanded it
@@ -101,13 +102,15 @@ export function TemplateEditor({ template }: { template: Template }) {
 
   if (!editing) {
     return (
-      <button
-        type="button"
-        className="btn-primary"
-        onClick={() => setEditing(true)}
-      >
-        Edit template
-      </button>
+      <Guide id="engagement.template.edit">
+        <button
+          type="button"
+          className="btn-primary"
+          onClick={() => setEditing(true)}
+        >
+          Edit template
+        </button>
+      </Guide>
     );
   }
 
@@ -115,73 +118,83 @@ export function TemplateEditor({ template }: { template: Template }) {
     <Surface as="form" className="upload-form tpl-editor" glint onSubmit={onSave} noValidate>
       <h2>Edit template</h2>
 
-      <div className="field">
-        <label htmlFor="tpl-name">Name</label>
-        <input
-          id="tpl-name"
-          className="surface control"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-        />
-      </div>
-
-      <div className="field">
-        <label htmlFor="tpl-category">Category</label>
-        <input
-          id="tpl-category"
-          className="surface control"
-          list="tpl-category-options"
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-        />
-        <datalist id="tpl-category-options">
-          {TEMPLATE_CATEGORIES.map((c) => (
-            <option key={c} value={c} />
-          ))}
-        </datalist>
-      </div>
-
-      <div className="field">
-        <label htmlFor="tpl-tags">Tags (comma-separated)</label>
-        <input
-          id="tpl-tags"
-          className="surface control"
-          value={tags}
-          onChange={(e) => setTags(e.target.value)}
-          placeholder="promo, seasonal"
-        />
-      </div>
-
-      {template.type === "email" ? (
+      <Guide id="engagement.editor.name">
         <div className="field">
-          <label htmlFor="tpl-subject">Subject</label>
+          <label htmlFor="tpl-name">Name</label>
           <input
-            id="tpl-subject"
+            id="tpl-name"
             className="surface control"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
+            value={name}
+            onChange={(e) => setName(e.target.value)}
           />
         </div>
+      </Guide>
+
+      <Guide id="engagement.editor.category">
+        <div className="field">
+          <label htmlFor="tpl-category">Category</label>
+          <input
+            id="tpl-category"
+            className="surface control"
+            list="tpl-category-options"
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+          />
+          <datalist id="tpl-category-options">
+            {TEMPLATE_CATEGORIES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </div>
+      </Guide>
+
+      <Guide id="engagement.editor.tags">
+        <div className="field">
+          <label htmlFor="tpl-tags">Tags (comma-separated)</label>
+          <input
+            id="tpl-tags"
+            className="surface control"
+            value={tags}
+            onChange={(e) => setTags(e.target.value)}
+            placeholder="promo, seasonal"
+          />
+        </div>
+      </Guide>
+
+      {template.type === "email" ? (
+        <Guide id="engagement.editor.subject">
+          <div className="field">
+            <label htmlFor="tpl-subject">Subject</label>
+            <input
+              id="tpl-subject"
+              className="surface control"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+            />
+          </div>
+        </Guide>
       ) : null}
 
-      <div className="field">
-        <label htmlFor="tpl-body">Body</label>
-        <textarea
-          id="tpl-body"
-          className="surface control"
-          rows={template.type === "email" ? 10 : 5}
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-        />
-        {template.type === "text" ? (
-          <p className="note mono">
-            {body.length} chars
-            {unsupported.length > 0
-              ? ` · unsupported merge fields: ${unsupported.join(", ")}`
-              : " · {{name}} and {{firstName}} supported"}
-          </p>
-        ) : null}
-      </div>
+      <Guide id="engagement.editor.body">
+        <div className="field">
+          <label htmlFor="tpl-body">Body</label>
+          <textarea
+            id="tpl-body"
+            className="surface control"
+            rows={template.type === "email" ? 10 : 5}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+          />
+          {template.type === "text" ? (
+            <p className="note mono">
+              {body.length} chars
+              {unsupported.length > 0
+                ? ` · unsupported merge fields: ${unsupported.join(", ")}`
+                : " · {{name}} and {{firstName}} supported"}
+            </p>
+          ) : null}
+        </div>
+      </Guide>
 
       {error ? (
         <p className="form-error" role="alert">
@@ -190,12 +203,16 @@ export function TemplateEditor({ template }: { template: Template }) {
       ) : null}
 
       <div className="form-actions">
-        <button type="button" className="type-chip" onClick={onCancel} disabled={saving}>
-          Cancel
-        </button>
-        <button type="submit" className="btn-primary" disabled={saving}>
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+        <Guide id="engagement.editor.cancel">
+          <button type="button" className="type-chip" onClick={onCancel} disabled={saving}>
+            Cancel
+          </button>
+        </Guide>
+        <Guide id="engagement.editor.save">
+          <button type="submit" className="btn-primary" disabled={saving}>
+            {saving ? "Saving…" : "Save changes"}
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

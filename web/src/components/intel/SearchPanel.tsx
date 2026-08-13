@@ -31,6 +31,7 @@ import {
   type SearchResponse,
 } from "@/lib/intel/schema";
 import { Badge } from "@/components/ui/Badge";
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "../Surface";
 import { listSources, pollIntelAnswer, searchIntel, IntelApiError } from "./api";
 import { RagAnswerPanel } from "./RagAnswerPanel";
@@ -255,60 +256,70 @@ export function SearchPanel() {
         role="search"
         style={{ display: "flex", alignItems: "center", gap: "10px" }}
       >
-        <div
-          className="search-bar surface control"
-          style={{ flex: "1 1 auto", maxWidth: "none", minWidth: 0 }}
-        >
-          <input
-            type="search"
-            aria-label="Search competitor intel"
-            placeholder="Ask about the competitor corpus…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        {sources && sources.length > 0 ? (
-          <select
-            aria-label="Filter by source"
-            className="surface control"
-            style={{ width: "auto", flex: "0 0 auto" }}
-            value={sourceId}
-            onChange={(e) => setSourceId(e.target.value)}
+        <Guide id="intel.search.query">
+          <div
+            className="search-bar surface control"
+            style={{ flex: "1 1 auto", maxWidth: "none", minWidth: 0 }}
           >
-            <option value="">All sources</option>
-            {sources.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
+            <input
+              type="search"
+              aria-label="Search competitor intel"
+              placeholder="Ask about the competitor corpus…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </div>
+        </Guide>
+        {sources && sources.length > 0 ? (
+          <Guide id="intel.search.source-filter">
+            <select
+              aria-label="Filter by source"
+              className="surface control"
+              style={{ width: "auto", flex: "0 0 auto" }}
+              value={sourceId}
+              onChange={(e) => setSourceId(e.target.value)}
+            >
+              <option value="">All sources</option>
+              {sources.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Guide>
         ) : null}
-        <button type="submit" className="btn-primary" style={{ flex: "0 0 auto" }}>
-          Search
-        </button>
+        <Guide id="intel.search.submit">
+          <button type="submit" className="btn-primary" style={{ flex: "0 0 auto" }}>
+            Search
+          </button>
+        </Guide>
       </form>
 
       {droppedStaleFilter ? (
-        <p className="note" role="alert">
-          The source filter from this link no longer exists — it was cleared,
-          and results now cover all sources.
-        </p>
+        <Guide id="intel.search.stale-filter-note">
+          <p className="note" role="alert">
+            The source filter from this link no longer exists — it was cleared,
+            and results now cover all sources.
+          </p>
+        </Guide>
       ) : null}
 
       {sourcesFailed && sourceId ? (
         // The dropdown could not load, so it cannot RENDER the active filter —
         // surface it as text instead of silently restricting every search.
-        <p className="note" role="alert">
-          Results are filtered to one source (id {sourceId}), but the source
-          list could not be loaded to show it.{" "}
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => setSourceId("")}
-          >
-            Clear filter
-          </button>
-        </p>
+        <Guide id="intel.search.filter-fallback">
+          <p className="note" role="alert">
+            Results are filtered to one source (id {sourceId}), but the source
+            list could not be loaded to show it.{" "}
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => setSourceId("")}
+            >
+              Clear filter
+            </button>
+          </p>
+        </Guide>
       ) : null}
 
       {error ? <ErrorState error={error} onRetry={() => void runSearch(query, sourceId)} /> : null}
@@ -327,36 +338,44 @@ export function SearchPanel() {
         ) : (
           <>
             {degraded?.reason === "gateway-not-configured" ? (
-              <p className="note">{KEYWORD_ONLY_TEXT}</p>
+              <Guide id="intel.search.keyword-only-note">
+                <p className="note">{KEYWORD_ONLY_TEXT}</p>
+              </Guide>
             ) : null}
 
             <RagAnswerPanel phase={answer} rows={results} />
 
-            <div className="stack">
-              <div className="form-actions">
-                {/* Ranking provenance must be TRUE, not aspirational: the
-                    model may legally omit/void `ranking` (coerced to [] by
-                    the gateway parser), in which case the order below is
-                    still pure keyword rank and must say so. */}
-                {answer.name === "completed" &&
-                Array.isArray(answer.result.ranking) &&
-                answer.result.ranking.length > 0 ? (
-                  <Badge
-                    tone="var(--ok)"
-                    title="passage order reranked by the synthesis task"
-                  >
-                    Ranked by Claude
-                  </Badge>
-                ) : (
-                  <Badge title="Postgres full-text rank (ts_rank_cd)">
-                    Keyword rank
-                  </Badge>
-                )}
+            <Guide id="intel.search.results">
+              <div className="stack">
+                <div className="form-actions">
+                  {/* Ranking provenance must be TRUE, not aspirational: the
+                      model may legally omit/void `ranking` (coerced to [] by
+                      the gateway parser), in which case the order below is
+                      still pure keyword rank and must say so. */}
+                  {answer.name === "completed" &&
+                  Array.isArray(answer.result.ranking) &&
+                  answer.result.ranking.length > 0 ? (
+                    <Guide id="intel.search.ranked-by-claude">
+                      <Badge
+                        tone="var(--ok)"
+                        title="passage order reranked by the synthesis task"
+                      >
+                        Ranked by Claude
+                      </Badge>
+                    </Guide>
+                  ) : (
+                    <Guide id="intel.search.keyword-rank">
+                      <Badge title="Postgres full-text rank (ts_rank_cd)">
+                        Keyword rank
+                      </Badge>
+                    </Guide>
+                  )}
+                </div>
+                {ordered.map(({ row, n }) => (
+                  <ResultCard key={row.chunk_id} row={row} n={n} />
+                ))}
               </div>
-              {ordered.map(({ row, n }) => (
-                <ResultCard key={row.chunk_id} row={row} n={n} />
-              ))}
-            </div>
+            </Guide>
           </>
         )
       ) : null}
@@ -375,7 +394,9 @@ function ResultCard({ row, n }: { row: FtsChunkRow; n: number }) {
           </span>
           <h2>
             {row.source_name} ›{" "}
-            <Link href={`/intel/documents/${row.document_id}`}>{row.document_title}</Link>
+            <Guide id="intel.search.result-doc-link">
+              <Link href={`/intel/documents/${row.document_id}`}>{row.document_title}</Link>
+            </Guide>
           </h2>
         </div>
       </div>

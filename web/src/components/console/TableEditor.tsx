@@ -9,6 +9,7 @@ import {
 } from "../ui/DataGrid";
 import { useConfirm } from "../ui/AlertDialog";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * The interrupting warning shown before any hand edit/delete on a
@@ -406,16 +407,18 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
                     selected?.schema === t.schema && selected?.name === t.name;
                   return (
                     <li key={`${t.schema}.${t.name}`}>
-                      <button
-                        type="button"
-                        className={active ? "nav-link on" : "nav-link"}
-                        onClick={() => selectTable(t)}
-                      >
-                        <span className="teditor-tname">{t.name}</span>
-                        <span className="teditor-test">
-                          {t.rowsEstimate.toLocaleString()}
-                        </span>
-                      </button>
+                      <Guide id="database.editor.table-select">
+                        <button
+                          type="button"
+                          className={active ? "nav-link on" : "nav-link"}
+                          onClick={() => selectTable(t)}
+                        >
+                          <span className="teditor-tname">{t.name}</span>
+                          <span className="teditor-test">
+                            {t.rowsEstimate.toLocaleString()}
+                          </span>
+                        </button>
+                      </Guide>
                     </li>
                   );
                 })}
@@ -431,125 +434,150 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
               <span className="eyebrow">
                 {selected.schema}.{selected.name}
               </span>
-              <span className="teditor-test mono">
-                {total.toLocaleString()} row{total === 1 ? "" : "s"}
-                {selected.primaryKeys.length === 0 ? " · no PK — browse only" : ""}
-              </span>
+              <Guide id="database.editor.table-status">
+                <span className="teditor-test mono">
+                  {total.toLocaleString()} row{total === 1 ? "" : "s"}
+                  {selected.primaryKeys.length === 0 ? " · no PK — browse only" : ""}
+                </span>
+              </Guide>
               <span className="spacer" />
-              <button type="button" className="type-chip" onClick={exportCsv}>
-                Export page CSV
-              </button>
-              <button type="button" className="type-chip" onClick={() => { refresh(); void refreshTables(); }}>
-                Refresh
-              </button>
+              <Guide id="database.editor.export-csv">
+                <button type="button" className="type-chip" onClick={exportCsv}>
+                  Export page CSV
+                </button>
+              </Guide>
+              <Guide id="database.editor.refresh">
+                <button type="button" className="type-chip" onClick={() => { refresh(); void refreshTables(); }}>
+                  Refresh
+                </button>
+              </Guide>
               {selectedKeys.size > 0 ? (
                 confirmDelete ? (
                   <>
-                    <button type="button" className="type-chip" onClick={deleteSelected}>
-                      Confirm delete {selectedKeys.size}
-                    </button>
+                    <Guide id="database.editor.confirm-delete">
+                      <button type="button" className="type-chip" onClick={deleteSelected}>
+                        Confirm delete {selectedKeys.size}
+                      </button>
+                    </Guide>
+                    <Guide id="database.editor.keep-rows">
+                      <button
+                        type="button"
+                        className="type-chip"
+                        onClick={() => setConfirmDelete(false)}
+                      >
+                        Keep
+                      </button>
+                    </Guide>
+                  </>
+                ) : (
+                  <Guide id="database.editor.delete-selected">
                     <button
                       type="button"
                       className="type-chip"
-                      onClick={() => setConfirmDelete(false)}
+                      onClick={requestDelete}
                     >
-                      Keep
+                      Delete {selectedKeys.size} selected
                     </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className="type-chip"
-                    onClick={requestDelete}
-                  >
-                    Delete {selectedKeys.size} selected
-                  </button>
+                  </Guide>
                 )
               ) : null}
               {selected.primaryKeys.length > 0 ? (
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={() => setInsertOpen((v) => !v)}
-                >
-                  {insertOpen ? "Close insert" : "Insert row"}
-                </button>
+                <Guide id="database.editor.insert-toggle">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={() => setInsertOpen((v) => !v)}
+                  >
+                    {insertOpen ? "Close insert" : "Insert row"}
+                  </button>
+                </Guide>
               ) : null}
             </div>
 
             <div className="dgrid-toolbar" role="search">
-              <select
-                className="surface control teditor-fctl"
-                aria-label="Filter column"
-                value={draft.column}
-                onChange={(e) => setDraft({ ...draft, column: e.target.value })}
-              >
-                <option value="">filter column…</option>
-                {selected.columns.map((c) => (
-                  <option key={c.name} value={c.name}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="surface control teditor-fctl"
-                aria-label="Filter operator"
-                value={draft.op}
-                onChange={(e) => setDraft({ ...draft, op: e.target.value })}
-              >
-                {FILTER_OPS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              {draft.op === "is" ? (
+              <Guide id="database.editor.filter-column">
                 <select
                   className="surface control teditor-fctl"
-                  aria-label="Filter value"
-                  value={draft.value}
-                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                  aria-label="Filter column"
+                  value={draft.column}
+                  onChange={(e) => setDraft({ ...draft, column: e.target.value })}
                 >
-                  <option value="null">null</option>
-                  <option value="not.null">not null</option>
+                  <option value="">filter column…</option>
+                  {selected.columns.map((c) => (
+                    <option key={c.name} value={c.name}>
+                      {c.name}
+                    </option>
+                  ))}
                 </select>
-              ) : (
-                <input
+              </Guide>
+              <Guide id="database.editor.filter-operator">
+                <select
                   className="surface control teditor-fctl"
-                  aria-label="Filter value"
-                  type="text"
-                  placeholder="value"
-                  value={draft.value}
-                  onChange={(e) => setDraft({ ...draft, value: e.target.value })}
-                />
+                  aria-label="Filter operator"
+                  value={draft.op}
+                  onChange={(e) => setDraft({ ...draft, op: e.target.value })}
+                >
+                  {FILTER_OPS.map((o) => (
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </Guide>
+              {draft.op === "is" ? (
+                <Guide id="database.editor.filter-value">
+                  <select
+                    className="surface control teditor-fctl"
+                    aria-label="Filter value"
+                    value={draft.value}
+                    onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                  >
+                    <option value="null">null</option>
+                    <option value="not.null">not null</option>
+                  </select>
+                </Guide>
+              ) : (
+                <Guide id="database.editor.filter-value">
+                  <input
+                    className="surface control teditor-fctl"
+                    aria-label="Filter value"
+                    type="text"
+                    placeholder="value"
+                    value={draft.value}
+                    onChange={(e) => setDraft({ ...draft, value: e.target.value })}
+                  />
+                </Guide>
               )}
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => {
-                  if (!draft.column) return;
-                  const value = draft.op === "is" && !draft.value ? "null" : draft.value;
-                  setFilters([...filters, { ...draft, value }]);
-                  setDraft({ column: "", op: "eq", value: "" });
-                  setPage(0);
-                }}
-              >
-                Add filter
-              </button>
-              {filters.map((f, i) => (
+              <Guide id="database.editor.filter-add">
                 <button
-                  key={`${f.column}-${i}`}
                   type="button"
-                  className="type-chip on"
-                  title="Remove filter"
+                  className="type-chip"
                   onClick={() => {
-                    setFilters(filters.filter((_, j) => j !== i));
+                    if (!draft.column) return;
+                    const value = draft.op === "is" && !draft.value ? "null" : draft.value;
+                    setFilters([...filters, { ...draft, value }]);
+                    setDraft({ column: "", op: "eq", value: "" });
                     setPage(0);
                   }}
                 >
-                  {f.column} {FILTER_OPS.find((o) => o.value === f.op)?.label ?? f.op}{" "}
-                  {f.op === "is" ? f.value.replace(".", " ") : f.value} ✕
+                  Add filter
                 </button>
+              </Guide>
+              {filters.map((f, i) => (
+                <Guide key={`${f.column}-${i}`} id="database.editor.filter-chip">
+                  <button
+                    type="button"
+                    className="type-chip on"
+                    title="Remove filter"
+                    onClick={() => {
+                      setFilters(filters.filter((_, j) => j !== i));
+                      setPage(0);
+                    }}
+                  >
+                    {f.column} {FILTER_OPS.find((o) => o.value === f.op)?.label ?? f.op}{" "}
+                    {f.op === "is" ? f.value.replace(".", " ") : f.value} ✕
+                  </button>
+                </Guide>
               ))}
             </div>
 
@@ -570,62 +598,66 @@ export function TableEditor({ initialTables }: { initialTables: EditorTableDto[]
               </p>
             ) : null}
 
-            <div className={loading ? "dgrid-busy" : undefined}>
-              <DataGrid
-                columns={gridColumns}
-                rows={rows}
-                getRowKey={rowKey}
-                sort={sort}
-                onSortChange={(s) => {
-                  setSort(s);
-                  setPage(0);
-                }}
-                selectedKeys={selectedKeys}
-                onSelectionChange={(keys) => {
-                  setSelectedKeys(keys);
-                  setConfirmDelete(false);
-                }}
-                onCellEdit={selected.primaryKeys.length > 0 ? onCellEdit : undefined}
-                empty="No rows match."
-              />
-            </div>
+            <Guide id="database.editor.grid">
+              <div className={loading ? "dgrid-busy" : undefined}>
+                <DataGrid
+                  columns={gridColumns}
+                  rows={rows}
+                  getRowKey={rowKey}
+                  sort={sort}
+                  onSortChange={(s) => {
+                    setSort(s);
+                    setPage(0);
+                  }}
+                  selectedKeys={selectedKeys}
+                  onSelectionChange={(keys) => {
+                    setSelectedKeys(keys);
+                    setConfirmDelete(false);
+                  }}
+                  onCellEdit={selected.primaryKeys.length > 0 ? onCellEdit : undefined}
+                  empty="No rows match."
+                />
+              </div>
+            </Guide>
 
-            <div className="dgrid-pager">
-              <select
-                className="surface control teditor-fctl"
-                aria-label="Rows per page"
-                value={pageSize}
-                onChange={(e) => {
-                  setPageSize(Number(e.target.value));
-                  setPage(0);
-                }}
-              >
-                {PAGE_SIZES.map((n) => (
-                  <option key={n} value={n}>
-                    {n} / page
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                className="type-chip"
-                disabled={page === 0}
-                onClick={() => setPage(page - 1)}
-              >
-                Prev
-              </button>
-              <span>
-                page {page + 1} of {pageCount}
-              </span>
-              <button
-                type="button"
-                className="type-chip"
-                disabled={page + 1 >= pageCount}
-                onClick={() => setPage(page + 1)}
-              >
-                Next
-              </button>
-            </div>
+            <Guide id="database.editor.pager">
+              <div className="dgrid-pager">
+                <select
+                  className="surface control teditor-fctl"
+                  aria-label="Rows per page"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(0);
+                  }}
+                >
+                  {PAGE_SIZES.map((n) => (
+                    <option key={n} value={n}>
+                      {n} / page
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={page === 0}
+                  onClick={() => setPage(page - 1)}
+                >
+                  Prev
+                </button>
+                <span>
+                  page {page + 1} of {pageCount}
+                </span>
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={page + 1 >= pageCount}
+                  onClick={() => setPage(page + 1)}
+                >
+                  Next
+                </button>
+              </div>
+            </Guide>
           </>
         ) : (
           <Surface className="empty-state" glint>
@@ -688,7 +720,8 @@ function InsertRowPanel({
   return (
     <Surface className="teditor-insert" elevated={false}>
       <span className="eyebrow">Insert into {table.schema}.{table.name}</span>
-      <div className="teditor-insert-grid">
+      <Guide id="database.editor.insert-form">
+        <div className="teditor-insert-grid">
         {writable.map((c) => (
           <div className="field" key={c.name}>
             <label htmlFor={`ins-${c.name}`}>
@@ -748,7 +781,8 @@ function InsertRowPanel({
             ) : null}
           </div>
         ))}
-      </div>
+        </div>
+      </Guide>
       {error ? (
         <p className="form-error" role="alert">
           {error}
@@ -758,9 +792,11 @@ function InsertRowPanel({
         <button type="button" className="type-chip" onClick={() => onDone(false)} disabled={busy}>
           Cancel
         </button>
-        <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
-          Insert row
-        </button>
+        <Guide id="database.editor.insert-submit">
+          <button type="button" className="btn-primary" onClick={submit} disabled={busy}>
+            Insert row
+          </button>
+        </Guide>
       </div>
     </Surface>
   );

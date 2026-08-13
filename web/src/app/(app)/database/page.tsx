@@ -4,6 +4,7 @@ import { requireSectionUser } from "@/lib/requireSection";
 import { listEditorTables } from "@/lib/console/tables";
 import { TableEditor } from "@/components/console/TableEditor";
 import { Surface } from "@/components/Surface";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live introspection; never prerender.
 export const dynamic = "force-dynamic";
@@ -36,21 +37,25 @@ export default async function DatabasePage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Database"
-        title="Table Editor"
-      />
+      <Guide id="database.editor.page">
+        <PageHeader
+          eyebrow="Database"
+          title="Table Editor"
+        />
+      </Guide>
 
       {tables ? (
         <TableEditor initialTables={tables} />
       ) : (
-        <Surface className="empty-state" glint>
-          <h2>Introspection unavailable</h2>
-          <p>
-            postgres-meta did not answer through the data API — refresh in a
-            moment.
-          </p>
-        </Surface>
+        <Guide id="database.section.introspection-missing">
+          <Surface className="empty-state" glint>
+            <h2>Introspection unavailable</h2>
+            <p>
+              postgres-meta did not answer through the data API — refresh in a
+              moment.
+            </p>
+          </Surface>
+        </Guide>
       )}
     </>
   );

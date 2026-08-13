@@ -10,6 +10,7 @@ import { Section } from "../ui/Section";
 import { StatCard } from "../ui/StatCard";
 import { StatusPill } from "../ui/StatusPill";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import type { BackupRow, BackupSnapshot } from "@/lib/console/backups";
 
 /**
@@ -84,7 +85,11 @@ const BACKUP_COLUMNS: Column<BackupRow>[] = [
     key: "type",
     header: "type",
     width: "90px",
-    render: (b) => <Badge tone={TYPE_TONE[b.type]}>{b.type}</Badge>,
+    render: (b) => (
+      <Guide id="observability.backups.set-type">
+        <Badge tone={TYPE_TONE[b.type]}>{b.type}</Badge>
+      </Guide>
+    ),
   },
   {
     key: "stoppedAt",
@@ -121,13 +126,16 @@ const BACKUP_COLUMNS: Column<BackupRow>[] = [
     key: "error",
     header: "checksum",
     width: "130px",
-    render: (b) =>
-      b.error ? (
-        // A page-checksum error IS a failure state — red is correct here.
-        <StatusPill status="fail">error</StatusPill>
-      ) : (
-        <StatusPill status="ok">clean</StatusPill>
-      ),
+    render: (b) => (
+      <Guide id="observability.backups.checksum">
+        {b.error ? (
+          // A page-checksum error IS a failure state — red is correct here.
+          <StatusPill status="fail">error</StatusPill>
+        ) : (
+          <StatusPill status="ok">clean</StatusPill>
+        )}
+      </Guide>
+    ),
   },
 ];
 
@@ -171,27 +179,33 @@ export function BackupsClient({
     <div className="dgrid-toolbar">
       {snapshot ? (
         <>
-          <span className="mono">reported {fmtTs(snapshot.capturedAt)}</span>
+          <Guide id="observability.backups.reported-at">
+            <span className="mono">reported {fmtTs(snapshot.capturedAt)}</span>
+          </Guide>
           {(() => {
             const age = minutesSince(snapshot.capturedAt);
             if (age === null || age <= staleAfterMinutes) return null;
             return (
-              <StatusPill status="warn">
-                stale — reported {age} min ago (reporter runs every 15 min)
-              </StatusPill>
+              <Guide id="observability.backups.stale">
+                <StatusPill status="warn">
+                  stale — reported {age} min ago (reporter runs every 15 min)
+                </StatusPill>
+              </Guide>
             );
           })()}
         </>
       ) : null}
       <span className="spacer" />
-      <button
-        type="button"
-        className="type-chip"
-        disabled={loading}
-        onClick={() => void refresh()}
-      >
-        {loading ? "Refreshing…" : "Refresh"}
-      </button>
+      <Guide id="observability.backups.refresh">
+        <button
+          type="button"
+          className="type-chip"
+          disabled={loading}
+          onClick={() => void refresh()}
+        >
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
+      </Guide>
     </div>
   );
 
@@ -202,17 +216,21 @@ export function BackupsClient({
       <div className="stack">
         {toolbar}
         {error ? (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
+          <Guide id="observability.backups.refresh-error">
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          </Guide>
         ) : null}
-        <Surface className="empty-state" glint>
-          <h2>Backup status unreachable</h2>
-          <p>
-            No pgBackRest snapshot to read — the host reporter cron is not
-            installed.
-          </p>
-        </Surface>
+        <Guide id="observability.backups.unreachable">
+          <Surface className="empty-state" glint>
+            <h2>Backup status unreachable</h2>
+            <p>
+              No pgBackRest snapshot to read — the host reporter cron is not
+              installed.
+            </p>
+          </Surface>
+        </Guide>
       </div>
     );
   }
@@ -226,14 +244,18 @@ export function BackupsClient({
       <div className="stack">
         {toolbar}
         {error ? (
-          <p className="form-error" role="alert">
-            {error}
-          </p>
+          <Guide id="observability.backups.refresh-error">
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          </Guide>
         ) : null}
-        <Surface className="empty-state" glint>
-          <h2>Status payload unreadable</h2>
-          <p>The host reporter stored a payload with no parseable stanza.</p>
-        </Surface>
+        <Guide id="observability.backups.unreadable">
+          <Surface className="empty-state" glint>
+            <h2>Status payload unreadable</h2>
+            <p>The host reporter stored a payload with no parseable stanza.</p>
+          </Surface>
+        </Guide>
       </div>
     );
   }
@@ -254,9 +276,11 @@ export function BackupsClient({
       {toolbar}
 
       {error ? (
-        <p className="form-error" role="alert">
-          {error}
-        </p>
+        <Guide id="observability.backups.refresh-error">
+          <p className="form-error" role="alert">
+            {error}
+          </p>
+        </Guide>
       ) : null}
 
       <Section
@@ -266,38 +290,48 @@ export function BackupsClient({
         actions={
           <>
             {stanza.backupLockHeld ? (
-              <Badge title="pgBackRest reports the backup lock held — a backup is running right now.">
-                backup in progress
-              </Badge>
+              <Guide id="observability.backups.lock-badge">
+                <Badge title="pgBackRest reports the backup lock held — a backup is running right now.">
+                  backup in progress
+                </Badge>
+              </Guide>
             ) : null}
-            {stanza.statusCode === 0 ? (
-              <StatusPill status="ok">stanza ok</StatusPill>
-            ) : (
-              <StatusPill status="fail">
-                {stanza.statusMessage || "error"} (code {stanza.statusCode})
-              </StatusPill>
-            )}
+            <Guide id="observability.backups.stanza-status">
+              {stanza.statusCode === 0 ? (
+                <StatusPill status="ok">stanza ok</StatusPill>
+              ) : (
+                <StatusPill status="fail">
+                  {stanza.statusMessage || "error"} (code {stanza.statusCode})
+                </StatusPill>
+              )}
+            </Guide>
           </>
         }
       >
         <div className="stat-grid">
-          <StatCard
-            label="Backups retained"
-            value={stanza.backups.length}
-            hint={`${counts.full} full · ${counts.diff} diff · ${counts.incr} incr`}
-          />
-          <StatCard
-            label="Database size"
-            value={formatBytes(latest?.dbSizeBytes ?? null)}
-            hint="latest set"
-            accent="var(--data-2)"
-          />
-          <StatCard
-            label="Repository size"
-            value={formatBytes(latest?.repoSizeBytes ?? null)}
-            hint="latest set, compressed"
-            accent="var(--data-3)"
-          />
+          <Guide id="observability.backups.stat-retained">
+            <StatCard
+              label="Backups retained"
+              value={stanza.backups.length}
+              hint={`${counts.full} full · ${counts.diff} diff · ${counts.incr} incr`}
+            />
+          </Guide>
+          <Guide id="observability.backups.stat-db-size">
+            <StatCard
+              label="Database size"
+              value={formatBytes(latest?.dbSizeBytes ?? null)}
+              hint="latest set"
+              accent="var(--data-2)"
+            />
+          </Guide>
+          <Guide id="observability.backups.stat-repo-size">
+            <StatCard
+              label="Repository size"
+              value={formatBytes(latest?.repoSizeBytes ?? null)}
+              hint="latest set, compressed"
+              accent="var(--data-3)"
+            />
+          </Guide>
         </div>
       </Section>
 
@@ -308,24 +342,28 @@ export function BackupsClient({
         actions={<Badge>physical</Badge>}
       >
         <div className="stack">
-          <KeyValue
-            items={[
-              {
-                label: "Schedule",
-                value:
-                  "full Sun 02:00 · diff Mon–Sat 02:00 · logical dump 03:00 (host cron)",
-                mono: true,
-              },
-              { label: "Retention", value: "4 full · 14 diff", mono: true },
-            ]}
-          />
-          <DataTable
-            columns={BACKUP_COLUMNS}
-            rows={newestFirst}
-            getRowKey={(b) => b.label}
-            empty="No completed backups reported yet — the first full backup runs Sunday 02:00."
-            paginate={50}
-          />
+          <Guide id="observability.backups.schedule">
+            <KeyValue
+              items={[
+                {
+                  label: "Schedule",
+                  value:
+                    "full Sun 02:00 · diff Mon–Sat 02:00 · logical dump 03:00 (host cron)",
+                  mono: true,
+                },
+                { label: "Retention", value: "4 full · 14 diff", mono: true },
+              ]}
+            />
+          </Guide>
+          <Guide id="observability.backups.table">
+            <DataTable
+              columns={BACKUP_COLUMNS}
+              rows={newestFirst}
+              getRowKey={(b) => b.label}
+              empty="No completed backups reported yet — the first full backup runs Sunday 02:00."
+              paginate={50}
+            />
+          </Guide>
         </div>
       </Section>
 
@@ -334,64 +372,70 @@ export function BackupsClient({
         title="Restore window"
         description="Earliest = oldest retained set's finish; latest = newest archived WAL segment."
       >
-        <KeyValue
-          items={[
-            {
-              label: "Earliest restorable",
-              value: fmtTs(earliestRestorable),
-              mono: true,
-            },
-            {
-              label: "Latest restorable",
-              value: lastArchivedAt ? (
-                fmtTs(lastArchivedAt)
-              ) : (
-                <StatusPill status="warn">
-                  archiving unverifiable — no archived WAL recorded
-                </StatusPill>
-              ),
-              mono: lastArchivedAt != null,
-            },
-            {
-              label: "WAL archive range",
-              value:
-                stanza.archiveMin && stanza.archiveMax
-                  ? `${stanza.archiveMin} → ${stanza.archiveMax}`
-                  : "—",
-              mono: true,
-            },
-          ]}
-        />
+        <Guide id="observability.backups.pitr">
+          <KeyValue
+            items={[
+              {
+                label: "Earliest restorable",
+                value: fmtTs(earliestRestorable),
+                mono: true,
+              },
+              {
+                label: "Latest restorable",
+                value: lastArchivedAt ? (
+                  fmtTs(lastArchivedAt)
+                ) : (
+                  <Guide id="observability.backups.wal-unverified">
+                    <StatusPill status="warn">
+                      archiving unverifiable — no archived WAL recorded
+                    </StatusPill>
+                  </Guide>
+                ),
+                mono: lastArchivedAt != null,
+              },
+              {
+                label: "WAL archive range",
+                value:
+                  stanza.archiveMin && stanza.archiveMax
+                    ? `${stanza.archiveMin} → ${stanza.archiveMax}`
+                    : "—",
+                mono: true,
+              },
+            ]}
+          />
+        </Guide>
       </Section>
 
       <Section eyebrow="Restore drill" title="Restore drill">
-        <RefList
-          items={[
-            {
-              label: "Runbook",
-              detail:
-                "docs/runbooks/restore-drill.md — the quarterly point-in-time restore drill.",
-              status: "info",
-            },
-            {
-              label: "Objectives",
-              detail: "RPO ≤ 5 minutes (WAL archiving) · RTO < 2 hours.",
-              status: "info",
-            },
-            {
-              label: "Primary path",
-              detail:
-                "pgbackrest --type=time point-in-time restore, then rls-gate.sh must pass before the restored database serves traffic.",
-              status: "info",
-            },
-            {
-              label: "Last drill",
-              detail:
-                "Not tracked here — drill history is not derivable from pgbackrest info, so this page makes no claim about it.",
-              status: "info",
-            },
-          ]}
-        />
+        <Guide id="observability.backups.restore-drill">
+          <RefList
+            items={[
+              {
+                label: "Runbook",
+                detail:
+                  "docs/runbooks/restore-drill.md — the quarterly point-in-time restore drill.",
+                status: "info",
+              },
+              {
+                label: "Objectives",
+                detail: "RPO ≤ 5 minutes (WAL archiving) · RTO < 2 hours.",
+                status: "info",
+              },
+              {
+                label: "Primary path",
+                detail:
+                  "pgbackrest --type=time point-in-time restore, then rls-gate.sh must pass before the restored database serves traffic.",
+                status: "info",
+              },
+              {
+                label: "Last drill",
+                detail:
+                  "Not tracked here — drill history is not derivable from pgbackrest info, so this page makes no claim about it.",
+                status: "info",
+              },
+            ]}
+          />
+        </Guide>
       </Section>
     </div>
   );

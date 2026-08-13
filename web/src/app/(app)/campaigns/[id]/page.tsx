@@ -10,6 +10,7 @@ import {
   listInboundMessages,
 } from "@/lib/sms/repo";
 import { getContactList } from "@/lib/contacts/repo";
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { StatCard } from "@/components/ui/StatCard";
@@ -84,7 +85,11 @@ export default async function CampaignDetailPage({
     <>
       <PageHeader
         eyebrow="SMS Campaign"
-        title={campaign.name}
+        title={
+          <Guide id="campaigns.detail.title">
+            <span>{campaign.name}</span>
+          </Guide>
+        }
         subtitle={
           <>
             <Badge tone={statusTone(campaign.status)}>
@@ -105,7 +110,9 @@ export default async function CampaignDetailPage({
             {list ? (
               <>
                 {" · list "}
-                <Link href={`/campaigns/lists/${list.id}`}>{list.name}</Link>
+                <Guide id="campaigns.detail.list-link">
+                  <Link href={`/campaigns/lists/${list.id}`}>{list.name}</Link>
+                </Guide>
               </>
             ) : null}
             {campaign.monday_board_id ? (
@@ -138,65 +145,69 @@ export default async function CampaignDetailPage({
       <LiveRefresher topic={[`mh:campaign:${campaign.id}`, "mh:inbox"]} />
 
       <div className="stack">
-        <div className="stat-grid">
-          <StatCard label="Pending" value={counts.pending} />
-          <StatCard
-            label="Sent"
-            value={counts.sent}
-            accent="var(--data-2)"
-          />
-          <StatCard
-            label="Delivered"
-            value={counts.delivered}
-            accent="var(--data-3)"
-          />
-          {/* No accent on the failure cards: StatCard accents are data-pool
-              only (red is reserved for the status Badges). */}
-          <StatCard label="Undelivered" value={counts.undelivered} />
-          <StatCard label="Failed" value={counts.failed} />
-          <StatCard label="Ambiguous" value={counts.failed_ambiguous} />
-          <StatCard label="Suppressed" value={counts.suppressed} />
-          {/* Skipped = invalid/duplicate phones at creation time — without it
-              the cards do not add up to the loaded audience. */}
-          <StatCard label="Skipped" value={counts.skipped} />
-        </div>
-
-        <Section eyebrow="Engagement" title="After the send">
+        <Guide id="campaigns.detail.status-cards">
           <div className="stat-grid">
+            <StatCard label="Pending" value={counts.pending} />
             <StatCard
-              label="Clicked"
-              value={engagement.recipients_clicked}
-              hint={
-                engagement.tracked_links > 0
-                  ? `${engagement.total_clicks} total clicks`
-                  : "no tracked links in this message"
-              }
-              accent="var(--data-1)"
-            />
-            <StatCard
-              label="Click-through"
-              value={ctr}
-              hint={`of ${reached} reached`}
-              accent="var(--data-4)"
-            />
-            <StatCard
-              label="Replies"
-              value={engagement.replies}
-              hint={
-                engagement.unhandled_replies > 0
-                  ? `${engagement.unhandled_replies} unhandled`
-                  : "all handled"
-              }
+              label="Sent"
+              value={counts.sent}
               accent="var(--data-2)"
             />
-            {/* No accent: an opt-out is an attention signal, and StatCard
-                accents are data-pool only. */}
             <StatCard
-              label="Opt-outs"
-              value={engagement.opt_outs}
-              hint="STOPs after this send"
+              label="Delivered"
+              value={counts.delivered}
+              accent="var(--data-3)"
             />
+            {/* No accent on the failure cards: StatCard accents are data-pool
+                only (red is reserved for the status Badges). */}
+            <StatCard label="Undelivered" value={counts.undelivered} />
+            <StatCard label="Failed" value={counts.failed} />
+            <StatCard label="Ambiguous" value={counts.failed_ambiguous} />
+            <StatCard label="Suppressed" value={counts.suppressed} />
+            {/* Skipped = invalid/duplicate phones at creation time — without it
+                the cards do not add up to the loaded audience. */}
+            <StatCard label="Skipped" value={counts.skipped} />
           </div>
+        </Guide>
+
+        <Section eyebrow="Engagement" title="After the send">
+          <Guide id="campaigns.detail.engagement-cards">
+            <div className="stat-grid">
+              <StatCard
+                label="Clicked"
+                value={engagement.recipients_clicked}
+                hint={
+                  engagement.tracked_links > 0
+                    ? `${engagement.total_clicks} total clicks`
+                    : "no tracked links in this message"
+                }
+                accent="var(--data-1)"
+              />
+              <StatCard
+                label="Click-through"
+                value={ctr}
+                hint={`of ${reached} reached`}
+                accent="var(--data-4)"
+              />
+              <StatCard
+                label="Replies"
+                value={engagement.replies}
+                hint={
+                  engagement.unhandled_replies > 0
+                    ? `${engagement.unhandled_replies} unhandled`
+                    : "all handled"
+                }
+                accent="var(--data-2)"
+              />
+              {/* No accent: an opt-out is an attention signal, and StatCard
+                  accents are data-pool only. */}
+              <StatCard
+                label="Opt-outs"
+                value={engagement.opt_outs}
+                hint="STOPs after this send"
+              />
+            </div>
+          </Guide>
         </Section>
 
         {replies.length > 0 ? (
@@ -205,7 +216,9 @@ export default async function CampaignDetailPage({
             title="Replies to this campaign"
             description="Newest first — the full inbox lives under Engage → Inbox."
           >
-            <InboxTable messages={replies} showCampaign={false} />
+            <Guide id="campaigns.detail.replies-table">
+              <InboxTable messages={replies} showCampaign={false} />
+            </Guide>
           </Section>
         ) : null}
 

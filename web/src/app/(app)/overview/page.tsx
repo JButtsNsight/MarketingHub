@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { Section } from "@/components/ui/Section";
@@ -41,7 +42,12 @@ const RECENT_COLUMNS: Column<CampaignRow>[] = [
   {
     key: "name",
     header: "campaign",
-    render: (c) => <Link href={`/campaigns/${c.id}`}>{c.name}</Link>,
+    // One guide id for the whole column: same control kind in every row.
+    render: (c) => (
+      <Guide id="overview.recent.open-campaign">
+        <Link href={`/campaigns/${c.id}`}>{c.name}</Link>
+      </Guide>
+    ),
   },
   {
     key: "status",
@@ -102,10 +108,10 @@ const RECENT_COLUMNS: Column<CampaignRow>[] = [
  * card points there; no page duplicates another's content.
  */
 const EXPLORE = [
-  { href: "/admin/auth", title: "Authentication", desc: "Cognito session, GoTrue users, SSO, impersonation." },
-  { href: "/admin/advisors", title: "Advisors", desc: "Security and performance lints." },
-  { href: "/admin/cloud", title: "Cloud", desc: "Cloud-platform features and their status here." },
-  { href: "/infrastructure", title: "Infrastructure", desc: "Services, security posture, backups, and observability." },
+  { href: "/admin/auth", title: "Authentication", desc: "Cognito session, GoTrue users, SSO, impersonation.", guideId: "overview.explore.auth" },
+  { href: "/admin/advisors", title: "Advisors", desc: "Security and performance lints.", guideId: "overview.explore.advisors" },
+  { href: "/admin/cloud", title: "Cloud", desc: "Cloud-platform features and their status here.", guideId: "overview.explore.cloud" },
+  { href: "/infrastructure", title: "Infrastructure", desc: "Services, security posture, backups, and observability.", guideId: "overview.explore.infrastructure" },
 ];
 
 export default async function OverviewPage() {
@@ -172,26 +178,36 @@ export default async function OverviewPage() {
 
   return (
     <>
-      <PageHeader
-        eyebrow="Project"
-        title="Overview"
-      />
+      <Guide id="overview.page.header">
+        <PageHeader
+          eyebrow="Project"
+          title="Overview"
+        />
+      </Guide>
 
       <div className="stack">
         <div className="stat-grid">
-          <StatCard
-            label="Templates"
-            value={stats.total}
-            hint={stats.latest ? `latest ${stats.latest.slice(0, 10)}` : "no rows yet"}
-          />
-          <StatCard label="Email" value={email} hint="email templates" accent="var(--data-2)" />
-          <StatCard label="Text" value={text} hint="text templates" accent="var(--data-3)" />
-          <StatCard
-            label="Categories"
-            value={stats.byCategory.length}
-            hint="distinct categories"
-            accent="var(--data-1)"
-          />
+          <Guide id="overview.stats.templates">
+            <StatCard
+              label="Templates"
+              value={stats.total}
+              hint={stats.latest ? `latest ${stats.latest.slice(0, 10)}` : "no rows yet"}
+            />
+          </Guide>
+          <Guide id="overview.stats.email">
+            <StatCard label="Email" value={email} hint="email templates" accent="var(--data-2)" />
+          </Guide>
+          <Guide id="overview.stats.text">
+            <StatCard label="Text" value={text} hint="text templates" accent="var(--data-3)" />
+          </Guide>
+          <Guide id="overview.stats.categories">
+            <StatCard
+              label="Categories"
+              value={stats.byCategory.length}
+              hint="distinct categories"
+              accent="var(--data-1)"
+            />
+          </Guide>
         </div>
 
         <Section
@@ -200,46 +216,58 @@ export default async function OverviewPage() {
           description="Live send, click, reply, and opt-out numbers across every campaign whose send slot fell inside the window."
         >
           <div className="stat-grid">
-            <StatCard
-              label="Messages sent"
-              value={sent30}
-              hint={`${recentWindow.length} campaign${recentWindow.length === 1 ? "" : "s"}`}
-              accent="var(--data-1)"
-            />
-            <StatCard
-              label="Delivered"
-              value={delivered30}
-              hint="delivery reports received"
-              accent="var(--data-3)"
-            />
-            <StatCard
-              label="Clicked"
-              value={clicked30}
-              hint="recipients who tapped a link"
-              accent="var(--data-4)"
-            />
-            <StatCard
-              label="Replies"
-              value={replies30}
-              hint={
-                unhandled > 0
-                  ? `${unhandled} unhandled in the inbox`
-                  : "inbox is clear"
-              }
-              accent="var(--data-2)"
-            />
+            <Guide id="overview.engagement.sent">
+              <StatCard
+                label="Messages sent"
+                value={sent30}
+                hint={`${recentWindow.length} campaign${recentWindow.length === 1 ? "" : "s"}`}
+                accent="var(--data-1)"
+              />
+            </Guide>
+            <Guide id="overview.engagement.delivered">
+              <StatCard
+                label="Delivered"
+                value={delivered30}
+                hint="delivery reports received"
+                accent="var(--data-3)"
+              />
+            </Guide>
+            <Guide id="overview.engagement.clicked">
+              <StatCard
+                label="Clicked"
+                value={clicked30}
+                hint="recipients who tapped a link"
+                accent="var(--data-4)"
+              />
+            </Guide>
+            <Guide id="overview.engagement.replies">
+              <StatCard
+                label="Replies"
+                value={replies30}
+                hint={
+                  unhandled > 0
+                    ? `${unhandled} unhandled in the inbox`
+                    : "inbox is clear"
+                }
+                accent="var(--data-2)"
+              />
+            </Guide>
             {/* No accents on the attention counts: StatCard accents are
                 data-pool only (red is reserved for status Badges). */}
-            <StatCard
-              label="Opt-outs"
-              value={optOuts30}
-              hint="STOPs after a send"
-            />
-            <StatCard
-              label="STOP list"
-              value={suppressed}
-              hint="numbers never texted again"
-            />
+            <Guide id="overview.engagement.opt-outs">
+              <StatCard
+                label="Opt-outs"
+                value={optOuts30}
+                hint="STOPs after a send"
+              />
+            </Guide>
+            <Guide id="overview.engagement.stop-list">
+              <StatCard
+                label="STOP list"
+                value={suppressed}
+                hint="numbers never texted again"
+              />
+            </Guide>
           </div>
         </Section>
 
@@ -248,12 +276,14 @@ export default async function OverviewPage() {
           title="Recent campaigns"
           description="Newest first — campaigns without tracked links show a dash for clicks."
         >
-          <DataTable
-            columns={RECENT_COLUMNS}
-            rows={recent}
-            getRowKey={(c) => c.id}
-            empty="No campaigns yet."
-          />
+          <Guide id="overview.recent.table">
+            <DataTable
+              columns={RECENT_COLUMNS}
+              rows={recent}
+              getRowKey={(c) => c.id}
+              empty="No campaigns yet."
+            />
+          </Guide>
         </Section>
 
         {/* Admin surfaces sit below the marketing numbers — and render for
@@ -262,10 +292,12 @@ export default async function OverviewPage() {
           <Section eyebrow="Explore" title="Jump to a section">
             <div className="card-grid">
               {EXPLORE.map((c) => (
-                <Link key={c.href} href={c.href} className="surface glint link-card">
-                  <span className="link-card-title">{c.title}</span>
-                  <span className="link-card-desc">{c.desc}</span>
-                </Link>
+                <Guide key={c.href} id={c.guideId}>
+                  <Link href={c.href} className="surface glint link-card">
+                    <span className="link-card-title">{c.title}</span>
+                    <span className="link-card-desc">{c.desc}</span>
+                  </Link>
+                </Guide>
               ))}
             </div>
           </Section>
@@ -276,16 +308,24 @@ export default async function OverviewPage() {
             eyebrow="Object storage"
             title="Storage"
             description="The private campaign-templates bucket."
-            actions={<Link href="/storage">Open</Link>}
+            actions={
+              <Guide id="overview.storage.open">
+                <Link href="/storage">Open</Link>
+              </Guide>
+            }
           >
             {objects == null ? (
-              <p className="note">Storage listing is currently unavailable.</p>
+              <Guide id="overview.storage.unavailable">
+                <p className="note">Storage listing is currently unavailable.</p>
+              </Guide>
             ) : (
-              <p className="note">
-                <span className="mono">{folders}</span> folders ·{" "}
-                <span className="mono">{files}</span> files ·{" "}
-                <span className="mono">{formatBytes(totalSize)}</span>
-              </p>
+              <Guide id="overview.storage.summary">
+                <p className="note">
+                  <span className="mono">{folders}</span> folders ·{" "}
+                  <span className="mono">{files}</span> files ·{" "}
+                  <span className="mono">{formatBytes(totalSize)}</span>
+                </p>
+              </Guide>
             )}
           </Section>
         )}

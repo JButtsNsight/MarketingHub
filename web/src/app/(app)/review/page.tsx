@@ -4,6 +4,7 @@ import { listAttentionRecipients } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { AttentionTable } from "@/components/campaigns/AttentionTable";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live outbox rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -33,7 +34,11 @@ export default async function ReviewPage() {
     <>
       <PageHeader
         eyebrow="Engage"
-        title="Review queue"
+        title={
+          <Guide id="engagement.review.heading">
+            <span>Review queue</span>
+          </Guide>
+        }
         count={
           ambiguous > 0
             ? `${ambiguous} awaiting a decision`
@@ -45,17 +50,23 @@ export default async function ReviewPage() {
         <div className="stat-grid">
           {/* No accents: these are failure/attention counts, and StatCard
               accents are data-pool only (red is reserved for status Badges). */}
-          <StatCard
-            label="Ambiguous"
-            value={ambiguous}
-            hint="may have sent — decide below"
-          />
-          <StatCard label="Failed" value={failed} hint="terminal, retryable" />
-          <StatCard
-            label="Undelivered"
-            value={undelivered}
-            hint="carrier rejected — informational"
-          />
+          <Guide id="engagement.review.stat-ambiguous">
+            <StatCard
+              label="Ambiguous"
+              value={ambiguous}
+              hint="may have sent — decide below"
+            />
+          </Guide>
+          <Guide id="engagement.review.stat-failed">
+            <StatCard label="Failed" value={failed} hint="terminal, retryable" />
+          </Guide>
+          <Guide id="engagement.review.stat-undelivered">
+            <StatCard
+              label="Undelivered"
+              value={undelivered}
+              hint="carrier rejected — informational"
+            />
+          </Guide>
         </div>
 
         <AttentionTable rows={rows} />

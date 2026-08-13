@@ -8,6 +8,7 @@ import { Section } from "../ui/Section";
 import { StatCard } from "../ui/StatCard";
 import { useConfirm } from "../ui/AlertDialog";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * pgmq Queues — the interactive half of Studio's Queues integration. The queue
@@ -300,13 +301,15 @@ export function QueuesClient({
       header: "",
       width: "120px",
       render: (q) => (
-        <button
-          type="button"
-          className={selected === q.name ? "type-chip on" : "type-chip"}
-          onClick={() => setSelected(q.name)}
-        >
-          Messages
-        </button>
+        <Guide id="integrations.queues.select-queue">
+          <button
+            type="button"
+            className={selected === q.name ? "type-chip on" : "type-chip"}
+            onClick={() => setSelected(q.name)}
+          >
+            Messages
+          </button>
+        </Guide>
       ),
     },
   ];
@@ -328,20 +331,24 @@ export function QueuesClient({
       width: "160px",
       render: (m) => (
         <div className="dgrid-toolbar" style={{ padding: 0, margin: 0 }}>
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => onArchive(m.msgId)}
-          >
-            Archive
-          </button>
-          <button
-            type="button"
-            className="type-chip"
-            onClick={() => onDelete(m.msgId)}
-          >
-            Delete
-          </button>
+          <Guide id="integrations.queues.archive-message">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => onArchive(m.msgId)}
+            >
+              Archive
+            </button>
+          </Guide>
+          <Guide id="integrations.queues.delete-message">
+            <button
+              type="button"
+              className="type-chip"
+              onClick={() => onDelete(m.msgId)}
+            >
+              Delete
+            </button>
+          </Guide>
         </div>
       ),
     },
@@ -361,27 +368,31 @@ export function QueuesClient({
 
   return (
     <div className="stack">
-      <div className="stat-grid">
-        <StatCard label="Queues" value={totals.queues} accent="var(--data-3)" />
-        <StatCard
-          label="Pending messages"
-          value={totals.pending.toLocaleString()}
-          accent="var(--data-2)"
-        />
-        <StatCard
-          label="Archived"
-          value={totals.archived.toLocaleString()}
-          hint="across all queues"
-        />
-      </div>
+      <Guide id="integrations.queues.stats">
+        <div className="stat-grid">
+          <StatCard label="Queues" value={totals.queues} accent="var(--data-3)" />
+          <StatCard
+            label="Pending messages"
+            value={totals.pending.toLocaleString()}
+            accent="var(--data-2)"
+          />
+          <StatCard
+            label="Archived"
+            value={totals.archived.toLocaleString()}
+            hint="across all queues"
+          />
+        </div>
+      </Guide>
 
       <Section eyebrow="pgmq" title="Queues">
-        <DataTable
-          columns={overviewColumns}
-          rows={queues}
-          getRowKey={(q) => q.name}
-          empty="No pgmq queues. Create one with pgmq.create()."
-        />
+        <Guide id="integrations.queues.table">
+          <DataTable
+            columns={overviewColumns}
+            rows={queues}
+            getRowKey={(q) => q.name}
+            empty="No pgmq queues. Create one with pgmq.create()."
+          />
+        </Guide>
       </Section>
 
       {selectedRow ? (
@@ -390,38 +401,46 @@ export function QueuesClient({
           title="Messages"
           actions={
             <div className="dgrid-toolbar" style={{ padding: 0, margin: 0 }}>
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => setSendOpen((v) => !v)}
-              >
-                {sendOpen ? "Close send" : "Send test message"}
-              </button>
-              <button
-                type="button"
-                className="type-chip"
-                disabled={selectedRow.queueLength === 0}
-                onClick={onPop}
-              >
-                Pop next
-              </button>
-              <button type="button" className="type-chip" onClick={() => void refresh()}>
-                Refresh
-              </button>
+              <Guide id="integrations.queues.send-toggle">
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => setSendOpen((v) => !v)}
+                >
+                  {sendOpen ? "Close send" : "Send test message"}
+                </button>
+              </Guide>
+              <Guide id="integrations.queues.pop-next">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={selectedRow.queueLength === 0}
+                  onClick={onPop}
+                >
+                  Pop next
+                </button>
+              </Guide>
+              <Guide id="integrations.queues.refresh">
+                <button type="button" className="type-chip" onClick={() => void refresh()}>
+                  Refresh
+                </button>
+              </Guide>
             </div>
           }
         >
           {sendOpen ? (
             <Surface className="teditor-insert" elevated={false}>
               <span className="eyebrow">Send to {selectedRow.name}</span>
-              <textarea
-                className="surface control mono"
-                aria-label="Message JSON"
-                rows={5}
-                value={sendText}
-                onChange={(e) => setSendText(e.target.value)}
-                spellCheck={false}
-              />
+              <Guide id="integrations.queues.send-json">
+                <textarea
+                  className="surface control mono"
+                  aria-label="Message JSON"
+                  rows={5}
+                  value={sendText}
+                  onChange={(e) => setSendText(e.target.value)}
+                  spellCheck={false}
+                />
+              </Guide>
               <div className="form-actions">
                 <button
                   type="button"
@@ -431,14 +450,16 @@ export function QueuesClient({
                 >
                   Cancel
                 </button>
-                <button
-                  type="button"
-                  className="btn-primary"
-                  onClick={submitSend}
-                  disabled={sendBusy}
-                >
-                  Send message
-                </button>
+                <Guide id="integrations.queues.send-message">
+                  <button
+                    type="button"
+                    className="btn-primary"
+                    onClick={submitSend}
+                    disabled={sendBusy}
+                  >
+                    Send message
+                  </button>
+                </Guide>
               </div>
             </Surface>
           ) : null}
@@ -455,12 +476,14 @@ export function QueuesClient({
                 <span className="eyebrow">
                   Live · pgmq.q_{selectedRow.name} · peek (non-consuming)
                 </span>
-                <DataTable
-                  columns={liveColumns}
-                  rows={live}
-                  getRowKey={(m) => `live-${m.msgId}`}
-                  empty="No visible messages."
-                />
+                <Guide id="integrations.queues.live-table">
+                  <DataTable
+                    columns={liveColumns}
+                    rows={live}
+                    getRowKey={(m) => `live-${m.msgId}`}
+                    empty="No visible messages."
+                  />
+                </Guide>
               </div>
               <div>
                 <span className="eyebrow">
@@ -470,12 +493,14 @@ export function QueuesClient({
                     ? ` · showing newest ${MESSAGE_LIMIT}`
                     : ""}
                 </span>
-                <DataTable
-                  columns={archivedColumns}
-                  rows={archived}
-                  getRowKey={(m) => `arch-${m.msgId}`}
-                  empty="No archived messages."
-                />
+                <Guide id="integrations.queues.archived-table">
+                  <DataTable
+                    columns={archivedColumns}
+                    rows={archived}
+                    getRowKey={(m) => `arch-${m.msgId}`}
+                    empty="No archived messages."
+                  />
+                </Guide>
               </div>
             </div>
           </div>

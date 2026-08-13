@@ -8,6 +8,7 @@ import { StatusPill } from "@/components/ui/StatusPill";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { RefList, type RefRow } from "@/components/ui/RefList";
 import { Forbidden } from "@/components/ui/Forbidden";
+import { Guide } from "@/components/guide/Guide";
 import { requireAdminUser } from "@/lib/requireAdminUser";
 import { AUTH_TABS } from "@/lib/console/tabs";
 import { REFERENCE_DISCLAIMER } from "@/lib/console/backend-map";
@@ -145,15 +146,21 @@ export default async function AuthConfigPage() {
     if (err instanceof GoTrueUnavailableError) {
       return (
         <>
-          <PageHeader title="Auth configuration" />
-          <Tabs items={AUTH_TABS} />
-          <Surface className="empty-state" glint>
-            <h2>GoTrue unreachable</h2>
-            <p>
-              GoTrue did not answer through Kong — app sign-in is Cognito and
-              unaffected.
-            </p>
-          </Surface>
+          <Guide id="auth-admin.providers.header">
+            <PageHeader title="Auth configuration" />
+          </Guide>
+          <Guide id="auth-admin.auth.tabs">
+            <Tabs items={AUTH_TABS} />
+          </Guide>
+          <Guide id="auth-admin.providers.unreachable">
+            <Surface className="empty-state" glint>
+              <h2>GoTrue unreachable</h2>
+              <p>
+                GoTrue did not answer through Kong — app sign-in is Cognito and
+                unaffected.
+              </p>
+            </Surface>
+          </Guide>
         </>
       );
     }
@@ -165,12 +172,18 @@ export default async function AuthConfigPage() {
         : "GoTrue configuration read failed.";
     return (
       <>
-        <PageHeader title="Auth configuration" />
-        <Tabs items={AUTH_TABS} />
-        <Surface className="empty-state" glint>
-          <h2>Configuration unreadable</h2>
-          <p role="alert">{message}</p>
-        </Surface>
+        <Guide id="auth-admin.providers.header">
+          <PageHeader title="Auth configuration" />
+        </Guide>
+        <Guide id="auth-admin.auth.tabs">
+          <Tabs items={AUTH_TABS} />
+        </Guide>
+        <Guide id="auth-admin.providers.unreadable">
+          <Surface className="empty-state" glint>
+            <h2>Configuration unreadable</h2>
+            <p role="alert">{message}</p>
+          </Surface>
+        </Guide>
       </>
     );
   }
@@ -184,11 +197,15 @@ export default async function AuthConfigPage() {
 
   return (
     <>
-      <PageHeader
-        title="Auth configuration"
-        count={`GoTrue ${health.version}`}
-      />
-      <Tabs items={AUTH_TABS} />
+      <Guide id="auth-admin.providers.header">
+        <PageHeader
+          title="Auth configuration"
+          count={`GoTrue ${health.version}`}
+        />
+      </Guide>
+      <Guide id="auth-admin.auth.tabs">
+        <Tabs items={AUTH_TABS} />
+      </Guide>
 
       <div className="stack">
         <Section
@@ -196,50 +213,52 @@ export default async function AuthConfigPage() {
           title="Sign-in providers"
           description="Live GoTrue flags — app sign-in is Cognito/SAML; these serve no login traffic."
         >
-          <KeyValue
-            items={[
-              {
-                label: "Enabled providers",
-                value: enabledProviders.length ? (
-                  <span className="filter-group">
-                    {enabledProviders.map((name) => (
-                      <Badge key={name} tone="var(--data-3)">
-                        {name}
-                      </Badge>
-                    ))}
-                  </span>
-                ) : (
-                  "none"
-                ),
-              },
-              {
-                label: "Disabled providers",
-                value: disabledProviders.length
-                  ? disabledProviders.join(", ")
-                  : "none",
-                mono: true,
-              },
-              {
-                label: "Public signups",
-                value: settings.disable_signup
-                  ? "Disabled (disable_signup)"
-                  : "Enabled",
-              },
-              {
-                label: "Email autoconfirm",
-                value: settings.mailer_autoconfirm ? "On" : "Off",
-              },
-              {
-                label: "Phone autoconfirm",
-                value: settings.phone_autoconfirm ? "On" : "Off",
-              },
-              {
-                label: "SMS provider",
-                value: settings.sms_provider || "none configured",
-                mono: settings.sms_provider !== "",
-              },
-            ]}
-          />
+          <Guide id="auth-admin.providers.flags">
+            <KeyValue
+              items={[
+                {
+                  label: "Enabled providers",
+                  value: enabledProviders.length ? (
+                    <span className="filter-group">
+                      {enabledProviders.map((name) => (
+                        <Badge key={name} tone="var(--data-3)">
+                          {name}
+                        </Badge>
+                      ))}
+                    </span>
+                  ) : (
+                    "none"
+                  ),
+                },
+                {
+                  label: "Disabled providers",
+                  value: disabledProviders.length
+                    ? disabledProviders.join(", ")
+                    : "none",
+                  mono: true,
+                },
+                {
+                  label: "Public signups",
+                  value: settings.disable_signup
+                    ? "Disabled (disable_signup)"
+                    : "Enabled",
+                },
+                {
+                  label: "Email autoconfirm",
+                  value: settings.mailer_autoconfirm ? "On" : "Off",
+                },
+                {
+                  label: "Phone autoconfirm",
+                  value: settings.phone_autoconfirm ? "On" : "Off",
+                },
+                {
+                  label: "SMS provider",
+                  value: settings.sms_provider || "none configured",
+                  mono: settings.sms_provider !== "",
+                },
+              ]}
+            />
+          </Guide>
         </Section>
 
         <Section
@@ -247,30 +266,36 @@ export default async function AuthConfigPage() {
           title="SSO / SAML"
           description="Registered SAML identity providers — changed only by deliberate operator action."
         >
-          <KeyValue
-            items={[
-              {
-                label: "SAML capability",
-                value: settings.saml_enabled
-                  ? "Enabled (saml_enabled)"
-                  : "Disabled (saml_enabled=false)",
-              },
-            ]}
-          />
-          {providers.length ? (
-            <DataTable
-              columns={SSO_COLUMNS}
-              rows={providers}
-              getRowKey={(p) => p.id}
+          <Guide id="auth-admin.providers.saml-flag">
+            <KeyValue
+              items={[
+                {
+                  label: "SAML capability",
+                  value: settings.saml_enabled
+                    ? "Enabled (saml_enabled)"
+                    : "Disabled (saml_enabled=false)",
+                },
+              ]}
             />
+          </Guide>
+          {providers.length ? (
+            <Guide id="auth-admin.providers.sso-table">
+              <DataTable
+                columns={SSO_COLUMNS}
+                rows={providers}
+                getRowKey={(p) => p.id}
+              />
+            </Guide>
           ) : (
-            <Surface className="empty-state" glint>
-              <h2>No SSO providers</h2>
-              <p>
-                GoTrue has no SAML identity provider registered; sign-in stays
-                on Cognito.
-              </p>
-            </Surface>
+            <Guide id="auth-admin.providers.sso-empty">
+              <Surface className="empty-state" glint>
+                <h2>No SSO providers</h2>
+                <p>
+                  GoTrue has no SAML identity provider registered; sign-in stays
+                  on Cognito.
+                </p>
+              </Surface>
+            </Guide>
           )}
         </Section>
 
@@ -279,22 +304,28 @@ export default async function AuthConfigPage() {
           title="Email templates"
           description="Each template is an env-configured URL — variable names shown, not live values."
         >
-          <DataTable
-            columns={TEMPLATE_COLUMNS}
-            rows={TEMPLATE_FLOWS}
-            getRowKey={(t) => t.templateVar}
-          />
-          <p className="ref-note" style={{ marginTop: "14px" }}>
-            <Badge>reference</Badge>
-            <span>
-              {REFERENCE_DISCLAIMER} GoTrue exposes no read API for template
-              content.
-            </span>
-          </p>
+          <Guide id="auth-admin.providers.templates-table">
+            <DataTable
+              columns={TEMPLATE_COLUMNS}
+              rows={TEMPLATE_FLOWS}
+              getRowKey={(t) => t.templateVar}
+            />
+          </Guide>
+          <Guide id="auth-admin.auth.reference-note">
+            <p className="ref-note" style={{ marginTop: "14px" }}>
+              <Badge>reference</Badge>
+              <span>
+                {REFERENCE_DISCLAIMER} GoTrue exposes no read API for template
+                content.
+              </span>
+            </p>
+          </Guide>
         </Section>
 
         <Section eyebrow="MFA" title="Multi-factor authentication">
-          <RefList items={MFA_ROWS} />
+          <Guide id="auth-admin.providers.mfa">
+            <RefList items={MFA_ROWS} />
+          </Guide>
         </Section>
       </div>
     </>

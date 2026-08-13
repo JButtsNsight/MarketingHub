@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { IntelDocument } from "@/lib/intel/schema";
+import { Guide } from "@/components/guide/Guide";
 import { KeyValue, type KeyValueItem } from "@/components/ui/KeyValue";
 import { Section } from "@/components/ui/Section";
 import { StatusPill } from "@/components/ui/StatusPill";
@@ -63,16 +64,33 @@ export function DocumentDetail({
   const pending = doc.status === "pending" || doc.status === "processing";
 
   const items: KeyValueItem[] = [
-    { label: "Source", value: <Link href={`/intel/sources/${doc.source_id}`}>view source</Link> },
+    {
+      label: "Source",
+      value: (
+        <Guide id="intel.document.source-link">
+          <Link href={`/intel/sources/${doc.source_id}`}>view source</Link>
+        </Guide>
+      ),
+    },
     {
       label: "Status",
-      value: <StatusPill status={documentStatusKind(doc.status)}>{doc.status}</StatusPill>,
+      value: (
+        <Guide id="intel.documents.status">
+          <StatusPill status={documentStatusKind(doc.status)}>{doc.status}</StatusPill>
+        </Guide>
+      ),
     },
     {
       label: "Chunks",
-      value: chunkStatus
-        ? `${chunkStatus.embedded}/${chunkStatus.total} embedded`
-        : "not reported",
+      value: (
+        <Guide id="intel.documents.chunks">
+          <span>
+            {chunkStatus
+              ? `${chunkStatus.embedded}/${chunkStatus.total} embedded`
+              : "not reported"}
+          </span>
+        </Guide>
+      ),
       mono: true,
     },
     ...(chunkStatus && chunkStatus.models.length > 0
@@ -96,24 +114,34 @@ export function DocumentDetail({
         title={doc.title}
         description={<ProviderBadge info={provider} />}
         actions={
-          <button type="button" className="type-chip" onClick={() => void load()}>
-            Refresh
-          </button>
+          <Guide id="intel.documents.refresh">
+            <button type="button" className="type-chip" onClick={() => void load()}>
+              Refresh
+            </button>
+          </Guide>
         }
       >
         <KeyValue items={items} />
 
-        {pending ? <p className="note">{PENDING_NOTE}</p> : null}
+        {pending ? (
+          <Guide id="intel.documents.pending-note">
+            <p className="note">{PENDING_NOTE}</p>
+          </Guide>
+        ) : null}
         {doc.status === "error" ? (
-          <p className="form-error" role="alert">
-            Embedding failed: {doc.error ?? "no error detail recorded"}
-          </p>
+          <Guide id="intel.documents.embed-error">
+            <p className="form-error" role="alert">
+              Embedding failed: {doc.error ?? "no error detail recorded"}
+            </p>
+          </Guide>
         ) : null}
       </Section>
 
-      <Section title="Content">
-        <pre className="code-pre">{doc.content}</pre>
-      </Section>
+      <Guide id="intel.document.content">
+        <Section title="Content">
+          <pre className="code-pre">{doc.content}</pre>
+        </Section>
+      </Guide>
     </div>
   );
 }

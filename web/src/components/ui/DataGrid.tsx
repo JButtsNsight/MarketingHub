@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 
 /**
  * Studio-style editable data grid — the interactive sibling of the read-only
@@ -259,27 +260,31 @@ export function DataGrid({
           <thead>
             <tr>
               <th className="dgrid-check">
-                <input
-                  type="checkbox"
-                  aria-label="Select all rows on this page"
-                  checked={allSelected}
-                  onChange={togglePage}
-                />
+                <Guide id="database.grid.select-all">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all rows on this page"
+                    checked={allSelected}
+                    onChange={togglePage}
+                  />
+                </Guide>
               </th>
               {columns.map((c) => (
                 <th key={c.name} className="mono">
-                  <button
-                    type="button"
-                    className="dgrid-sort"
-                    aria-label={`Sort by ${c.name}`}
-                    onClick={() => cycleSort(c.name)}
-                  >
-                    {c.name}
-                    {c.isPrimaryKey ? <span className="dgrid-pk"> PK</span> : null}
-                    {sort?.column === c.name ? (
-                      <span aria-hidden="true">{sort.ascending ? " ▲" : " ▼"}</span>
-                    ) : null}
-                  </button>
+                  <Guide id="database.grid.sort">
+                    <button
+                      type="button"
+                      className="dgrid-sort"
+                      aria-label={`Sort by ${c.name}`}
+                      onClick={() => cycleSort(c.name)}
+                    >
+                      {c.name}
+                      {c.isPrimaryKey ? <span className="dgrid-pk"> PK</span> : null}
+                      {sort?.column === c.name ? (
+                        <span aria-hidden="true">{sort.ascending ? " ▲" : " ▼"}</span>
+                      ) : null}
+                    </button>
+                  </Guide>
                 </th>
               ))}
             </tr>
@@ -297,12 +302,14 @@ export function DataGrid({
                 return (
                   <tr key={key}>
                     <td className="dgrid-check">
-                      <input
-                        type="checkbox"
-                        aria-label={`Select row ${key}`}
-                        checked={selectedKeys.has(key)}
-                        onChange={() => toggleRow(key)}
-                      />
+                      <Guide id="database.grid.select-row">
+                        <input
+                          type="checkbox"
+                          aria-label={`Select row ${key}`}
+                          checked={selectedKeys.has(key)}
+                          onChange={() => toggleRow(key)}
+                        />
+                      </Guide>
                     </td>
                     {columns.map((c) => {
                       const { text, isNull } = formatCell(row[c.name]);
@@ -322,12 +329,14 @@ export function DataGrid({
                           }}
                         >
                           {isEditing ? (
-                            <CellEditor
-                              column={c}
-                              initial={editText(row[c.name])}
-                              onCommit={(v) => void commitEdit(row, c, v)}
-                              onCancel={() => setEditing(null)}
-                            />
+                            <Guide id="database.grid.cell-editor">
+                              <CellEditor
+                                column={c}
+                                initial={editText(row[c.name])}
+                                onCommit={(v) => void commitEdit(row, c, v)}
+                                onCancel={() => setEditing(null)}
+                              />
+                            </Guide>
                           ) : isNull ? (
                             <span className="dgrid-null">NULL</span>
                           ) : (

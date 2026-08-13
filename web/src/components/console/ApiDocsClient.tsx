@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 
+import { Guide } from "@/components/guide/Guide";
 import { Badge } from "../ui/Badge";
 import { CodeBlock } from "../ui/CodeBlock";
 import { DataTable, type Column } from "../ui/DataTable";
@@ -106,10 +107,12 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
 
   if (!entry) {
     return (
-      <Surface className="empty-state" glint>
-        <h2>No tables to document</h2>
-        <p>No tables were found in the API-exposed schemas.</p>
-      </Surface>
+      <Guide id="api-docs.page.no-tables">
+        <Surface className="empty-state" glint>
+          <h2>No tables to document</h2>
+          <p>No tables were found in the API-exposed schemas.</p>
+        </Surface>
+      </Guide>
     );
   }
 
@@ -120,48 +123,58 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
   return (
     <div className="stack">
       <Surface className="dgrid-toolbar">
-        <div className="field">
-          <label htmlFor="apidocs-table">Table</label>
-          <select
-            id="apidocs-table"
-            className="surface control"
-            value={selectedKey}
-            onChange={(e) => setSelectedKey(e.target.value)}
-          >
-            {entries.map((e) => {
-              const key = tableKey(e.table.schema, e.table.name);
-              return (
-                <option key={key} value={key}>
-                  {key}
-                </option>
-              );
-            })}
-          </select>
-        </div>
-        <span className="spacer" />
-        <div style={{ display: "flex", gap: 8 }}>
-          {LANGS.map((l) => (
-            <button
-              key={l.id}
-              type="button"
-              className={lang === l.id ? "type-chip on" : "type-chip"}
-              aria-pressed={lang === l.id}
-              onClick={() => setLang(l.id)}
+        <Guide id="api-docs.toolbar.table-select">
+          <div className="field">
+            <label htmlFor="apidocs-table">Table</label>
+            <select
+              id="apidocs-table"
+              className="surface control"
+              value={selectedKey}
+              onChange={(e) => setSelectedKey(e.target.value)}
             >
-              {l.label}
-            </button>
-          ))}
-        </div>
+              {entries.map((e) => {
+                const key = tableKey(e.table.schema, e.table.name);
+                return (
+                  <option key={key} value={key}>
+                    {key}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        </Guide>
+        <span className="spacer" />
+        <Guide id="api-docs.toolbar.language-tabs">
+          <div style={{ display: "flex", gap: 8 }}>
+            {LANGS.map((l) => (
+              <button
+                key={l.id}
+                type="button"
+                className={lang === l.id ? "type-chip on" : "type-chip"}
+                aria-pressed={lang === l.id}
+                onClick={() => setLang(l.id)}
+              >
+                {l.label}
+              </button>
+            ))}
+          </div>
+        </Guide>
       </Surface>
 
       <div className="stat-grid">
-        <StatCard label="Schema" value={schemaLabel} accent="var(--data-2)" />
-        <StatCard label="Columns" value={table.columns.length} accent="var(--data-3)" />
-        <StatCard
-          label="Primary key"
-          value={table.primaryKeys.length ? table.primaryKeys.join(", ") : "none"}
-          hint={table.primaryKeys.length ? undefined : "no single-row update path"}
-        />
+        <Guide id="api-docs.stats.schema">
+          <StatCard label="Schema" value={schemaLabel} accent="var(--data-2)" />
+        </Guide>
+        <Guide id="api-docs.stats.columns">
+          <StatCard label="Columns" value={table.columns.length} accent="var(--data-3)" />
+        </Guide>
+        <Guide id="api-docs.stats.primary-key">
+          <StatCard
+            label="Primary key"
+            value={table.primaryKeys.length ? table.primaryKeys.join(", ") : "none"}
+            hint={table.primaryKeys.length ? undefined : "no single-row update path"}
+          />
+        </Guide>
       </div>
 
       <Section eyebrow="Schema" title={`${table.schema}.${table.name}`}>
@@ -171,12 +184,14 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
             <span>{table.comment}</span>
           </p>
         ) : null}
-        <DataTable
-          columns={COLUMN_DEFS}
-          rows={table.columns}
-          getRowKey={(c) => c.name}
-          empty="This table has no columns."
-        />
+        <Guide id="api-docs.schema.columns-table">
+          <DataTable
+            columns={COLUMN_DEFS}
+            rows={table.columns}
+            getRowKey={(c) => c.name}
+            empty="This table has no columns."
+          />
+        </Guide>
       </Section>
 
       {lang === "curl" ? (
@@ -190,10 +205,18 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
           }
         >
           <div className="stack">
-            <CodeBlock label="GET — read rows" code={snippets.restSelect} />
-            <CodeBlock label="POST — insert" code={snippets.restInsert} />
-            <CodeBlock label="PATCH — update" code={snippets.restUpdate} />
-            <CodeBlock label="DELETE — delete" code={snippets.restDelete} />
+            <Guide id="api-docs.rest.select">
+              <CodeBlock label="GET — read rows" code={snippets.restSelect} />
+            </Guide>
+            <Guide id="api-docs.rest.insert">
+              <CodeBlock label="POST — insert" code={snippets.restInsert} />
+            </Guide>
+            <Guide id="api-docs.rest.update">
+              <CodeBlock label="PATCH — update" code={snippets.restUpdate} />
+            </Guide>
+            <Guide id="api-docs.rest.delete">
+              <CodeBlock label="DELETE — delete" code={snippets.restDelete} />
+            </Guide>
           </div>
         </Section>
       ) : null}
@@ -209,10 +232,18 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
           }
         >
           <div className="stack">
-            <CodeBlock label="select" code={snippets.jsSelect} />
-            <CodeBlock label="insert" code={snippets.jsInsert} />
-            <CodeBlock label="update" code={snippets.jsUpdate} />
-            <CodeBlock label="delete" code={snippets.jsDelete} />
+            <Guide id="api-docs.js.select">
+              <CodeBlock label="select" code={snippets.jsSelect} />
+            </Guide>
+            <Guide id="api-docs.js.insert">
+              <CodeBlock label="insert" code={snippets.jsInsert} />
+            </Guide>
+            <Guide id="api-docs.js.update">
+              <CodeBlock label="update" code={snippets.jsUpdate} />
+            </Guide>
+            <Guide id="api-docs.js.delete">
+              <CodeBlock label="delete" code={snippets.jsDelete} />
+            </Guide>
           </div>
         </Section>
       ) : null}
@@ -223,7 +254,9 @@ export function ApiDocsClient({ entries }: { entries: ApiDocEntry[] }) {
           title="graphql/v1"
           description="pg_graphql exposes each table as a Collection with Relay-style edges/node."
         >
-          <CodeBlock label="query" code={snippets.graphql} />
+          <Guide id="api-docs.graphql.query">
+            <CodeBlock label="query" code={snippets.graphql} />
+          </Guide>
         </Section>
       ) : null}
     </div>

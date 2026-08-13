@@ -1,3 +1,4 @@
+import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Section } from "@/components/ui/Section";
 import { Badge } from "@/components/ui/Badge";
@@ -37,29 +38,35 @@ export default async function ApiReferencePage() {
 
   return (
     <>
-      <PageHeader eyebrow="API" title="Data API" />
+      <Guide id="api-docs.page.header">
+        <PageHeader eyebrow="API" title="Data API" />
+      </Guide>
 
       <div className="stack">
-        <Section eyebrow="Access" title="Private data API">
-          <p className="ref-note">
-            <Badge>note</Badge>
-            <span>
-              The data API is private — examples print placeholders, never a
-              real secret.
-            </span>
-          </p>
-        </Section>
+        <Guide id="api-docs.page.private-note">
+          <Section eyebrow="Access" title="Private data API">
+            <p className="ref-note">
+              <Badge>note</Badge>
+              <span>
+                The data API is private — examples print placeholders, never a
+                real secret.
+              </span>
+            </p>
+          </Section>
+        </Guide>
 
         {entries ? (
           <ApiDocsClient entries={entries} />
         ) : (
-          <Surface className="empty-state" glint>
-            <h2>Introspection unavailable</h2>
-            <p>
-              postgres-meta did not answer through the data API — refresh in a
-              moment.
-            </p>
-          </Surface>
+          <Guide id="api-docs.page.introspection-unavailable">
+            <Surface className="empty-state" glint>
+              <h2>Introspection unavailable</h2>
+              <p>
+                postgres-meta did not answer through the data API — refresh in
+                a moment.
+              </p>
+            </Surface>
+          </Guide>
         )}
       </div>
     </>

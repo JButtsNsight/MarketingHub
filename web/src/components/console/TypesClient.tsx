@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Guide } from "@/components/guide/Guide";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Badge } from "../ui/Badge";
 import { Section } from "../ui/Section";
@@ -196,62 +197,68 @@ export function TypesClient({
         const k = keyOf(t);
         if (addingKey === k) {
           return (
-            <span className="dgrid-toolbar">
-              <input
-                className="surface control teditor-fctl"
-                aria-label={`New value for ${k}`}
-                type="text"
-                placeholder="new value"
-                value={addDraft}
-                onChange={(e) => setAddDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void addValue(t, addDraft);
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="type-chip"
-                disabled={busy || !addDraft.trim()}
-                onClick={() => void addValue(t, addDraft)}
-              >
-                Add
-              </button>
-              <button
-                type="button"
-                className="type-chip"
-                onClick={() => {
-                  setAddingKey(null);
-                  setAddDraft("");
-                }}
-              >
-                Cancel
-              </button>
-            </span>
+            <Guide id="db-platform.types.value-editor">
+              <span className="dgrid-toolbar">
+                <input
+                  className="surface control teditor-fctl"
+                  aria-label={`New value for ${k}`}
+                  type="text"
+                  placeholder="new value"
+                  value={addDraft}
+                  onChange={(e) => setAddDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void addValue(t, addDraft);
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={busy || !addDraft.trim()}
+                  onClick={() => void addValue(t, addDraft)}
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  className="type-chip"
+                  onClick={() => {
+                    setAddingKey(null);
+                    setAddDraft("");
+                  }}
+                >
+                  Cancel
+                </button>
+              </span>
+            </Guide>
           );
         }
         return (
           <span className="dgrid-toolbar">
-            <button
-              type="button"
-              className="type-chip"
-              onClick={() => {
-                setAddingKey(k);
-                setAddDraft("");
-              }}
-            >
-              Add value
-            </button>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={busy}
-              onClick={() => void dropType(t)}
-            >
-              Drop
-            </button>
+            <Guide id="db-platform.types.add-value">
+              <button
+                type="button"
+                className="type-chip"
+                onClick={() => {
+                  setAddingKey(k);
+                  setAddDraft("");
+                }}
+              >
+                Add value
+              </button>
+            </Guide>
+            <Guide id="db-platform.types.drop">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={busy}
+                onClick={() => void dropType(t)}
+              >
+                Drop
+              </button>
+            </Guide>
           </span>
         );
       },
@@ -270,70 +277,78 @@ export function TypesClient({
         eyebrow="Postgres"
         title="Enumerated types"
         actions={
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={() => setCreateOpen((v) => !v)}
-          >
-            {createOpen ? "Close" : "New type"}
-          </button>
+          <Guide id="db-platform.types.create">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => setCreateOpen((v) => !v)}
+            >
+              {createOpen ? "Close" : "New type"}
+            </button>
+          </Guide>
         }
       >
         {createOpen ? (
           <Surface className="teditor-insert" elevated={false}>
             <span className="eyebrow">New enum type</span>
             <div className="dgrid-toolbar">
-              <select
-                className="surface control teditor-fctl"
-                aria-label="Schema"
-                value={newSchema}
-                onChange={(e) => setNewSchema(e.target.value)}
-              >
-                {schemas.map((s) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-              <input
-                className="surface control teditor-fctl mono"
-                aria-label="Type name"
-                type="text"
-                placeholder="type name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-              />
-            </div>
-            <div className="dgrid-toolbar">
-              <input
-                className="surface control teditor-fctl"
-                aria-label="Add enum value"
-                type="text"
-                placeholder="value"
-                value={newValueDraft}
-                onChange={(e) => setNewValueDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    stageDraftValue();
-                  }
-                }}
-              />
-              <button type="button" className="type-chip" onClick={stageDraftValue}>
-                Add value
-              </button>
-              {newValues.map((v, i) => (
-                <button
-                  key={`${v}-${i}`}
-                  type="button"
-                  className="type-chip on"
-                  title="Remove value"
-                  onClick={() => setNewValues(newValues.filter((_, j) => j !== i))}
+              <Guide id="db-platform.types.schema">
+                <select
+                  className="surface control teditor-fctl"
+                  aria-label="Schema"
+                  value={newSchema}
+                  onChange={(e) => setNewSchema(e.target.value)}
                 >
-                  {v} ✕
-                </button>
-              ))}
+                  {schemas.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </Guide>
+              <Guide id="db-platform.types.name-field">
+                <input
+                  className="surface control teditor-fctl mono"
+                  aria-label="Type name"
+                  type="text"
+                  placeholder="type name"
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                />
+              </Guide>
             </div>
+            <Guide id="db-platform.types.values">
+              <div className="dgrid-toolbar">
+                <input
+                  className="surface control teditor-fctl"
+                  aria-label="Add enum value"
+                  type="text"
+                  placeholder="value"
+                  value={newValueDraft}
+                  onChange={(e) => setNewValueDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      stageDraftValue();
+                    }
+                  }}
+                />
+                <button type="button" className="type-chip" onClick={stageDraftValue}>
+                  Add value
+                </button>
+                {newValues.map((v, i) => (
+                  <button
+                    key={`${v}-${i}`}
+                    type="button"
+                    className="type-chip on"
+                    title="Remove value"
+                    onClick={() => setNewValues(newValues.filter((_, j) => j !== i))}
+                  >
+                    {v} ✕
+                  </button>
+                ))}
+              </div>
+            </Guide>
             <div className="form-actions">
               <button
                 type="button"
@@ -343,25 +358,29 @@ export function TypesClient({
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn-primary"
-                onClick={() => void createType()}
-                disabled={busy || !newName.trim() || newValues.length === 0}
-              >
-                Create type
-              </button>
+              <Guide id="db-platform.types.submit">
+                <button
+                  type="button"
+                  className="btn-primary"
+                  onClick={() => void createType()}
+                  disabled={busy || !newName.trim() || newValues.length === 0}
+                >
+                  Create type
+                </button>
+              </Guide>
             </div>
           </Surface>
         ) : null}
 
-        <DataTable
-          columns={columns}
-          rows={types}
-          getRowKey={keyOf}
-          empty="No enum types in the surfaced schemas."
-          paginate={50}
-        />
+        <Guide id="db-platform.types.table">
+          <DataTable
+            columns={columns}
+            rows={types}
+            getRowKey={keyOf}
+            empty="No enum types in the surfaced schemas."
+            paginate={50}
+          />
+        </Guide>
       </Section>
 
       {dialog}

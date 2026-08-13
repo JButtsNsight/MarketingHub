@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { Badge } from "../ui/Badge";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import {
   ADMIN_GROUP,
   ALL_ASSIGNABLE_GROUPS,
@@ -181,9 +182,8 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
               // Own-god-mode UX (server-enforced too): no self-demotion
               // (lockout) and no self-grant (escalation guard).
               const locked = self && group === ADMIN_GROUP;
-              return (
+              const chip = (
                 <button
-                  key={group}
                   type="button"
                   className={member ? "type-chip on" : "type-chip"}
                   aria-pressed={member}
@@ -197,6 +197,17 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
                 >
                   {label}
                 </button>
+              );
+              // One guide id per chip KIND: the god-mode chip carries its own
+              // copy (master key + self-lockout); every section chip shares one.
+              return group === ADMIN_GROUP ? (
+                <Guide key={group} id="auth-admin.roles.god-mode">
+                  {chip}
+                </Guide>
+              ) : (
+                <Guide key={group} id="auth-admin.roles.toggle">
+                  {chip}
+                </Guide>
               );
             })}
             {extras.map((g) => (
@@ -215,14 +226,16 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
           {users.length} {users.length === 1 ? "user" : "users"}
         </span>
         <span className="spacer" />
-        <button
-          type="button"
-          className="type-chip"
-          disabled={loading}
-          onClick={() => void load()}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
+        <Guide id="auth-admin.roles.refresh">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={loading}
+            onClick={() => void load()}
+          >
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+        </Guide>
       </div>
 
       {error ? (
@@ -237,17 +250,21 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
       ) : null}
 
       {unavailable ? (
-        <Surface className="empty-state" glint>
-          <h2>Cognito unreachable</h2>
-          <p>The user pool did not answer — roles can’t be read or changed.</p>
-        </Surface>
+        <Guide id="auth-admin.roles.unreachable">
+          <Surface className="empty-state" glint>
+            <h2>Cognito unreachable</h2>
+            <p>The user pool did not answer — roles can’t be read or changed.</p>
+          </Surface>
+        </Guide>
       ) : (
-        <DataTable
-          columns={columns}
-          rows={users}
-          getRowKey={(row) => row.username}
-          empty={loading || !loaded ? "Loading…" : "No pool users."}
-        />
+        <Guide id="auth-admin.roles.table">
+          <DataTable
+            columns={columns}
+            rows={users}
+            getRowKey={(row) => row.username}
+            empty={loading || !loaded ? "Loading…" : "No pool users."}
+          />
+        </Guide>
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { countUnhandledInbound, listInboundMessages } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { InboxTable } from "@/components/campaigns/InboxTable";
 import { LiveRefresher } from "@/components/live/LiveRefresher";
+import { Guide } from "@/components/guide/Guide";
 
 // Reads request-time identity + live inbox rows; never prerender.
 export const dynamic = "force-dynamic";
@@ -40,7 +41,11 @@ export default async function InboxPage({
     <>
       <PageHeader
         eyebrow="Engage"
-        title="Inbox"
+        title={
+          <Guide id="engagement.inbox.heading">
+            <span>Inbox</span>
+          </Guide>
+        }
         count={
           unhandled > 0
             ? `${unhandled} need${unhandled === 1 ? "s" : ""} a reply`
@@ -48,18 +53,22 @@ export default async function InboxPage({
         }
         actions={
           <>
-            <Link
-              className={unhandledOnly ? "type-chip" : "type-chip on"}
-              href="/inbox"
-            >
-              All
-            </Link>
-            <Link
-              className={unhandledOnly ? "type-chip on" : "type-chip"}
-              href="/inbox?filter=unhandled"
-            >
-              Unhandled
-            </Link>
+            <Guide id="engagement.inbox.filter-all">
+              <Link
+                className={unhandledOnly ? "type-chip" : "type-chip on"}
+                href="/inbox"
+              >
+                All
+              </Link>
+            </Guide>
+            <Guide id="engagement.inbox.filter-unhandled">
+              <Link
+                className={unhandledOnly ? "type-chip on" : "type-chip"}
+                href="/inbox?filter=unhandled"
+              >
+                Unhandled
+              </Link>
+            </Guide>
           </>
         }
       />

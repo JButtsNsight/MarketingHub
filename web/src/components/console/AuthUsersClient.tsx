@@ -6,6 +6,7 @@ import { Badge } from "../ui/Badge";
 import { CodeBlock } from "../ui/CodeBlock";
 import { DataTable, type Column } from "../ui/DataTable";
 import { Surface } from "../Surface";
+import { Guide } from "@/components/guide/Guide";
 import type { GoTrueUser } from "@/lib/console/gotrue";
 
 /**
@@ -313,15 +314,17 @@ export function AuthUsersClient() {
       render: (row) => {
         const isOpen = expanded.has(row.id);
         return (
-          <button
-            type="button"
-            className="type-chip"
-            aria-expanded={isOpen}
-            aria-label={isOpen ? "Collapse user detail" : "Expand user detail"}
-            onClick={() => toggleExpanded(row.id)}
-          >
-            {isOpen ? "−" : "+"}
-          </button>
+          <Guide id="auth-admin.users.expand">
+            <button
+              type="button"
+              className="type-chip"
+              aria-expanded={isOpen}
+              aria-label={isOpen ? "Collapse user detail" : "Expand user detail"}
+              onClick={() => toggleExpanded(row.id)}
+            >
+              {isOpen ? "−" : "+"}
+            </button>
+          </Guide>
         );
       },
     },
@@ -375,37 +378,43 @@ export function AuthUsersClient() {
   return (
     <div className="stack">
       <form className="dgrid-toolbar" role="search" onSubmit={submitFilter}>
-        <input
-          className="surface control teditor-fctl"
-          type="search"
-          aria-label="Filter by email or full name"
-          placeholder="Filter by email or full name"
-          maxLength={200}
-          value={filter}
-          disabled={loading}
-          onChange={(event) => setFilter(event.target.value)}
-        />
-        <button type="submit" className="type-chip" disabled={loading}>
-          Search
-        </button>
+        <Guide id="auth-admin.users.filter">
+          <input
+            className="surface control teditor-fctl"
+            type="search"
+            aria-label="Filter by email or full name"
+            placeholder="Filter by email or full name"
+            maxLength={200}
+            value={filter}
+            disabled={loading}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+          <button type="submit" className="type-chip" disabled={loading}>
+            Search
+          </button>
+        </Guide>
         <span className="spacer" />
-        <button
-          type="button"
-          className="type-chip"
-          title="Toggle created_at sort direction (the only sortable field)"
-          disabled={loading}
-          onClick={toggleSort}
-        >
-          {sort === "desc" ? "Newest first" : "Oldest first"}
-        </button>
-        <button
-          type="button"
-          className="type-chip"
-          disabled={loading}
-          onClick={() => void runQuery({ page, filter: appliedFilter, sort })}
-        >
-          {loading ? "Loading…" : "Refresh"}
-        </button>
+        <Guide id="auth-admin.users.sort">
+          <button
+            type="button"
+            className="type-chip"
+            title="Toggle created_at sort direction (the only sortable field)"
+            disabled={loading}
+            onClick={toggleSort}
+          >
+            {sort === "desc" ? "Newest first" : "Oldest first"}
+          </button>
+        </Guide>
+        <Guide id="auth-admin.users.refresh">
+          <button
+            type="button"
+            className="type-chip"
+            disabled={loading}
+            onClick={() => void runQuery({ page, filter: appliedFilter, sort })}
+          >
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+        </Guide>
       </form>
 
       {error ? (
@@ -415,64 +424,72 @@ export function AuthUsersClient() {
       ) : null}
 
       {unavailable ? (
-        <Surface className="empty-state" glint>
-          <h2>GoTrue unreachable</h2>
-          <p>
-            The GoTrue auth service did not answer through the data API. This
-            view reads live from GoTrue, so there is nothing to show until it
-            answers again. Nothing else in the console is affected.
-          </p>
-        </Surface>
+        <Guide id="auth-admin.users.unreachable">
+          <Surface className="empty-state" glint>
+            <h2>GoTrue unreachable</h2>
+            <p>
+              The GoTrue auth service did not answer through the data API. This
+              view reads live from GoTrue, so there is nothing to show until it
+              answers again. Nothing else in the console is affected.
+            </p>
+          </Surface>
+        </Guide>
       ) : loaded && !loading && total === 0 && appliedFilter === "" && !error ? (
-        <Surface className="empty-state" glint>
-          <h2>No GoTrue users</h2>
-          <p>
-            Empty by design today: app identity is Cognito federated to the
-            Nsight Google Workspace SAML app, so nobody signs in through
-            GoTrue yet. This store activates at the Wave-3 SAML cutover — an
-            external deliverable that is still pending.
-          </p>
-        </Surface>
+        <Guide id="auth-admin.users.empty">
+          <Surface className="empty-state" glint>
+            <h2>No GoTrue users</h2>
+            <p>
+              Empty by design today: app identity is Cognito federated to the
+              Nsight Google Workspace SAML app, so nobody signs in through
+              GoTrue yet. This store activates at the Wave-3 SAML cutover — an
+              external deliverable that is still pending.
+            </p>
+          </Surface>
+        </Guide>
       ) : (
         <>
-          <DataTable
-            columns={columns}
-            rows={users}
-            getRowKey={(row) => row.id}
-            empty={
-              loading
-                ? "Loading…"
-                : appliedFilter !== ""
-                  ? "No users match this filter."
-                  : "No users on this page."
-            }
-          />
-          <div
-            className="dgrid-toolbar"
-            role="navigation"
-            aria-label="User pages"
-          >
-            <button
-              type="button"
-              className="type-chip"
-              disabled={loading || page <= 1}
-              onClick={() => changePage(page - 1)}
+          <Guide id="auth-admin.users.table">
+            <DataTable
+              columns={columns}
+              rows={users}
+              getRowKey={(row) => row.id}
+              empty={
+                loading
+                  ? "Loading…"
+                  : appliedFilter !== ""
+                    ? "No users match this filter."
+                    : "No users on this page."
+              }
+            />
+          </Guide>
+          <Guide id="auth-admin.users.pagination">
+            <div
+              className="dgrid-toolbar"
+              role="navigation"
+              aria-label="User pages"
             >
-              Previous
-            </button>
-            <span className="count mono">
-              Page {page} of {pageCount} — {total}{" "}
-              {total === 1 ? "user" : "users"}
-            </span>
-            <button
-              type="button"
-              className="type-chip"
-              disabled={loading || page >= pageCount}
-              onClick={() => changePage(page + 1)}
-            >
-              Next
-            </button>
-          </div>
+              <button
+                type="button"
+                className="type-chip"
+                disabled={loading || page <= 1}
+                onClick={() => changePage(page - 1)}
+              >
+                Previous
+              </button>
+              <span className="count mono">
+                Page {page} of {pageCount} — {total}{" "}
+                {total === 1 ? "user" : "users"}
+              </span>
+              <button
+                type="button"
+                className="type-chip"
+                disabled={loading || page >= pageCount}
+                onClick={() => changePage(page + 1)}
+              >
+                Next
+              </button>
+            </div>
+          </Guide>
         </>
       )}
     </div>

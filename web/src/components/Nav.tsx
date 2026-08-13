@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SECTIONS, type SectionId } from "@/lib/authGroups";
+import { Guide } from "@/components/guide/Guide";
 import { Surface } from "./Surface";
 
 export type IconKey =
@@ -36,6 +37,9 @@ export interface NavItem {
   href: string;
   label: string;
   icon: IconKey;
+  /** Guided-mode registry id (lib/guides/nav.ts). Always a string literal on
+   *  this field — the scannable convention for ids that travel through data. */
+  guideId: string;
   /** Active on the exact path only — for an item whose route is a prefix of a
    *  sibling's (Table Editor `/database` vs. the Database section under it). */
   exact?: boolean;
@@ -55,6 +59,8 @@ export interface NavItem {
 
 export interface NavGroup {
   label?: string;
+  /** Guided-mode registry id for the group label (absent when unlabeled). */
+  guideId?: string;
   items: NavItem[];
 }
 
@@ -69,52 +75,119 @@ export interface NavGroup {
  * destination — the Admin group lists its pages directly.
  */
 export const NAV_GROUPS: NavGroup[] = [
-  { items: [{ href: "/overview", label: "Overview", icon: "overview", marketing: true }] },
+  {
+    items: [
+      {
+        href: "/overview",
+        label: "Overview",
+        icon: "overview",
+        marketing: true,
+        guideId: "nav.rail.overview",
+      },
+    ],
+  },
   {
     label: "Platform",
+    guideId: "nav.rail.group-platform",
     items: [
       // /database is the grid (Table Editor); /database/schema is the
       // Database section — distinct nav items over nested routes, resolved by
       // the most-specific-match rule in isActive below.
-      { href: "/database", label: "Table Editor", icon: "tableEditor", exact: true },
-      { href: "/sql", label: "SQL Editor", icon: "sql" },
+      {
+        href: "/database",
+        label: "Table Editor",
+        icon: "tableEditor",
+        exact: true,
+        guideId: "nav.rail.table-editor",
+      },
+      { href: "/sql", label: "SQL Editor", icon: "sql", guideId: "nav.rail.sql-editor" },
       {
         href: "/database/schema",
         label: "Database",
         icon: "database",
         match: "/database/",
+        guideId: "nav.rail.database",
       },
-      { href: "/storage", label: "Storage", icon: "storage" },
+      { href: "/storage", label: "Storage", icon: "storage", guideId: "nav.rail.storage" },
       // Wave 5: Studio slots Edge Functions and Realtime right after Storage.
-      { href: "/functions", label: "Edge Functions", icon: "edgeFunctions" },
-      { href: "/realtime", label: "Realtime", icon: "realtime" },
-      { href: "/api-reference", label: "API Docs", icon: "api" },
+      {
+        href: "/functions",
+        label: "Edge Functions",
+        icon: "edgeFunctions",
+        guideId: "nav.rail.edge-functions",
+      },
+      { href: "/realtime", label: "Realtime", icon: "realtime", guideId: "nav.rail.realtime" },
+      { href: "/api-reference", label: "API Docs", icon: "api", guideId: "nav.rail.api-docs" },
     ],
   },
   {
     // Studio's "Integrations" — postgres extensions surfaced as their own
     // operational screens (pg_cron, pgmq, supabase_vault).
     label: "Integrations",
+    guideId: "nav.rail.group-integrations",
     items: [
-      { href: "/integrations/cron", label: "Cron", icon: "cron" },
-      { href: "/integrations/queues", label: "Queues", icon: "queues" },
-      { href: "/integrations/vault", label: "Vault", icon: "vault" },
+      { href: "/integrations/cron", label: "Cron", icon: "cron", guideId: "nav.rail.cron" },
+      { href: "/integrations/queues", label: "Queues", icon: "queues", guideId: "nav.rail.queues" },
+      { href: "/integrations/vault", label: "Vault", icon: "vault", guideId: "nav.rail.vault" },
     ],
   },
   {
     label: "Marketing",
+    guideId: "nav.rail.group-marketing",
     items: [
-      { href: "/templates", label: "Templates", icon: "templates", marketing: true },
-      { href: "/campaigns", label: "SMS Campaigns", icon: "campaigns", marketing: true },
-      { href: "/inbox", label: "Inbox", icon: "inbox", marketing: true },
-      { href: "/review", label: "Review queue", icon: "review", marketing: true },
-      { href: "/suppressions", label: "Suppressions", icon: "suppressions", marketing: true },
+      {
+        href: "/templates",
+        label: "Templates",
+        icon: "templates",
+        marketing: true,
+        guideId: "nav.rail.templates",
+      },
+      {
+        href: "/campaigns",
+        label: "SMS Campaigns",
+        icon: "campaigns",
+        marketing: true,
+        guideId: "nav.rail.sms-campaigns",
+      },
+      {
+        href: "/inbox",
+        label: "Inbox",
+        icon: "inbox",
+        marketing: true,
+        guideId: "nav.rail.inbox",
+      },
+      {
+        href: "/review",
+        label: "Review queue",
+        icon: "review",
+        marketing: true,
+        guideId: "nav.rail.review-queue",
+      },
+      {
+        href: "/suppressions",
+        label: "Suppressions",
+        icon: "suppressions",
+        marketing: true,
+        guideId: "nav.rail.suppressions",
+      },
       // Wave 6 observability, marketing-tier per the Wave D role model (the
       // route enforces `marketing`, so it lives with the marketing items).
-      { href: "/reports", label: "Reports", icon: "reports", marketing: true },
+      {
+        href: "/reports",
+        label: "Reports",
+        icon: "reports",
+        marketing: true,
+        guideId: "nav.rail.reports",
+      },
       // Wave 8: competitor-intel RAG module — default prefix matching keeps it
       // lit across /intel/search, /intel/sources/*, /intel/documents/*.
-      { href: "/intel", label: "Competitor Intel", icon: "intel", section: "intel" },
+      {
+        href: "/intel",
+        label: "Competitor Intel",
+        icon: "intel",
+        section: "intel",
+        guideId: "nav.rail.competitor-intel",
+      },
     ],
   },
   {
@@ -122,21 +195,39 @@ export const NAV_GROUPS: NavGroup[] = [
     // to /overview), so each item owns its own /admin/* subtree via plain
     // prefix matching; no `match`/`exact` rules needed.
     label: "Admin",
+    guideId: "nav.rail.group-admin",
     items: [
-      { href: "/admin/auth", label: "Authentication", icon: "auth" },
-      { href: "/admin/users", label: "Users", icon: "auth" },
-      { href: "/admin/advisors", label: "Advisors", icon: "advisors" },
-      { href: "/admin/cloud", label: "Cloud", icon: "cloud" },
+      { href: "/admin/auth", label: "Authentication", icon: "auth", guideId: "nav.rail.auth" },
+      { href: "/admin/users", label: "Users", icon: "auth", guideId: "nav.rail.users" },
+      {
+        href: "/admin/advisors",
+        label: "Advisors",
+        icon: "advisors",
+        guideId: "nav.rail.advisors",
+      },
+      { href: "/admin/cloud", label: "Cloud", icon: "cloud", guideId: "nav.rail.cloud" },
       // Logs (explorer + drains subtree) and Infrastructure are ops surfaces —
       // they live under Admin even though their URLs predate the group.
-      { href: "/logs", label: "Logs", icon: "logs" },
-      { href: "/infrastructure", label: "Infrastructure", icon: "infra" },
+      { href: "/logs", label: "Logs", icon: "logs", guideId: "nav.rail.logs" },
+      {
+        href: "/infrastructure",
+        label: "Infrastructure",
+        icon: "infra",
+        guideId: "nav.rail.infrastructure",
+      },
     ],
   },
   {
     label: "Project",
+    guideId: "nav.rail.group-project",
     items: [
-      { href: "/settings", label: "Settings", icon: "settings", marketing: true },
+      {
+        href: "/settings",
+        label: "Settings",
+        icon: "settings",
+        marketing: true,
+        guideId: "nav.rail.settings",
+      },
     ],
   },
 ];
@@ -400,21 +491,29 @@ export function Nav({
       {visible.map((group, gi) => (
         <div className="nav-group" key={group.label ?? `group-${gi}`}>
           {group.label ? (
-            <span className="nav-group-label">{group.label}</span>
+            group.guideId ? (
+              <Guide id={group.guideId}>
+                <span className="nav-group-label">{group.label}</span>
+              </Guide>
+            ) : (
+              <span className="nav-group-label">{group.label}</span>
+            )
           ) : null}
           <ul className="nav-list">
             {group.items.map((item) => {
               const active = isActive(pathname, item);
               return (
                 <li key={item.href}>
-                  <Link
-                    className={active ? "nav-link on" : "nav-link"}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                  >
-                    <NavIcon icon={item.icon} />
-                    {item.label}
-                  </Link>
+                  <Guide id={item.guideId}>
+                    <Link
+                      className={active ? "nav-link on" : "nav-link"}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                    >
+                      <NavIcon icon={item.icon} />
+                      {item.label}
+                    </Link>
+                  </Guide>
                 </li>
               );
             })}
