@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SECTIONS, type SectionId } from "@/lib/authGroups";
@@ -447,6 +447,23 @@ const ICONS: Record<IconKey, ReactNode> = {
   ),
 };
 
+/** Persisted collapse state: the labels of collapsed groups, as a JSON array. */
+export const NAV_COLLAPSED_KEY = "mh-nav-collapsed";
+
+function readCollapsed(): readonly string[] {
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(NAV_COLLAPSED_KEY) ?? "[]",
+    );
+    if (Array.isArray(parsed) && parsed.every((v) => typeof v === "string")) {
+      return parsed;
+    }
+  } catch {
+    /* storage unavailable or corrupt — start expanded */
+  }
+  return [];
+}
+
 function NavIcon({ icon }: { icon: IconKey }) {
   return (
     <svg
@@ -486,40 +503,89 @@ export function Nav({
   // fall back to "" so isActive() never calls .startsWith on null.
   const pathname = usePathname() ?? "";
   const visible = groups ?? navGroupsFor(admin, sections, marketing);
+  // Collapse state restores AFTER mount (SSR has no storage; rendering the
+  // stored state on the client's first pass would mismatch the server HTML).
+  const [collapsed, setCollapsed] = useState<readonly string[]>([]);
+  useEffect(() => {
+    setCollapsed(readCollapsed());
+  }, []);
+  const toggle = (label: string) => {
+    setCollapsed((prev) => {
+      const next = prev.includes(label)
+        ? prev.filter((l) => l !== label)
+        : [...prev, label];
+      try {
+        localStorage.setItem(NAV_COLLAPSED_KEY, JSON.stringify(next));
+      } catch {
+        /* storage unavailable — collapse still works for this page */
+      }
+      return next;
+    });
+  };
   return (
     <Surface as="nav" aria-label="Primary" className="nav" glint>
-      {visible.map((group, gi) => (
-        <div className="nav-group" key={group.label ?? `group-${gi}`}>
-          {group.label ? (
-            group.guideId ? (
-              <Guide id={group.guideId}>
-                <span className="nav-group-label">{group.label}</span>
-              </Guide>
-            ) : (
-              <span className="nav-group-label">{group.label}</span>
-            )
-          ) : null}
-          <ul className="nav-list">
-            {group.items.map((item) => {
-              const active = isActive(pathname, item);
-              return (
-                <li key={item.href}>
-                  <Guide id={item.guideId}>
-                    <Link
-                      className={active ? "nav-link on" : "nav-link"}
-                      href={item.href}
-                      aria-current={active ? "page" : undefined}
-                    >
-                      <NavIcon icon={item.icon} />
-                      {item.label}
-                    </Link>
-                  </Guide>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      ))}
+      {visible.map((group, gi) => {
+        const isCollapsed =
+          group.label !== undefined && collapsed.includes(group.label);
+        // A collapsed group still shows where you are: the header takes the
+        // active accent when the current page lives inside it.
+        const holdsActive =
+          isCollapsed && group.items.some((i) => isActive(pathname, i));
+        const header = group.label ? (
+          <button
+            type="button"
+            className={holdsActive ? "nav-group-toggle on" : "nav-group-toggle"}
+            aria-expanded={!isCollapsed}
+            onClick={() => toggle(group.label!)}
+          >
+            <svg
+              className="nav-chev"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M4 6l4 4 4-4" />
+            </svg>
+            {group.label}
+          </button>
+        ) : null;
+        return (
+          <div className="nav-group" key={group.label ?? `group-${gi}`}>
+            {header ? (
+              group.guideId ? (
+                <Guide id={group.guideId}>{header}</Guide>
+              ) : (
+                header
+              )
+            ) : null}
+            {isCollapsed ? null : (
+              <ul className="nav-list">
+                {group.items.map((item) => {
+                  const active = isActive(pathname, item);
+                  return (
+                    <li key={item.href}>
+                      <Guide id={item.guideId}>
+                        <Link
+                          className={active ? "nav-link on" : "nav-link"}
+                          href={item.href}
+                          aria-current={active ? "page" : undefined}
+                        >
+                          <NavIcon icon={item.icon} />
+                          {item.label}
+                        </Link>
+                      </Guide>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        );
+      })}
     </Surface>
   );
 }

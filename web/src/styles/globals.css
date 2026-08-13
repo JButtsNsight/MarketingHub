@@ -707,6 +707,42 @@ input[type="file"].control {
   text-transform: uppercase;
   color: var(--faint);
 }
+/* Group header as a disclosure toggle — same face as .nav-group-label plus a
+   rotating chevron. `.on` = collapsed group holding the active page. */
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 0 12px 6px;
+  margin: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--fu);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--faint);
+  transition: color 0.12s ease;
+}
+.nav-group-toggle:hover {
+  color: var(--muted);
+}
+.nav-group-toggle.on {
+  color: var(--accent);
+}
+.nav-chev {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  transition: transform 0.15s ease;
+}
+.nav-group-toggle[aria-expanded="false"] .nav-chev {
+  transform: rotate(-90deg);
+}
 .nav-link {
   display: flex;
   align-items: center;

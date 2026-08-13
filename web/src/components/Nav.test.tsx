@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 
 const h = vi.hoisted(() => ({ pathname: "/overview" }));
 vi.mock("next/navigation", () => ({
   usePathname: () => h.pathname,
 }));
 
-import { NAV_GROUPS, Nav, navGroupsFor } from "./Nav";
+import { NAV_COLLAPSED_KEY, NAV_GROUPS, Nav, navGroupsFor } from "./Nav";
 
 afterEach(cleanup);
 
@@ -367,5 +367,81 @@ describe("Nav marketing-tier visibility — display filter only (routes enforce)
     expect(screen.queryByRole("link", { name: /overview/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /sms campaigns/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+});
+
+describe("Nav — collapsible groups", () => {
+  afterEach(() => {
+    localStorage.clear();
+    h.pathname = "/overview";
+  });
+
+  it("collapses and expands a labeled group via its header toggle", () => {
+    render(<Nav admin />);
+    const btn = screen.getByRole("button", { name: "Platform" });
+    expect(btn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: /table editor/i })).toBeInTheDocument();
+    fireEvent.click(btn);
+    expect(btn.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByRole("link", { name: /table editor/i })).toBeNull();
+    fireEvent.click(btn);
+    expect(btn.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("link", { name: /table editor/i })).toBeInTheDocument();
+  });
+
+  it("collapsing one group leaves the others expanded", () => {
+    render(<Nav admin />);
+    fireEvent.click(screen.getByRole("button", { name: "Admin" }));
+    expect(screen.queryByRole("link", { name: /authentication/i })).toBeNull();
+    expect(screen.getByRole("link", { name: /sms campaigns/i })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /table editor/i })).toBeInTheDocument();
+  });
+
+  it("persists collapse state to localStorage and restores it on a fresh render", () => {
+    render(<Nav admin />);
+    fireEvent.click(screen.getByRole("button", { name: "Admin" }));
+    fireEvent.click(screen.getByRole("button", { name: "Integrations" }));
+    expect(JSON.parse(localStorage.getItem(NAV_COLLAPSED_KEY)!)).toEqual([
+      "Admin",
+      "Integrations",
+    ]);
+    cleanup();
+    render(<Nav admin />);
+    expect(
+      screen.getByRole("button", { name: "Admin" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(
+      screen.getByRole("button", { name: "Integrations" }).getAttribute("aria-expanded"),
+    ).toBe("false");
+    expect(
+      screen.getByRole("button", { name: "Platform" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("ignores a corrupt stored value and renders expanded", () => {
+    localStorage.setItem(NAV_COLLAPSED_KEY, "{not json");
+    render(<Nav admin />);
+    expect(
+      screen.getByRole("button", { name: "Platform" }).getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("renders no toggle for the unlabeled Overview group", () => {
+    render(<Nav />);
+    expect(screen.getByRole("link", { name: /overview/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /overview/i })).toBeNull();
+  });
+
+  it("marks a collapsed group's header when it holds the active page", () => {
+    h.pathname = "/sql";
+    render(<Nav admin />);
+    const platform = screen.getByRole("button", { name: "Platform" });
+    const admin = screen.getByRole("button", { name: "Admin" });
+    fireEvent.click(platform);
+    fireEvent.click(admin);
+    expect(platform.className).toContain("on");
+    expect(admin.className).not.toContain("on");
+    fireEvent.click(platform); // expanded again -> marker moves back to the item
+    expect(platform.className).not.toContain("on");
   });
 });
