@@ -2,8 +2,9 @@
  * Theme control for the console.
  * One axis lives on <html>: data-theme (light|dark). Surfaces are always flat
  * (the glass skin is gone). The choice persists to localStorage so it sticks.
- * LIGHT is the NSight design language; DARK is Supabase-styled (dark chrome +
- * green + Geist Sans) per product direction.
+ * Both themes carry the NSight design language: LIGHT is "Dawn" (warm sand),
+ * DARK is "Dusk" (deep petrol) — per product direction 2026-08-13, which
+ * retired the Supabase-styled dark.
  */
 
 export type Theme = "light" | "dark";

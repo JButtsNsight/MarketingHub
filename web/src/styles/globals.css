@@ -316,9 +316,9 @@ select.control:hover {
 select.control:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--hair));
 }
-/* chevron — dark: Supabase muted gray on the #1c1c1c chrome */
+/* chevron — dark: Dusk ink-2 #C2D2CD on the petrol chrome */
 html[data-theme="dark"] select.control {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.25 8 9.75l3.5-3.5' fill='none' stroke='%23a0a0a0' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4.5 6.25 8 9.75l3.5-3.5' fill='none' stroke='%23C2D2CD' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
 }
 input[type="file"].control {
   padding: 9px 12px;
@@ -1168,8 +1168,8 @@ input[type="file"].control {
    so tokens carry stable .tok-* classes and the colors bind HERE, per theme.
    LIGHT reproduces CodeMirror's defaultHighlightStyle hex verbatim (visually
    identical to before); DARK rebinds every colored slot for legibility on the
-   #1c1c1c chrome — keywords go bright lime per product direction, everything
-   else holds ≥4.5:1 (comments) / ≥7:1 (code) contrast. */
+   Dusk petrol chrome — keywords take the Dusk accent teal, everything else
+   holds ≥4.5:1 (comments) / ≥7:1 (code) contrast. */
 .sqled .tok-keyword {
   color: #708;
 }
@@ -1222,9 +1222,9 @@ input[type="file"].control {
 }
 
 /* DARK syntax palette — every slot colored above is re-bound (nothing may
-   inherit the light hex onto #1c1c1c). */
+   inherit the light hex onto the petrol chrome). */
 html[data-theme="dark"] .sqled .tok-keyword {
-  color: #a3e635; /* bright lime — the old near-invisible dark purple, fixed */
+  color: #79c2c2; /* Dusk accent teal (retired the Supabase-era lime) */
 }
 html[data-theme="dark"] .sqled .tok-atom,
 html[data-theme="dark"] .sqled .tok-bool,
@@ -1880,33 +1880,26 @@ html[data-theme="dark"] .chart-line {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
- * DARK (Supabase-styled) — chrome overrides
+ * DARK ("Dusk") — chrome overrides
  * Most color comes free from the data-theme=dark token block; these are the
- * few structural touches that make the shell read as Studio: a darker sidebar
- * rail, a green left-indicator on the active item, and green primary buttons
- * with dark text. Everything else already resolves through tokens.
+ * few structural touches kept from the console shell: a deeper sidebar rail
+ * and masthead (--wash), and a teal left-indicator on the active nav item.
+ * Buttons need no override — .btn-primary's ink-fill/canvas-text recipe
+ * resolves correctly through the Dusk tokens.
  * ───────────────────────────────────────────────────────────────────────── */
 html[data-theme="dark"] .nav {
-  background: var(--wash); /* #171717 — Studio's darker sidebar */
+  background: var(--wash); /* deepest petrol — the sidebar rail */
   border: 1px solid var(--hair);
 }
 html[data-theme="dark"] .nav-link {
   border-left: 2px solid transparent;
-  border-radius: 6px;
 }
 html[data-theme="dark"] .nav-link.on {
-  color: #fff;
+  color: var(--ink);
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-  border-left-color: var(--accent); /* green indicator bar */
+  border-left-color: var(--accent); /* teal indicator bar */
 }
-html[data-theme="dark"] .btn-primary {
-  background: var(--accent); /* Supabase green */
-  color: #1c1c1c; /* dark text on green — Studio's primary button */
-}
-html[data-theme="dark"] .btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 88%, #fff);
-}
-/* Studio's masthead sits on the deepest surface with a hairline under it. */
+/* The masthead sits on the deepest surface with a hairline under it. */
 html[data-theme="dark"] .masthead {
   background: var(--wash);
 }

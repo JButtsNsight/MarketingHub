@@ -3,8 +3,9 @@
  * Source of truth: ~/NSight-Design-Language/docs/STYLE-GUIDE.md (locked 2026-05-30).
  * One axis on <html>: data-theme=light|dark. Surfaces are always flat.
  * Every color / surface value is a token. No freehand hex.
- * LIGHT carries the NSight design language; DARK is Supabase-styled (per
- * product direction) and is the one theme that departs from the language.
+ * BOTH themes carry the NSight design language: LIGHT is "Dawn" (warm sand),
+ * DARK is "Dusk" (deep petrol, spec §1 verbatim — replaced the Supabase-styled
+ * dark per product direction, 2026-08-13).
  * Type is unified across BOTH themes (per product direction, 2026-08): Geist
  * Sans for UI and display — the display face differentiates via weight/size,
  * never family — with IBM Plex Mono for data.
@@ -82,73 +83,66 @@
     0 4px 12px rgba(21, 48, 63, 0.12);
 }
 
-/* ── DARK — Supabase-styled. This IS the app's dark theme: a faithful
- * reproduction of Supabase Studio's dark chrome (#1c1c1c), #3ECF8E green
- * accent, and Geist Sans type. It replaced the earlier inky-blue NSight dark per
- * product direction; LIGHT still carries the NSight design language. The
- * accent binds directly to the Supabase green rather than the governed
- * --teal token, so this is the one theme that departs from the language. ── */
+/* ── DARK — "Dusk" (deep petrol). The NSight design language's own dark
+ * theme, spec §1 verbatim: petrol chrome, a lifted brand-teal accent, and
+ * eggshell knockout text. Restores the language after the Supabase-styled
+ * interlude (product direction, 2026-08-13) — nsightcare.com brand, not
+ * vendor chrome. ── */
 html[data-theme="dark"] {
-  /* Type — Geist Sans stands in for Supabase's proprietary Circular (a modern
-   * grotesque; replaced Inter per product direction). Both themes now share
-   * this exact type stack — the bindings are kept explicit here so DARK never
-   * drifts if the light base changes. */
+  /* Type — same unified stack as light (the spec's Marcellus/DM Sans predate
+   * the 2026-08 Geist unification). Bindings kept explicit here so DARK never
+   * drifts if the light base changes. --r inherits the language's 12px. */
   --fd: "Geist Sans", system-ui, sans-serif;
   --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
-  --r: 6px; /* Studio's tighter corner radius */
 
-  --canvas: #1c1c1c; /* app background */
-  --paper: #1f1f1f; /* panels / surfaces */
-  --wash: #171717; /* deepest (sidebar / rails) */
-  --hair: rgba(255, 255, 255, 0.09);
+  --canvas: #0C1E22; /* app background — deep petrol */
+  --paper: #13292E; /* panels / surfaces */
+  --wash: #0A191D; /* deepest (sidebar / rails) */
+  --hair: rgba(255, 255, 255, 0.12);
 
-  --ink: #ededed;
-  --ink-2: #c9c9c9;
-  --muted: #a0a0a0;
-  --faint: #707070;
-  --tx: #ededed;
+  --ink: #EAF2EE;
+  --ink-2: #C2D2CD;
+  --muted: #8FA49B;
+  --faint: #5E726B;
+  --tx: #F0EAD6; /* eggshell knockout */
 
-  --navy: #171717;
-  --teal: #3ecf8e; /* token name kept; value is Supabase green */
-  --coral: #ff8766;
-  --blue-gray: #3e3e3e;
-  --accent: #3ecf8e; /* Supabase brand green — links, focus, tabs, active nav */
+  /* brand — the same identity tokens as light; Dusk lifts the living accent
+   * for dark-chrome legibility (spec value, still the brand teal family). */
+  --navy: #132E3F;
+  --teal: #64A6A7;
+  --coral: #FF8766;
+  --blue-gray: #275C7F;
+  --accent: #79C2C2; /* Dusk teal — links, focus, tabs, active nav */
 
-  --ok: #3ecf8e;
-  --run: #3e8fd6;
-  --warn: #f59e0b;
-  --fail: #ef4444;
-  --status-failed: #ef4444;
+  --ok: #84C08A;
+  --run: #7FB0DA;
+  --warn: #F0954A;
+  --fail: #FF6363;
+  --status-failed: #FF6363;
   --idle: var(--faint);
 
-  --ring: rgba(62, 207, 142, 0.35); /* green focus ring */
-  --ae: rgba(239, 68, 68, 0.5);
-  --as: rgba(239, 68, 68, 0.2);
-  --ag: rgba(239, 68, 68, 0.42);
+  --ring: rgba(121, 194, 194, 0.3); /* teal focus ring */
+  --ae: rgba(255, 99, 99, 0.5);
+  --as: rgba(255, 99, 99, 0.2);
+  --ag: rgba(255, 99, 99, 0.42);
 
-  /* Studio's chart palette skews green/teal/blue on dark. */
-  --data-1: #3ecf8e;
-  --data-2: #3e8fd6;
-  --data-3: #4dd4ac;
-  --data-4: #a78bfa;
-  --data-5: #f59e0b;
-  --data-6: #9ca3af;
-  --data-7: #6ee7b7;
-  --data-8: #60a5fa;
+  /* Data pool — inherits :root. The spec fixes ONE pool for both themes
+   * (charts recolor by position, never by theme or vendor). */
 
-  /* Surface system — flat with a real hairline border (Studio's card look). */
-  --surface-bg: #1f1f1f;
-  --surface-border: 1px solid rgba(255, 255, 255, 0.09);
+  /* Surface system — flat (spec dark×flat): a faint white lift, no chrome. */
+  --surface-bg: rgba(255, 255, 255, 0.045);
+  --surface-border: 1px solid transparent;
   --surface-rim: 0 0 0 0 transparent;
   --surface-shade: 0 0 0 0 transparent;
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
 
-  /* Floating surfaces — --surface-bg is already opaque here, so solid = same;
-   * the float shadow goes deeper so it reads on the #1c1c1c chrome. */
-  --surface-solid: #1f1f1f;
+  /* Floating surfaces — 4.5% white composited onto --canvas #0C1E22 (the
+   * identical visual tint, fully opaque); float shadow deep enough to read
+   * on petrol. */
+  --surface-solid: #17282C;
   --shadow-float:
-    0 1px 2px rgba(0, 0, 0, 0.55),
+    0 1px 2px rgba(0, 0, 0, 0.5),
     0 4px 12px rgba(0, 0, 0, 0.45);
 }

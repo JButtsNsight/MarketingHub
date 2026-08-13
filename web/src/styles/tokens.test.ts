@@ -62,13 +62,18 @@ describe("tokens.css", () => {
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
   });
 
-  it("DARK is Supabase-styled — green accent + Geist Sans", () => {
+  it("DARK is the NSight 'Dusk' deep petrol — spec §1 chrome + lifted teal accent", () => {
     const dark = ruleBody('html[data-theme="dark"]');
-    expect(dark).toContain("--accent:#3ecf8e"); // Supabase brand green
-    expect(dark).toContain('--fd:"GeistSans"'); // no serif — a modern grotesque (whitespace collapsed by `flat`)
+    expect(dark).toContain("--canvas:#0C1E22"); // deep petrol, spec verbatim
+    expect(dark).toContain("--accent:#79C2C2"); // Dusk teal — the brand accent, lifted for dark
+    expect(dark).toContain("--teal:#64A6A7"); // the governed brand teal, same value as light
+    expect(dark).toContain('--fd:"GeistSans"'); // type stays unified (whitespace collapsed by `flat`)
     expect(dark).toContain('--fu:"GeistSans"');
-    // Retired dark-theme face — comments stripped (they legitimately record the swap).
-    expect(dark.replace(/\/\*[\s\S]*?\*\//g, "")).not.toContain("Inter");
+    // Retired Supabase-era values — comments stripped (they legitimately record the swap).
+    const noComments = dark.replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(noComments).not.toContain("#3ecf8e");
+    expect(noComments).not.toContain("#1c1c1c");
+    expect(noComments).not.toContain("Inter");
   });
 
   it("unifies type on Geist Sans across BOTH themes; mono stays IBM Plex Mono", () => {
@@ -87,10 +92,10 @@ describe("tokens.css", () => {
     expect(noComments).not.toContain("DMSans");
   });
 
-  it("resolves --status-failed to #D24747 (light) and Supabase red #ef4444 (dark)", () => {
+  it("resolves --status-failed to #D24747 (light) and Dusk red #FF6363 (dark)", () => {
     expect(ruleBody(":root")).toContain("--status-failed:#D24747");
     expect(ruleBody('html[data-theme="dark"]')).toContain(
-      "--status-failed:#ef4444",
+      "--status-failed:#FF6363",
     );
   });
 
@@ -141,10 +146,10 @@ describe("globals.css — select affordance", () => {
     expect(body).toContain("padding-right:34px");
   });
 
-  it("re-binds the chevron for DARK (a dark glyph would vanish on #1c1c1c)", () => {
+  it("re-binds the chevron for DARK (a dark glyph would vanish on the petrol chrome)", () => {
     const body = globalsRuleBody('html[data-theme="dark"]select.control');
     expect(body).toContain("background-image:url(\"data:image/svg+xml");
-    expect(body).toContain("stroke='%23a0a0a0'"); // Supabase muted gray
+    expect(body).toContain("stroke='%23C2D2CD'"); // Dusk ink-2
   });
 });
 
@@ -153,10 +158,10 @@ describe("globals.css — SQL editor syntax palette (.tok-*)", () => {
     expect(globalsRuleBody(".sqled.tok-keyword")).toContain("color:#708");
   });
 
-  it("DARK re-binds keywords to bright lime (the dark purple was illegible)", () => {
+  it("DARK re-binds keywords to the Dusk accent teal (the light purple was illegible)", () => {
     expect(
       globalsRuleBody('html[data-theme="dark"].sqled.tok-keyword'),
-    ).toContain("color:#a3e635");
+    ).toContain("color:#79c2c2");
   });
 
   it("DARK re-binds strings, numbers and comments off the light hex", () => {
