@@ -62,12 +62,12 @@ describe("tokens.css", () => {
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
   });
 
-  it("DARK is 'Dusk' anchored on the brand navy — nsightcare.com chrome + lifted teal accent", () => {
+  it("DARK is 'Dusk' anchored on the brand navy — nsightcare.com chrome + governed teal accent", () => {
     const dark = ruleBody('html[data-theme="dark"]');
-    expect(dark).toContain("--paper:#132E3F"); // panels = the nsightcare.com navy, exact
-    expect(dark).toContain("--canvas:#0E2330"); // app background — one step deeper
-    expect(dark).toContain("--accent:#79C2C2"); // Dusk teal — the brand accent, lifted for dark
+    expect(dark).toContain("--canvas:#132E3F"); // page field = the nsightcare.com navy, exact
+    expect(dark).toContain("--paper:#18384C"); // panels — one lift above the navy
     expect(dark).toContain("--teal:#64A6A7"); // the governed brand teal, same value as light
+    expect(dark).toContain("--accent:var(--teal)"); // dark binds the living accent like light does
     expect(dark).toContain('--fd:"GeistSans"'); // type stays unified (whitespace collapsed by `flat`)
     expect(dark).toContain('--fu:"GeistSans"');
     // Retired Supabase-era values — comments stripped (they legitimately record the swap).

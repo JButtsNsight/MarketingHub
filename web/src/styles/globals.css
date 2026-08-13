@@ -1224,7 +1224,7 @@ input[type="file"].control {
 /* DARK syntax palette — every slot colored above is re-bound (nothing may
    inherit the light hex onto the petrol chrome). */
 html[data-theme="dark"] .sqled .tok-keyword {
-  color: #79c2c2; /* Dusk accent teal (retired the Supabase-era lime) */
+  color: #79c2c2; /* brand-teal family, lifted for code-size legibility */
 }
 html[data-theme="dark"] .sqled .tok-atom,
 html[data-theme="dark"] .sqled .tok-bool,

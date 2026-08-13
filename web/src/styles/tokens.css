@@ -84,12 +84,13 @@
     0 4px 12px rgba(21, 48, 63, 0.12);
 }
 
-/* ── DARK — "Dusk", navy-anchored. Chrome sits on the true brand navy
- * (nsightcare.com's #132E3F: panels are the brand hex exactly, canvas one
- * step deeper) with the site's pale blue #ECF4F9 as the ink family. The
- * lifted teal accent, status set, and eggshell knockout keep the spec's
- * Dusk values (§1); the spec's petrol surfaces read too green next to the
- * site — re-anchored per product direction 2026-08-13. ── */
+/* ── DARK — "Dusk", navy-anchored. The page field IS the brand navy
+ * (nsightcare.com's #132E3F), panels one lift above it, with the site's
+ * pale blue #ECF4F9 as the ink family and the governed brand teal #64A6A7
+ * as the accent — the site's own navy/teal pairing. Status set and eggshell
+ * knockout keep the spec's Dusk values (§1); the spec's petrol surfaces
+ * read too green next to the site — re-anchored per product direction
+ * 2026-08-13. ── */
 html[data-theme="dark"] {
   /* Type — same unified stack as light (the spec's Marcellus/DM Sans predate
    * the 2026-08 Geist unification). Bindings kept explicit here so DARK never
@@ -98,9 +99,9 @@ html[data-theme="dark"] {
   --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
 
-  --canvas: #0E2330; /* app background — one step deeper than the brand navy */
-  --paper: #132E3F; /* panels / surfaces — the nsightcare.com navy, exact */
-  --wash: #091823; /* deepest (sidebar / rails) */
+  --canvas: #132E3F; /* app background — the nsightcare.com navy, exact */
+  --paper: #18384C; /* panels / surfaces — one lift above the navy */
+  --wash: #0C1F2C; /* deepest (sidebar / rails) */
   --hair: rgba(255, 255, 255, 0.12);
 
   --ink: #ECF4F9; /* the site's pale blue wash */
@@ -109,13 +110,13 @@ html[data-theme="dark"] {
   --faint: #5C7484;
   --tx: #F0EAD6; /* eggshell knockout */
 
-  /* brand — the same identity tokens as light; Dusk lifts the living accent
-   * for dark-chrome legibility (spec value, still the brand teal family). */
+  /* brand — the same identity tokens as light; the accent binds the governed
+   * --teal exactly like light does (site pairing: teal on navy). */
   --navy: #132E3F;
   --teal: #64A6A7;
   --coral: #FF8766;
   --blue-gray: #275C7F;
-  --accent: #79C2C2; /* Dusk teal — links, focus, tabs, active nav */
+  --accent: var(--teal); /* the one living accent = brand teal #64A6A7 */
 
   --ok: #84C08A;
   --run: #7FB0DA;
@@ -124,7 +125,7 @@ html[data-theme="dark"] {
   --status-failed: #FF6363;
   --idle: var(--faint);
 
-  --ring: rgba(121, 194, 194, 0.3); /* teal focus ring */
+  --ring: rgba(100, 166, 167, 0.3); /* focus ring — teal #64A6A7 */
   --ae: rgba(255, 99, 99, 0.5);
   --as: rgba(255, 99, 99, 0.2);
   --ag: rgba(255, 99, 99, 0.42);
@@ -140,10 +141,10 @@ html[data-theme="dark"] {
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
 
-  /* Floating surfaces — 4.5% white composited onto --canvas #0E2330 (the
+  /* Floating surfaces — 4.5% white composited onto --canvas #132E3F (the
    * identical visual tint, fully opaque); float shadow deep enough to read
    * on navy. */
-  --surface-solid: #192D39;
+  --surface-solid: #1E3748;
   --shadow-float:
     0 1px 2px rgba(0, 0, 0, 0.5),
     0 4px 12px rgba(0, 0, 0, 0.45);
