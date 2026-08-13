@@ -55,23 +55,42 @@ accepts container port `:3000` from the ALB SG only.
 - Never paste the key value anywhere; only its ARN is referenced.
 
 ### 1.3 Google Workspace SAML app (Cognito federation)
-- Reuse the existing NSight Google Workspace SAML app (single app, `idpid C00n27oyt`).
-- Obtain its **SAML metadata URL** → `googleSamlMetadataUrl` context.
-- In the Google Admin console, register the app callback/logout that Cognito needs
-  once the User Pool exists (see step 4). Cognito rejects any `logout_uri` /
-  callback not registered on both sides:
-  - Callback: `https://<appHostname>/oauth2/idpresponse`
-  - Logout landing: `https://<appHostname>/`
-- Map the **marketing Google group → the `marketing` Cognito group** (and the admin
-  Google group → `marketinghub-admins`). Group membership drives app authz; a user
-  federated but not in `marketing` is redirected to `/login` and sees nothing.
+- **One Google SAML app per Cognito pool — there is no shared/reusable app.** The
+  `idpid` in every Google metadata download is the org-wide customer id, not an app
+  id; all downloads look identical, but each Google SAML app binds exactly one ACS
+  URL. ExpenseHub / ncore-qa / lena-admin each have their own app; MarketingHub's is
+  the "MarketingHub" app, registered against the prestaged pool
+  **`us-east-1_EILGYZVyA`**.
+- Google publishes **no public metadata URL** (404 confirmed) — the Workspace admin
+  downloads `GoogleIDPMetadata.xml`, committed at
+  `app-infra/config/google-idp-metadata.xml` → `googleSamlMetadataFilePath` context.
+  The stack accepts exactly one of `googleSamlMetadataUrl` /
+  `googleSamlMetadataFilePath`; the deploy scripts auto-pass the file when it
+  exists. Watch the metadata `validUntil` (current copy: **2026-10-03**) — refresh
+  before expiry.
+- Google-side registration (admin console): ACS
+  `https://nsight-marketinghub.auth.us-east-1.amazoncognito.com/saml2/idpresponse`,
+  Entity ID `urn:amazon:cognito:sp:us-east-1_EILGYZVyA`, NameID = EMAIL, email
+  attribute mapping, app access scoped to the marketing Google groups.
+- **Google group membership does NOT flow into Cognito groups.** Every first SAML
+  sign-in creates a group-less pool user (`GoogleSAML_<email>`) who 403s / loops on
+  `/login` until granted Cognito groups — see §17.6.
 
 ### 1.4 DNS + TLS
-- Public hosted zone for `nsightcare.com` exists; capture `hostedZoneId`.
-- `appHostname` (default `marketinghub.nsightcare.com`) is free to create.
-- The ACM cert is created + **DNS-validated by the stack** — you must be able to
-  create the validation CNAME in the hosted zone (CDK does this automatically when
-  the zone is a Route53 zone in this account). The cert is `RETAIN`ed.
+- `nsightcare.com` is run OUTSIDE this account (Cloudflare). The account holds a
+  **delegated subdomain zone** `marketinghub.nsightcare.com` (Route53 zone
+  `Z08635801ESCWNECXF01P`); Cloudflare carries the NS delegation. `hostedZoneName`
+  context = **`marketinghub.nsightcare.com`** (the full app hostname, NOT
+  `nsightcare.com`), and `appHostname` equals it — deploy-prod.sh (§17) derives the
+  zone id live.
+- The ACM cert is created + **DNS-validated by the stack** in the delegated zone
+  (automatic — same-account Route53). The cert is `RETAIN`ed, so a failed/rolled-
+  back attempt orphans an issued cert: delete orphans by hand once `InUseBy` is
+  empty (done for the two cutover-attempt orphans 2026-08-13).
+- **VPC Block Public Access** (account-wide `block-ingress`, on since 2026-05-02)
+  silently drops ALL IGW ingress even when SG/NACL/routes are perfect. The public
+  ALB works only because of two SUBNET-SCOPED exclusions — see §17.3. Do NOT widen
+  them.
 
 ### 1.5 Supabase VPC networking (the app runs inside it)
 - The Supabase `SupabaseNetwork` stack (in `cdk/`) is deployed. Capture its
@@ -1593,3 +1612,121 @@ Rollback: same lever as §14.6 — unset the two gateway vars and the panel
 degrades to its honest one-liner. Note the config is SHARED: pulling it
 also drops intel search to keyword-only. There are no schema or data
 changes to unwind (the assistant persists nothing).
+
+---
+
+## 17. Production front door — cutover + prod deploys (2026-08-12)
+
+Production is LIVE at **https://marketinghub.nsightcare.com** (internet-facing
+ALB + ACM + WAF + Route53 alias; `authenticate-cognito` is the default action
+on every route except `/api/health` and GET `/l/*`). The preview door and its
+SSM tunnel are **DEAD** — the internal ALB was deleted post-cutover; all access
+is the public URL via Google SAML. `PREVIEW_AUTH` / PersonaSwitch are inert in
+prod (the persona cookie is only honored when `PREVIEW_AUTH` is set —
+fail-closed by design).
+
+### 17.1 The canonical prod deploy
+
+`app-infra/scripts/deploy-prod.sh` — the deploy-preview doctrine with
+`previewMode` OFF. Never deploy prod any other way and never hand-assemble the
+§3.1 context table: the script derives every context value from LIVE state and
+refuses drift.
+
+    echo DEPLOY-PROD | bash app-infra/scripts/deploy-prod.sh [IMAGE_TAG]
+
+Knobs (env): `WORKER_TAG` rolls the worker deliberately (otherwise it stays
+**PINNED to its live image** — the single dispatcher is never rolled
+implicitly); `SMS_LINK_BASE_URL` overrides the live value (prod =
+`https://marketinghub.nsightcare.com`). The script's header comment is the
+authoritative step-by-step; the load-bearing behaviors:
+
+- every cdk context derived live (`supabaseUrl` from the CFN export,
+  networking from the live service's awsvpc config cross-checked against the
+  Supabase exports, secret complete-ARNs via describe-secret);
+- the **no-silent-strip gate**: synth vs live task-defs — any live env var or
+  secret name missing from synth ABORTS before any mutation
+  (`PREVIEW_AUTH` was the ONE allowed strip, on the preview→prod transition);
+- post-deploy: waits services-stable on BOTH services, re-verifies nothing was
+  lost, checks the broker ids, and hits the public health endpoint.
+
+### 17.2 The broker no-op invariant (the one hard STOP)
+
+The Cognito/SAML broker — pool **`us-east-1_EILGYZVyA`**, client
+`31tiiev4n5sub0qk1resai59e8`, hosted-UI domain `nsight-marketinghub` — was
+prestaged with the SAME logical IDs in preview and prod. In every prod diff,
+`AppUserPool` / `GoogleSamlIdp` / `AppClient` / `AppUserPoolDomain` MUST show
+**no changes**. A replace/delete RETAIN-orphans the pool; a later recreate
+mints a NEW pool id and silently breaks the Google-side SAML registration —
+and the no-silent-strip gate does NOT catch this class of loss. Any branch you
+deploy from must contain the `feat/saml-metadata-file` chain (merged at
+`66edd35`). deploy-prod.sh post-verifies the pool + client ids and fails loud.
+
+### 17.3 Cutover lessons (2026-08-12 — it took three attempts)
+
+1. **cdk.json `REPLACE_ME` leaked into synth** (`supabasePublicSubnetIds`) →
+   CFN 400 while creating the ALB. Fix folded into the script: public
+   IGW-routed subnets are derived live; placeholder values are treated as
+   absent context.
+2. **A target group cannot belong to two ALBs.** The internal preview ALB's
+   HTTP listener still held the target groups while CFN created the HTTPS
+   listener (creation precedes cleanup). One-time fix: delete the internal
+   listener pre-deploy — the preview door was being retired anyway. If a
+   future rebuild ever needs both doors up, stage fresh target groups instead.
+3. **VPC Block Public Access ate the front door.** The account-wide
+   `block-ingress` posture (2026-05-02 hardening) dropped ALL IGW ingress
+   while SG / NACL / routes / DNS all looked perfect — TCP simply timed out
+   from everywhere. Fixed with two SUBNET-SCOPED allow-bidirectional
+   exclusions (`vpcbpa-exclude-058d65f274ceebe6e`,
+   `vpcbpa-exclude-0c187bc6df55864c2`), covering ONLY the two public ALB
+   subnets. The account-wide guard is otherwise intact: do NOT widen these,
+   and expect them to surface in security audits.
+
+Cleanup notes: the old internal ALB had deletion protection ON (which is also
+why CFN's own cleanup went DELETE_FAILED) — disable the attribute, then
+delete. RETAINed ACM certs from the failed attempts were deleted 2026-08-13
+after confirming `InUseBy` was empty (§1.4).
+
+### 17.4 Auth chain facts (post-cutover fixes, all deployed)
+
+- The ALB authenticate action passes
+  `authenticationRequestExtraParams: {identity_provider: "GoogleSAML"}`, so
+  users skip Cognito's hosted-UI interstitial (its JS-rendered provider button
+  was dead in real browsers). A single-IdP app should never show that page.
+- **`x-amzn-oidc-data` NEVER contains `cognito:groups`** — it carries the
+  userinfo claims. `getUser()` falls back to the verified
+  `x-amzn-oidc-accesstoken` (pool JWKS, RS256; iss / exp / token_use /
+  client_id checked; fail-closed with a loud log). The prod task-def carries
+  `COGNITO_USER_POOL_ID` / `COGNITO_CLIENT_ID` for this. The preview shim and
+  e2e both fabricate groups into the data header — which is exactly how every
+  test passed while every real user was group-less. Trust the access token,
+  not the data header.
+- ALB sessions last **12 h**; group changes take effect after `/logout` +
+  re-auth (the app's `/logout` expires both cookie shards).
+- Debugging tool of record for prod auth: the ALB access logs
+  (`marketinghubapp-albaccesslogsbucket…` — `aws s3 sync` + shlex-parse).
+
+### 17.5 Prod smoke (replaces §5's preview-door steps)
+
+    curl -s -o /dev/null -w '%{http_code}' https://marketinghub.nsightcare.com/api/health
+    # → 200 with no auth. Any app route unauthenticated → 302 straight to the
+    # Cognito authorize URL carrying identity_provider=GoogleSAML.
+    # GET /l/<bogus-slug> → 404 (public bypass live, no redirect).
+
+Then in a browser: sign in via Google, confirm the nav matches your groups,
+create-and-pause a timezone campaign, run an /intel search, and do a
+propose-only /sql assistant round-trip.
+
+### 17.6 First sign-in / RBAC grants (Wave D)
+
+A new SAML user lands in the pool as `GoogleSAML_<email>` with NO groups and
+403s everywhere. Grant from **/admin/users** (admins only; live Cognito
+writes, audited) or via CLI:
+
+    aws cognito-idp admin-add-user-to-group --user-pool-id us-east-1_EILGYZVyA \
+      --username "GoogleSAML_<email>" --group-name marketing --region us-east-1
+
+Groups (the `authGroups.ts` registry is authoritative): `marketing` = base +
+Marketing surfaces (+ Reports); `mh-section-platform` = all console
+surfaces + APIs; `mh-section-intel` = intel; `marketinghub-admins` =
+god-mode, implies all. A marketing-only user has NO console/intel access
+until granted sections — that is the intended Wave D posture.
