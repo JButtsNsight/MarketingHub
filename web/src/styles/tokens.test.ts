@@ -62,9 +62,10 @@ describe("tokens.css", () => {
     expect(ruleBody(":root")).toContain("--accent:var(--teal)");
   });
 
-  it("DARK is the NSight 'Dusk' deep petrol — spec §1 chrome + lifted teal accent", () => {
+  it("DARK is 'Dusk' anchored on the brand navy — nsightcare.com chrome + lifted teal accent", () => {
     const dark = ruleBody('html[data-theme="dark"]');
-    expect(dark).toContain("--canvas:#0C1E22"); // deep petrol, spec verbatim
+    expect(dark).toContain("--paper:#132E3F"); // panels = the nsightcare.com navy, exact
+    expect(dark).toContain("--canvas:#0E2330"); // app background — one step deeper
     expect(dark).toContain("--accent:#79C2C2"); // Dusk teal — the brand accent, lifted for dark
     expect(dark).toContain("--teal:#64A6A7"); // the governed brand teal, same value as light
     expect(dark).toContain('--fd:"GeistSans"'); // type stays unified (whitespace collapsed by `flat`)
@@ -146,10 +147,10 @@ describe("globals.css — select affordance", () => {
     expect(body).toContain("padding-right:34px");
   });
 
-  it("re-binds the chevron for DARK (a dark glyph would vanish on the petrol chrome)", () => {
+  it("re-binds the chevron for DARK (a dark glyph would vanish on the navy chrome)", () => {
     const body = globalsRuleBody('html[data-theme="dark"]select.control');
     expect(body).toContain("background-image:url(\"data:image/svg+xml");
-    expect(body).toContain("stroke='%23C2D2CD'"); // Dusk ink-2
+    expect(body).toContain("stroke='%23C3D5E0'"); // Dusk ink-2 (navy-anchored)
   });
 });
 

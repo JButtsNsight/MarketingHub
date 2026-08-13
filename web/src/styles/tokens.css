@@ -4,8 +4,9 @@
  * One axis on <html>: data-theme=light|dark. Surfaces are always flat.
  * Every color / surface value is a token. No freehand hex.
  * BOTH themes carry the NSight design language: LIGHT is "Dawn" (warm sand),
- * DARK is "Dusk" (deep petrol, spec §1 verbatim — replaced the Supabase-styled
- * dark per product direction, 2026-08-13).
+ * DARK is "Dusk" re-anchored on the brand navy (nsightcare.com's #132E3F —
+ * replaced the Supabase-styled dark, then the spec's petrol chrome, per
+ * product direction 2026-08-13; accent/status stay spec-Dusk).
  * Type is unified across BOTH themes (per product direction, 2026-08): Geist
  * Sans for UI and display — the display face differentiates via weight/size,
  * never family — with IBM Plex Mono for data.
@@ -83,11 +84,12 @@
     0 4px 12px rgba(21, 48, 63, 0.12);
 }
 
-/* ── DARK — "Dusk" (deep petrol). The NSight design language's own dark
- * theme, spec §1 verbatim: petrol chrome, a lifted brand-teal accent, and
- * eggshell knockout text. Restores the language after the Supabase-styled
- * interlude (product direction, 2026-08-13) — nsightcare.com brand, not
- * vendor chrome. ── */
+/* ── DARK — "Dusk", navy-anchored. Chrome sits on the true brand navy
+ * (nsightcare.com's #132E3F: panels are the brand hex exactly, canvas one
+ * step deeper) with the site's pale blue #ECF4F9 as the ink family. The
+ * lifted teal accent, status set, and eggshell knockout keep the spec's
+ * Dusk values (§1); the spec's petrol surfaces read too green next to the
+ * site — re-anchored per product direction 2026-08-13. ── */
 html[data-theme="dark"] {
   /* Type — same unified stack as light (the spec's Marcellus/DM Sans predate
    * the 2026-08 Geist unification). Bindings kept explicit here so DARK never
@@ -96,15 +98,15 @@ html[data-theme="dark"] {
   --fu: "Geist Sans", system-ui, sans-serif;
   --fm: "IBM Plex Mono", ui-monospace, monospace;
 
-  --canvas: #0C1E22; /* app background — deep petrol */
-  --paper: #13292E; /* panels / surfaces */
-  --wash: #0A191D; /* deepest (sidebar / rails) */
+  --canvas: #0E2330; /* app background — one step deeper than the brand navy */
+  --paper: #132E3F; /* panels / surfaces — the nsightcare.com navy, exact */
+  --wash: #091823; /* deepest (sidebar / rails) */
   --hair: rgba(255, 255, 255, 0.12);
 
-  --ink: #EAF2EE;
-  --ink-2: #C2D2CD;
-  --muted: #8FA49B;
-  --faint: #5E726B;
+  --ink: #ECF4F9; /* the site's pale blue wash */
+  --ink-2: #C3D5E0;
+  --muted: #8FA9BA;
+  --faint: #5C7484;
   --tx: #F0EAD6; /* eggshell knockout */
 
   /* brand — the same identity tokens as light; Dusk lifts the living accent
@@ -138,10 +140,10 @@ html[data-theme="dark"] {
   --surface-shadow: 0 0 0 0 transparent;
   --surface-glint: none;
 
-  /* Floating surfaces — 4.5% white composited onto --canvas #0C1E22 (the
+  /* Floating surfaces — 4.5% white composited onto --canvas #0E2330 (the
    * identical visual tint, fully opaque); float shadow deep enough to read
-   * on petrol. */
-  --surface-solid: #17282C;
+   * on navy. */
+  --surface-solid: #192D39;
   --shadow-float:
     0 1px 2px rgba(0, 0, 0, 0.5),
     0 4px 12px rgba(0, 0, 0, 0.45);

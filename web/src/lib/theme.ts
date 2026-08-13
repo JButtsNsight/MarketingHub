@@ -3,8 +3,8 @@
  * One axis lives on <html>: data-theme (light|dark). Surfaces are always flat
  * (the glass skin is gone). The choice persists to localStorage so it sticks.
  * Both themes carry the NSight design language: LIGHT is "Dawn" (warm sand),
- * DARK is "Dusk" (deep petrol) — per product direction 2026-08-13, which
- * retired the Supabase-styled dark.
+ * DARK is "Dusk" anchored on the brand navy (nsightcare.com #132E3F) — per
+ * product direction 2026-08-13, which retired the Supabase-styled dark.
  */
 
 export type Theme = "light" | "dark";
