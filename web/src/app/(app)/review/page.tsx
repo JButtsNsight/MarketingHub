@@ -2,6 +2,8 @@ import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getUserClient } from "@/lib/supabase";
 import { listAttentionRecipients } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { SMS_TABS } from "@/components/sms/tabs";
 import { StatCard } from "@/components/ui/StatCard";
 import { AttentionTable } from "@/components/campaigns/AttentionTable";
 import { Guide } from "@/components/guide/Guide";
@@ -45,6 +47,9 @@ export default async function ReviewPage() {
             : "no decisions pending"
         }
       />
+      <Guide id="campaigns.shell.tabs">
+        <Tabs items={SMS_TABS} />
+      </Guide>
 
       <div className="stack">
         <div className="stat-grid">

@@ -25,6 +25,7 @@ vi.mock("@/lib/requireMarketingUser", () => ({
 }));
 // NewCampaignForm uses next/navigation client hooks; stub for the render.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   useRouter: () => ({ push: vi.fn() }),
 }));
 

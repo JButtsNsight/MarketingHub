@@ -21,6 +21,7 @@ vi.mock("@/lib/requireMarketingUser", () => ({
 }));
 // InboxTable is a client island using useRouter.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 

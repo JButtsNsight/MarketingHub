@@ -2,6 +2,8 @@ import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getUserClient } from "@/lib/supabase";
 import { countSuppressions, listSuppressions } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { SMS_TABS } from "@/components/sms/tabs";
 import { AddSuppressionForm } from "@/components/campaigns/AddSuppressionForm";
 import { SuppressionsTable } from "@/components/campaigns/SuppressionsTable";
 import { Guide } from "@/components/guide/Guide";
@@ -47,6 +49,9 @@ export default async function SuppressionsPage({
         count={`${total} suppressed`}
         actions={<AddSuppressionForm />}
       />
+      <Guide id="campaigns.shell.tabs">
+        <Tabs items={SMS_TABS} />
+      </Guide>
 
       <div className="stack">
         <Guide id="engagement.suppressions.search">

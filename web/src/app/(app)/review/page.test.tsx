@@ -19,6 +19,7 @@ vi.mock("@/lib/requireMarketingUser", () => ({
 }));
 // AttentionTable is a client island using useRouter.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 

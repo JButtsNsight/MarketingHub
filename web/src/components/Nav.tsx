@@ -44,10 +44,11 @@ export interface NavItem {
   /** Active on the exact path only — for an item whose route is a prefix of a
    *  sibling's (Table Editor `/database` vs. the Database section under it). */
   exact?: boolean;
-  /** Overrides the active-scope prefix when it differs from `href` — the
+  /** Overrides the active-scope prefix(es) when they differ from `href` — the
    *  Database section lands on `/database/schema` but owns the whole
-   *  `/database/` subtree (Schema + Policies). */
-  match?: string;
+   *  `/database/` subtree; SMS Campaigns owns its tabbed satellite routes
+   *  (/inbox, /review, /suppressions) alongside /campaigns. */
+  match?: string | string[];
   /** Section gating this single item (whole nav groups gate via the SECTIONS
    *  registry's `navGroups`; this is for a sectioned item inside an unrelated
    *  group, like Competitor Intel inside Marketing). */
@@ -144,10 +145,14 @@ export const NAV_GROUPS: NavGroup[] = [
         guideId: "nav.rail.templates",
       },
       {
+        // The SMS surfaces (Campaigns/Schedule/Inbox/Review/Suppressions) are
+        // TABS on the pages (SMS_TABS, 2026-08-14) — one rail item owns all
+        // their routes so the rail mirrors the Email Campaigns shape.
         href: "/campaigns",
         label: "SMS Campaigns",
         icon: "campaigns",
         marketing: true,
+        match: ["/campaigns", "/inbox", "/review", "/suppressions"],
         guideId: "nav.rail.sms-campaigns",
       },
       {
@@ -156,27 +161,6 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "email",
         marketing: true,
         guideId: "nav.rail.email-campaigns",
-      },
-      {
-        href: "/inbox",
-        label: "Inbox",
-        icon: "inbox",
-        marketing: true,
-        guideId: "nav.rail.inbox",
-      },
-      {
-        href: "/review",
-        label: "Review queue",
-        icon: "review",
-        marketing: true,
-        guideId: "nav.rail.review-queue",
-      },
-      {
-        href: "/suppressions",
-        label: "Suppressions",
-        icon: "suppressions",
-        marketing: true,
-        guideId: "nav.rail.suppressions",
       },
       // Wave 6 observability, marketing-tier per the Wave D role model (the
       // route enforces `marketing`, so it lives with the marketing items).
@@ -293,7 +277,13 @@ export function navGroupsFor(
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.href;
   if (item.match) {
-    return pathname === item.href || pathname.startsWith(item.match);
+    const prefixes = Array.isArray(item.match) ? item.match : [item.match];
+    return (
+      pathname === item.href ||
+      prefixes.some(
+        (m) => pathname === m || pathname.startsWith(m.endsWith("/") ? m : `${m}/`),
+      )
+    );
   }
   return pathname === item.href || pathname.startsWith(`${item.href}/`);
 }

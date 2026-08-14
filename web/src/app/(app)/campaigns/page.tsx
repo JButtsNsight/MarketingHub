@@ -6,6 +6,8 @@ import {
   type CampaignWithCounts,
 } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { SMS_TABS } from "@/components/sms/tabs";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
@@ -160,6 +162,9 @@ export default async function CampaignsPage() {
           </>
         }
       />
+      <Guide id="campaigns.shell.tabs">
+        <Tabs items={SMS_TABS} />
+      </Guide>
 
       {campaigns.length > 0 ? (
         <Guide id="campaigns.list.table">

@@ -45,6 +45,7 @@ vi.mock("@/lib/contacts/repo", () => ({
 }));
 // CampaignActions/RecipientsTable are client components using useRouter.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   notFound: h.notFound,
   useRouter: () => ({ refresh: vi.fn() }),
 }));

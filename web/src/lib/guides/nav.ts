@@ -31,7 +31,7 @@ export const nav: GuideModule = {
   },
   "nav.rail.group-marketing": {
     title: "Marketing tools",
-    body: "The messaging product on this platform: templates, SMS campaigns, replies, stuck sends, opt-outs, and results. Click the header to collapse or expand the group — the rail remembers your layout.",
+    body: "Templates, the SMS and Email campaign centers (each with its own tabs), usage reports, and competitor intel. Click the header to collapse or expand the group — the rail remembers your layout.",
   },
   "nav.rail.group-admin": {
     title: "Admin area",
@@ -93,23 +93,11 @@ export const nav: GuideModule = {
   },
   "nav.rail.sms-campaigns": {
     title: "SMS campaigns",
-    body: "Text-message sends to a chosen list of contacts. Create campaigns, schedule when they go out, and track delivery per recipient.",
+    body: "Everything text-message, tabbed inside: campaigns and their schedule, the reply inbox, sends needing review, and the do-not-text list.",
   },
   "nav.rail.email-campaigns": {
     title: "Email Campaigns",
     body: "The EmailBison dashboard: every email campaign with sends, opens, replies, and bounces. An admin links the EmailBison account once; everyone reads it here.",
-  },
-  "nav.rail.inbox": {
-    title: "Reply inbox",
-    body: "Every text reply people send back, newest first, matched to the campaign that prompted it. Check here for messages still needing a human.",
-  },
-  "nav.rail.review-queue": {
-    title: "Review queue",
-    body: "Sends that stopped moving — failures and maybe-sent cases. Each needs a human decision here; nothing retries or resolves on its own.",
-  },
-  "nav.rail.suppressions": {
-    title: "Do-not-text list",
-    body: "People who must never be texted again — mostly because they replied STOP. Campaigns skip everyone on this list automatically.",
   },
   "nav.rail.reports": {
     title: "Usage reports",

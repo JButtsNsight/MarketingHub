@@ -35,18 +35,27 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("orders the Marketing group per the Wave D role model — Reports after Suppressions, intel last", () => {
+  it("keeps Marketing to five items — the SMS surfaces are tabs, not rail items", () => {
     const marketing = NAV_GROUPS.find((g) => g.label === "Marketing");
     expect(marketing).toBeDefined();
     expect(marketing!.items.map((i) => [i.label, i.href])).toEqual([
       ["Templates", "/templates"],
       ["SMS Campaigns", "/campaigns"],
       ["Email Campaigns", "/email"],
-      ["Inbox", "/inbox"],
-      ["Review queue", "/review"],
-      ["Suppressions", "/suppressions"],
       ["Reports", "/reports"],
       ["Competitor Intel", "/intel"],
+    ]);
+  });
+
+  it("SMS Campaigns owns its tabbed satellite routes via the match array", () => {
+    const sms = NAV_GROUPS.find((g) => g.label === "Marketing")!.items.find(
+      (i) => i.label === "SMS Campaigns",
+    )!;
+    expect(sms.match).toEqual([
+      "/campaigns",
+      "/inbox",
+      "/review",
+      "/suppressions",
     ]);
   });
 
@@ -136,6 +145,15 @@ describe("Nav active state — most-specific match wins", () => {
     h.pathname = "/database/rls";
     render(<Nav />);
     expect(activeLabels()).toEqual(["Database"]);
+  });
+
+  it("lights SMS Campaigns on its tabbed satellite routes (/inbox, /review/*, /suppressions)", () => {
+    for (const path of ["/inbox", "/review", "/review/some-row", "/suppressions"]) {
+      h.pathname = path;
+      render(<Nav />);
+      expect(activeLabels(), path).toEqual(["SMS Campaigns"]);
+      cleanup();
+    }
   });
 
   it("lights SQL Editor on /sql", () => {

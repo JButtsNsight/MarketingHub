@@ -3,6 +3,8 @@ import { requireMarketingUser } from "@/lib/requireMarketingUser";
 import { getUserClient } from "@/lib/supabase";
 import { countUnhandledInbound, listInboundMessages } from "@/lib/sms/repo";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { SMS_TABS } from "@/components/sms/tabs";
 import { InboxTable } from "@/components/campaigns/InboxTable";
 import { LiveRefresher } from "@/components/live/LiveRefresher";
 import { Guide } from "@/components/guide/Guide";
@@ -72,6 +74,9 @@ export default async function InboxPage({
           </>
         }
       />
+      <Guide id="campaigns.shell.tabs">
+        <Tabs items={SMS_TABS} />
+      </Guide>
 
       <LiveRefresher topic="mh:inbox" />
 

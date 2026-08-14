@@ -21,6 +21,7 @@ vi.mock("@/lib/requireMarketingUser", () => ({
 }));
 // The table + add form are client islands using useRouter.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   useRouter: () => ({ refresh: vi.fn() }),
 }));
 

@@ -13,6 +13,8 @@ import {
 } from "@/lib/sms/zoneStats";
 import { Guide } from "@/components/guide/Guide";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { Tabs } from "@/components/ui/Tabs";
+import { SMS_TABS } from "@/components/sms/tabs";
 import { Badge } from "@/components/ui/Badge";
 import { Surface } from "@/components/Surface";
 import { statusLabel, statusTone } from "@/components/campaigns/statusBadge";
@@ -106,6 +108,9 @@ export default async function SchedulePage() {
           </>
         }
       />
+      <Guide id="campaigns.shell.tabs">
+        <Tabs items={SMS_TABS} />
+      </Guide>
 
       <LiveRefresher topic="mh:schedule" />
 

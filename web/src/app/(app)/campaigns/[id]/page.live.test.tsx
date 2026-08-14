@@ -60,6 +60,7 @@ vi.mock("@/lib/contacts/repo", () => ({
 // The page's client islands (CampaignActions, RecipientsTable, LiveRefresher)
 // use useRouter; live updates must land as calls to this shared refresh spy.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   notFound: h.notFound,
   useRouter: () => ({ refresh: h.refresh }),
 }));

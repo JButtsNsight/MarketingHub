@@ -41,6 +41,7 @@ vi.mock("@/lib/requireMarketingUser", () => ({
 // Both client islands (InboxTable, LiveRefresher) use useRouter; live updates
 // must land as calls to this shared refresh spy.
 vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
   useRouter: () => ({ refresh: h.refresh }),
 }));
 vi.mock("@/lib/realtime/client", () => ({
