@@ -4,6 +4,8 @@ import type { AppUser } from "@/lib/auth";
 
 const h = vi.hoisted(() => ({
   user: null as { email: string; name: string; groups: string[] } | null,
+  guardCookie: false,
+  addToGroup: vi.fn(async () => {}),
   redirect: vi.fn((_url: string) => {
     throw new Error("NEXT_REDIRECT");
   }),
@@ -16,10 +18,17 @@ vi.mock("@/lib/auth", () => ({
   getUser: vi.fn(async (): Promise<AppUser | null> => h.user),
 }));
 
+// Auto-provisioning grants through the cognitoAdmin lib; stub it (its own
+// behavior is unit-tested in lib/cognitoAdmin.test.ts).
+vi.mock("@/lib/cognitoAdmin", () => ({
+  addToGroup: h.addToGroup,
+}));
+
 // next/headers + next/navigation exist only inside a Next request scope; mock
-// them (auth.test.ts pattern).
+// them (auth.test.ts pattern). cookies backs the auto-provision loop guard.
 vi.mock("next/headers", () => ({
   headers: () => Promise.resolve({ get: () => null }),
+  cookies: () => Promise.resolve({ has: () => h.guardCookie }),
 }));
 vi.mock("next/navigation", () => ({ redirect: h.redirect }));
 
@@ -27,6 +36,9 @@ import LoginPage from "./page";
 
 beforeEach(() => {
   h.user = null;
+  h.guardCookie = false;
+  h.addToGroup.mockReset();
+  h.addToGroup.mockResolvedValue(undefined);
   h.redirect.mockClear();
 });
 
@@ -49,37 +61,61 @@ describe("login landing (signed out)", () => {
   });
 });
 
-describe("login landing (signed in, NO access — awaiting access)", () => {
+describe("login landing (signed in, no registry group) — first-sign-in auto-provisioning", () => {
   beforeEach(() => {
     h.user = { email: "casey@nsightcare.com", name: "Casey", groups: [] };
   });
 
-  it("names the user and says access is pending an admin grant", async () => {
+  it("grants the BASE tier to a workspace-domain user and refreshes the session", async () => {
+    await expect(LoginPage()).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(h.addToGroup).toHaveBeenCalledWith(
+      "GoogleSAML_casey@nsightcare.com",
+      "marketing",
+    );
+    expect(h.redirect).toHaveBeenCalledWith("/api/auth/refresh");
+  });
+
+  it("a non-registry IdP group does not block provisioning (it grants nothing)", async () => {
+    h.user = { ...h.user!, groups: ["us-east-1_EILGYZVyA_GoogleSAML"] };
+    await expect(LoginPage()).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(h.addToGroup).toHaveBeenCalledOnce();
+    expect(h.redirect).toHaveBeenCalledWith("/api/auth/refresh");
+  });
+
+  it("NEVER provisions an out-of-domain account — awaiting access instead", async () => {
+    h.user = { ...h.user!, email: "casey@example.com" };
     render(await LoginPage());
+    expect(h.addToGroup).not.toHaveBeenCalled();
+    expect(screen.getByText(/awaiting access/i)).toBeInTheDocument();
+    expect(h.redirect).not.toHaveBeenCalled();
+  });
+
+  it("the guard cookie breaks the loop — no re-grant, honest awaiting access", async () => {
+    h.guardCookie = true;
+    render(await LoginPage());
+    expect(h.addToGroup).not.toHaveBeenCalled();
     expect(
       screen.getByText(
         /signed in as casey@nsightcare\.com — awaiting access\. ask an admin\./i,
       ),
     ).toBeInTheDocument();
+  });
+
+  it("a Cognito failure falls through to awaiting access — never a crash or redirect", async () => {
+    h.addToGroup.mockRejectedValue(new Error("cognito down"));
+    render(await LoginPage());
+    expect(screen.getByText(/awaiting access/i)).toBeInTheDocument();
     expect(h.redirect).not.toHaveBeenCalled();
   });
 
-  it("offers sign-out and NO sign-in control (re-auth cannot grant a group)", async () => {
+  it("offers sign-out and NO sign-in control on the awaiting screen", async () => {
+    h.guardCookie = true;
     render(await LoginPage());
     const signOut = screen.getByRole("link", { name: /sign out/i });
     expect(signOut).toHaveAttribute("href", "/logout");
     expect(
       screen.queryByRole("link", { name: /sign in with google/i }),
     ).toBeNull();
-  });
-
-  it("groups that grant NOTHING also render awaiting access — never a redirect", async () => {
-    // A non-registry group must not count as access: /overview requires
-    // `marketing` and would bounce right back here (redirect loop).
-    h.user = { ...h.user!, groups: ["viewers"] };
-    render(await LoginPage());
-    expect(screen.getByText(/awaiting access/i)).toBeInTheDocument();
-    expect(h.redirect).not.toHaveBeenCalled();
   });
 });
 

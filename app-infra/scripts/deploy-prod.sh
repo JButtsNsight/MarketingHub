@@ -690,11 +690,12 @@ ROLLBACK
       --task-definition $OLD_WORKER_REF --region $REGION --force-new-deployment
 
 UI check: open https://$APP_HOSTNAME (Google Workspace sign-in via SAML).
-  FIRST-SIGN-IN GOTCHA: a new SAML user is created in the pool WITHOUT any
-  Cognito groups -> the app 403s everywhere. Add each user to 'marketing'
-  (and admins also to 'marketinghub-admins') in pool $EXPECTED_POOL_ID:
+  FIRST SIGN-IN: workspace-domain users are AUTO-PROVISIONED into 'marketing'
+  by the /login landing (2026-08-14) — no manual grant. Elevations (sections,
+  marketinghub-admins) are clicks in /admin/users. Manual fallback if the
+  auto-provision path is ever down:
     aws cognito-idp admin-add-user-to-group --user-pool-id $EXPECTED_POOL_ID \\
-      --username <sub-or-email> --group-name marketing --region $REGION
+      --username GoogleSAML_<email> --group-name marketing --region $REGION
 ==============================================================================
 POST
 

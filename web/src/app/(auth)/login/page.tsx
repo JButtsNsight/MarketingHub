@@ -18,10 +18,17 @@
  * Rendered as a fixed full-screen layer so it reads as a standalone login over
  * the app shell.
  */
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getUser } from "@/lib/auth";
-import { landingPathFor } from "@/lib/authGroups";
+import {
+  AUTO_PROVISION_DOMAIN,
+  MARKETING_GROUP,
+  landingPathFor,
+  registryGroupsOf,
+} from "@/lib/authGroups";
+import { addToGroup } from "@/lib/cognitoAdmin";
+import { AUTO_PROVISION_GUARD_COOKIE } from "@/app/api/auth/refresh/buildResponse";
 
 function GoogleGlyph() {
   return (
@@ -50,6 +57,42 @@ export default async function LoginPage() {
   const user = await getUser(await headers());
   const landing = user ? landingPathFor(user) : null;
   if (landing) redirect(landing);
+
+  // First-sign-in auto-provisioning: an ALB-VERIFIED user from the workspace
+  // domain with NO registry group gets the base tier granted right here, then
+  // a silent session refresh so the fresh token carries it. Google's SAML app
+  // assignment is the access decision — this only removes the manual grant.
+  // Never elevates past MARKETING_GROUP; the guard cookie breaks any loop
+  // (grant landed but the token stayed group-less → honest awaiting-access);
+  // a Cognito failure falls through to awaiting-access, never a crash.
+  if (
+    user &&
+    registryGroupsOf(user).length === 0 &&
+    user.email.toLowerCase().endsWith(`@${AUTO_PROVISION_DOMAIN}`) &&
+    !(await cookies()).has(AUTO_PROVISION_GUARD_COOKIE)
+  ) {
+    let granted = false;
+    try {
+      await addToGroup(`GoogleSAML_${user.email}`, MARKETING_GROUP);
+      granted = true;
+      console.log(
+        JSON.stringify({
+          evt: "auth.auto-provision",
+          email: user.email,
+          group: MARKETING_GROUP,
+        }),
+      );
+    } catch (err) {
+      console.error(
+        JSON.stringify({
+          evt: "auth.auto-provision-failed",
+          email: user.email,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+    if (granted) redirect("/api/auth/refresh");
+  }
 
   return (
     <div className="sso-screen">

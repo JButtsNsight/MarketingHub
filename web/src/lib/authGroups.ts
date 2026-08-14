@@ -11,6 +11,23 @@ import type { AppUser } from "./auth";
 /** Baseline group: every MarketingHub user. Gates sign-in + the Marketing surfaces. */
 export const MARKETING_GROUP = "marketing";
 
+/**
+ * First-sign-in auto-provisioning (2026-08-14): an ALB-verified user from
+ * this Google Workspace domain who holds NO registry group gets the base
+ * tier (MARKETING_GROUP) granted automatically by the /login landing — the
+ * Google-side SAML app assignment is the access decision, so the manual
+ * post-sign-in CLI grant is gone. Elevations (sections, admin) stay manual
+ * via /admin/users. Auto-provisioning NEVER grants anything above base.
+ */
+export const AUTO_PROVISION_DOMAIN = "nsightcare.com";
+
+/** The user's registry groups only — Cognito also injects a non-registry
+ *  IdP group (`<pool>_GoogleSAML`) into every federated token, which must
+ *  never count as "has access". */
+export function registryGroupsOf(user: Pick<AppUser, "groups">): string[] {
+  return user.groups.filter((g) => ALL_ASSIGNABLE_GROUPS.includes(g));
+}
+
 /** Elevated group: gates the Admin nav surfaces (auth, advisors, cloud, logs, infra). */
 export const ADMIN_GROUP = "marketinghub-admins";
 

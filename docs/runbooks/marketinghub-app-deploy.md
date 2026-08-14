@@ -1716,11 +1716,21 @@ Then in a browser: sign in via Google, confirm the nav matches your groups,
 create-and-pause a timezone campaign, run an /intel search, and do a
 propose-only /sql assistant round-trip.
 
-### 17.6 First sign-in / RBAC grants (Wave D)
+### 17.6 First sign-in / RBAC grants (Wave D; auto-provisioning 2026-08-14)
 
-A new SAML user lands in the pool as `GoogleSAML_<email>` with NO groups and
-403s everywhere. Grant from **/admin/users** (admins only; live Cognito
-writes, audited) or via CLI:
+A new SAML user lands in the pool as `GoogleSAML_<email>` with NO groups.
+Since 2026-08-14 the /login landing AUTO-PROVISIONS workspace-domain users
+(`@nsightcare.com`, `AUTO_PROVISION_DOMAIN` in `authGroups.ts`) into the base
+`marketing` group and silently refreshes the ALB session (`/api/auth/refresh`
+expires the session cookie shards; Cognito's live session makes the re-auth
+prompt-free), so first sign-in just works — access control lives in the
+Google-side SAML app assignment. The landing never grants above base; a
+`mh-autoprov` guard cookie (120s) breaks any grant→refresh loop; Cognito
+failures fall through to the honest awaiting-access screen (evt
+`auth.auto-provision-failed`).
+
+Elevations (sections, `marketinghub-admins`) stay manual from **/admin/users**
+(admins only; live Cognito writes, audited) or via CLI fallback:
 
     aws cognito-idp admin-add-user-to-group --user-pool-id us-east-1_EILGYZVyA \
       --username "GoogleSAML_<email>" --group-name marketing --region us-east-1
