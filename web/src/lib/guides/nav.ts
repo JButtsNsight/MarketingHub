@@ -13,7 +13,7 @@ export const nav: GuideModule = {
   },
   "nav.shell.theme-toggle": {
     title: "Light or dark look",
-    body: "Switches the console between the light and dark appearance. Purely visual — it never affects your data, and it remembers your choice on this browser.",
+    body: "Switches the console between the light (warm sand) and dark (inky navy) looks. Purely visual — it never affects your data, and it remembers your choice on this browser.",
   },
   "nav.shell.wordmark": {
     title: "Back to Overview",
@@ -23,23 +23,23 @@ export const nav: GuideModule = {
   // ── Nav rail: group labels ────────────────────────────────────────────────
   "nav.rail.group-platform": {
     title: "Platform tools",
-    body: "The core database toolkit, arranged like Supabase Studio: your data tables, a SQL editor, file storage, server functions, live updates, and API docs.",
+    body: "The core database toolkit, arranged like Supabase Studio: data tables, a SQL editor, file storage, server functions, live updates, and API docs. Click the header to collapse or expand the group — the rail remembers your layout.",
   },
   "nav.rail.group-integrations": {
     title: "Database add-ons",
-    body: "Optional Postgres add-ons, each with its own screen: scheduled jobs (Cron), background work lists (Queues), and encrypted secrets (Vault).",
+    body: "Optional Postgres add-ons, each with its own screen: scheduled jobs (Cron), background work lists (Queues), and encrypted secrets (Vault). Click the header to collapse or expand the group — the rail remembers your layout.",
   },
   "nav.rail.group-marketing": {
     title: "Marketing tools",
-    body: "The messaging product built on this platform: write templates, send SMS campaigns, read replies, fix stuck sends, honor opt-outs, and measure results.",
+    body: "The messaging product on this platform: templates, SMS campaigns, replies, stuck sends, opt-outs, and results. Click the header to collapse or expand the group — the rail remembers your layout.",
   },
   "nav.rail.group-admin": {
     title: "Admin area",
-    body: "Administrator-only screens for running the console itself: sign-in setup, user access, automated checkups, logs, and infrastructure.",
+    body: "Administrator-only screens for running the console itself: sign-in setup, user access, automated checkups, logs, and infrastructure. Click the header to collapse or expand the group — the rail remembers your layout.",
   },
   "nav.rail.group-project": {
     title: "Project",
-    body: "Settings that apply to the whole project rather than any single tool.",
+    body: "Settings that apply to the whole project rather than any single tool. Click the header to collapse or expand the group — the rail remembers your layout.",
   },
 
   // ── Nav rail: items ───────────────────────────────────────────────────────
