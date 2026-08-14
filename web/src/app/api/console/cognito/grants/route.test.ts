@@ -312,3 +312,68 @@ describe("POST /api/console/cognito/grants — applied changes", () => {
     });
   });
 });
+
+describe("Prime Admin protection", () => {
+  const PRIME = {
+    username: "GoogleSAML_jbutts@nsightcare.com",
+    email: "jbutts@nsightcare.com",
+    status: "EXTERNAL_PROVIDER",
+    created: "2026-08-12T00:00:00.000Z",
+    enabled: true,
+  };
+  let primeToken: string;
+
+  beforeAll(async () => {
+    primeToken = await signAlbToken({
+      email: "jbutts@nsightcare.com",
+      name: "Justin",
+      "cognito:groups": ["marketing", "marketinghub-admins"],
+    });
+  });
+
+  beforeEach(() => {
+    h.listPoolUsers.mockResolvedValue([AMY, BOB, PRIME]);
+  });
+
+  test("403 when ANY other admin touches the Prime Admin — both actions, mutation never sent", async () => {
+    for (const action of ["add", "remove"] as const) {
+      const res = await post({
+        username: PRIME.username,
+        group: "mh-section-intel",
+        action,
+      });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { error: string };
+      expect(body.error).toMatch(/prime admin/i);
+    }
+    expect(h.addToGroup).not.toHaveBeenCalled();
+    expect(h.removeFromGroup).not.toHaveBeenCalled();
+  });
+
+  test("even the Prime Admin's GOD-MODE is untouchable by others (not just sections)", async () => {
+    const res = await post({
+      username: PRIME.username,
+      group: "marketinghub-admins",
+      action: "remove",
+    });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error).toMatch(/prime admin/i);
+    expect(h.removeFromGroup).not.toHaveBeenCalled();
+  });
+
+  test("the Prime Admin may still modify their own account (sections; own god-mode stays self-guarded)", async () => {
+    const ok = await post(
+      { username: PRIME.username, group: "mh-section-intel", action: "add" },
+      { "x-amzn-oidc-data": primeToken },
+    );
+    expect(ok.status).toBe(200);
+    expect(h.addToGroup).toHaveBeenCalledWith(PRIME.username, "mh-section-intel");
+
+    const guarded = await post(
+      { username: PRIME.username, group: "marketinghub-admins", action: "remove" },
+      { "x-amzn-oidc-data": primeToken },
+    );
+    expect(guarded.status).toBe(403);
+    expect((await guarded.json()).error).toMatch(/own god-mode/i);
+  });
+});

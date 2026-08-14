@@ -142,6 +142,10 @@ export const authAdmin: GuideModule = {
     title: "Full admin access",
     body: "God-mode grants every page, including this one — treat it like a master key. You cannot change your own chip (so no one locks themselves out), and changes apply after the person signs out and back in.",
   },
+  "auth-admin.roles.prime-admin": {
+    title: "Prime Admin",
+    body: "The account that owns this deployment. Nobody else can change its roles — not even god-mode admins. Its chips are read-only for everyone but the Prime Admin.",
+  },
   "auth-admin.roles.unreachable": {
     title: "Directory did not answer",
     body: "The Cognito user directory could not be reached, so access can be neither read nor changed right now. Try again shortly — nothing was modified.",

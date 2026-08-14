@@ -10,6 +10,7 @@ import {
   ADMIN_GROUP,
   ALL_ASSIGNABLE_GROUPS,
   MARKETING_GROUP,
+  PRIME_ADMIN_EMAIL,
   SECTIONS,
 } from "@/lib/authGroups";
 import type { RoleUser } from "@/app/api/console/cognito/users/route";
@@ -165,6 +166,11 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
       header: "access",
       render: (row) => {
         const self = row.email.toLowerCase() === currentEmail.toLowerCase();
+        // The Prime Admin's row is read-only for everyone else (server-
+        // enforced in the grants API; this mirrors it honestly in the UI).
+        const primeLocked =
+          row.email.toLowerCase() === PRIME_ADMIN_EMAIL &&
+          currentEmail.toLowerCase() !== PRIME_ADMIN_EMAIL;
         const extras = row.groups.filter(
           (g) => !ALL_ASSIGNABLE_GROUPS.includes(g),
         );
@@ -177,11 +183,16 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
               alignItems: "center",
             }}
           >
+            {row.email.toLowerCase() === PRIME_ADMIN_EMAIL ? (
+              <Guide id="auth-admin.roles.prime-admin">
+                <Badge tone="var(--accent)">Prime Admin</Badge>
+              </Guide>
+            ) : null}
             {TOGGLES.map(({ group, label }) => {
               const member = row.groups.includes(group);
               // Own-god-mode UX (server-enforced too): no self-demotion
               // (lockout) and no self-grant (escalation guard).
-              const locked = self && group === ADMIN_GROUP;
+              const locked = (self && group === ADMIN_GROUP) || primeLocked;
               const chip = (
                 <button
                   type="button"
@@ -189,9 +200,11 @@ export function UsersRoles({ currentEmail }: { currentEmail: string }) {
                   aria-pressed={member}
                   disabled={locked || pending.has(`${row.username}:${group}`)}
                   title={
-                    locked
-                      ? `You can't ${member ? "remove" : "grant"} your own god-mode.`
-                      : group
+                    primeLocked
+                      ? "The Prime Admin's account can only be changed by the Prime Admin."
+                      : locked
+                        ? `You can't ${member ? "remove" : "grant"} your own god-mode.`
+                        : group
                   }
                   onClick={() => void toggle(row, group, member)}
                 >

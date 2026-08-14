@@ -12,6 +12,14 @@ import type { AppUser } from "./auth";
 export const MARKETING_GROUP = "marketing";
 
 /**
+ * The Prime Admin (2026-08-14): the operator who owns the deployment. This
+ * account's group memberships are immutable to EVERYONE else — god-mode
+ * grants role management, but never over the Prime Admin. Server-enforced in
+ * the grants API; the roles UI mirrors it read-only. Lowercase for compares.
+ */
+export const PRIME_ADMIN_EMAIL = "jbutts@nsightcare.com";
+
+/**
  * First-sign-in auto-provisioning (2026-08-14): an ALB-verified user from
  * this Google Workspace domain who holds NO registry group gets the base
  * tier (MARKETING_GROUP) granted automatically by the /login landing — the

@@ -1,7 +1,11 @@
 import { z } from "zod";
 
 import { AuthError, type AppUser } from "@/lib/auth";
-import { ADMIN_GROUP, ALL_ASSIGNABLE_GROUPS } from "@/lib/authGroups";
+import {
+  ADMIN_GROUP,
+  ALL_ASSIGNABLE_GROUPS,
+  PRIME_ADMIN_EMAIL,
+} from "@/lib/authGroups";
 import { requireAdminApi } from "@/lib/requireAdminUser";
 import { addToGroup, listPoolUsers, removeFromGroup } from "@/lib/cognitoAdmin";
 
@@ -80,6 +84,30 @@ export async function POST(req: Request): Promise<Response> {
       return Response.json(
         { error: "No user with that username" },
         { status: 404 },
+      );
+    }
+
+    // The Prime Admin's account is immutable to everyone else (grants AND
+    // revokes) — god-mode covers role management, never the operator who
+    // owns the deployment. Server-enforced, whatever the UI disabled; every
+    // attempt is audit-logged loud.
+    if (
+      target.email.toLowerCase() === PRIME_ADMIN_EMAIL &&
+      actor.email.toLowerCase() !== PRIME_ADMIN_EMAIL
+    ) {
+      console.warn(
+        JSON.stringify({
+          at: new Date().toISOString(),
+          msg: "prime-admin mutation BLOCKED",
+          actor: actor.email,
+          target: target.email,
+          group,
+          action,
+        }),
+      );
+      return Response.json(
+        { error: "The Prime Admin's account can only be changed by the Prime Admin." },
+        { status: 403 },
       );
     }
 
