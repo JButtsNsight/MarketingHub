@@ -41,6 +41,7 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     expect(marketing!.items.map((i) => [i.label, i.href])).toEqual([
       ["Templates", "/templates"],
       ["SMS Campaigns", "/campaigns"],
+      ["Email Campaigns", "/email"],
       ["Inbox", "/inbox"],
       ["Review queue", "/review"],
       ["Suppressions", "/suppressions"],

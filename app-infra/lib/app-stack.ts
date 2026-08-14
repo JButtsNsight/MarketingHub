@@ -410,6 +410,39 @@ export class AppStack extends Stack {
       );
     }
 
+    // --- Email Campaign Center (context-flagged, default OFF): EmailBison ----
+    // When the OPTIONAL emailbisonSecretArn context is set, the APP container
+    // gets plaintext env EMAILBISON_SECRET_ARN (an ARN, not secret material)
+    // and the APP TASK ROLE gains runtime read+WRITE on exactly that secret:
+    // unlike the start-time secrets above, the connect UI stores the pasted
+    // API token via PutSecretValue at run time, so linking EmailBison needs no
+    // deploy or restart. Writes to a CMK-encrypted secret need GenerateDataKey
+    // alongside Decrypt on the shared CMK (kms:ViaService delegation — same
+    // rationale as the execution-role grant above). Context ABSENT (default)
+    // ⇒ this block emits NOTHING and the synthesized template is unchanged.
+    const emailbisonSecretArn = this.node.tryGetContext('emailbisonSecretArn') as
+      | string
+      | undefined;
+    if (emailbisonSecretArn) {
+      appContainer.addEnvironment('EMAILBISON_SECRET_ARN', emailbisonSecretArn);
+      taskDef.addToTaskRolePolicy(
+        new iam.PolicyStatement({
+          actions: [
+            'secretsmanager:GetSecretValue',
+            'secretsmanager:PutSecretValue',
+            'secretsmanager:DescribeSecret',
+          ],
+          resources: [emailbisonSecretArn],
+        }),
+      );
+      taskDef.addToTaskRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['kms:Decrypt', 'kms:GenerateDataKey'],
+          resources: [supabaseSecretsKmsKeyArn],
+        }),
+      );
+    }
+
     const service = new ecs.FargateService(this, 'AppService', {
       cluster,
       taskDefinition: taskDef,

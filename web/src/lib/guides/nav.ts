@@ -95,6 +95,10 @@ export const nav: GuideModule = {
     title: "SMS campaigns",
     body: "Text-message sends to a chosen list of contacts. Create campaigns, schedule when they go out, and track delivery per recipient.",
   },
+  "nav.rail.email-campaigns": {
+    title: "Email Campaigns",
+    body: "The EmailBison dashboard: every email campaign with sends, opens, replies, and bounces. An admin links the EmailBison account once; everyone reads it here.",
+  },
   "nav.rail.inbox": {
     title: "Reply inbox",
     body: "Every text reply people send back, newest first, matched to the campaign that prompted it. Check here for messages still needing a human.",

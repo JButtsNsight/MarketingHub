@@ -1730,3 +1730,40 @@ Marketing surfaces (+ Reports); `mh-section-platform` = all console
 surfaces + APIs; `mh-section-intel` = intel; `marketinghub-admins` =
 god-mode, implies all. A marketing-only user has NO console/intel access
 until granted sections — that is the intended Wave D posture.
+
+## 18. Email Campaign Center — EmailBison (2026-08-14)
+
+EmailBison backs all email marketing. The console's `/email` page (Marketing
+nav, marketing tier) is a read dashboard over the EmailBison API plus an
+admin-only connect flow. The design goal is plug-and-play: linking the account
+is a UI paste, never a deploy.
+
+**Wiring.** One secret, `marketinghub/emailbison` (shared service-role/sms
+CMK), JSON `{base_url, api_key, workspace_name}`. The app container carries
+env `EMAILBISON_SECRET_ARN` (the ARN only) and the APP TASK ROLE has
+`GetSecretValue`/`PutSecretValue`/`DescribeSecret` on exactly that secret +
+`Decrypt`/`GenerateDataKey` on the shared CMK (`emailbisonSecretArn` context,
+`app-infra/lib/app-stack.ts`; test `app-infra/test/emailbison.test.ts`). The
+worker never sees it. deploy-prod.sh derives the context from the live env;
+first activation passes `EMAILBISON_SECRET_ARN=<arn>` as an operator env once.
+
+**Connecting (the Tony flow).** In EmailBison: Settings → Developer API → New
+API Token (an api-user token — workspace-scoped). In MarketingHub: Email
+Campaigns → paste the instance URL (`dedi.emailbison.com` for the shared
+instance) + token → Connect. The server validates against `GET /api/campaigns`
+live before storing (a bad token never persists), captures the workspace name,
+and the dashboard loads immediately. Disconnect (admin-only) blanks the secret.
+Rotation = paste a new token over the old one; the 60s connection cache means
+a rotated key is picked up within a minute.
+
+**Reading it.** `web/src/lib/email/bison.ts` is the only EmailBison client
+(Bearer auth, 10s deadline, Laravel-paginated `GET /api/campaigns` verified
+against the instance OpenAPI spec at `/api/reference.openapi`). Routes:
+`/api/email/connection` (GET marketing / POST+DELETE admin, fresh live-group
+check) and `/api/email/campaigns` (GET marketing). The API key never reaches
+the browser. Connect/disconnect log structured `emailbison.*` events.
+
+**Degraded states are honest and cheap:** no env → "not provisioned" (deploy
+missing the context); blank secret → connect card; upstream 401 → "EmailBison
+rejected the API token" (rotate in place). Nothing here retries or queues —
+the dashboard is read-only; sends live entirely in EmailBison.

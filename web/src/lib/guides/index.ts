@@ -18,6 +18,7 @@ import { campaigns } from "./campaigns";
 import { engagement } from "./engagement";
 import { intel } from "./intel";
 import { apiDocs } from "./apiDocs";
+import { email } from "./email";
 
 const MODULES: Record<string, GuideModule> = {
   nav,
@@ -33,6 +34,7 @@ const MODULES: Record<string, GuideModule> = {
   engagement,
   intel,
   apiDocs,
+  email,
 };
 
 const merged: Record<string, GuideEntry> = {};

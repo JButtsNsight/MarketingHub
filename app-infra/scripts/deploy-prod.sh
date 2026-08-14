@@ -316,6 +316,28 @@ else
   echo ">> no gateway env live — headlessClaude* context omitted (intel stays keyword-only)"
 fi
 
+# EmailBison connect secret: the app reads/writes it at RUN time (the connect
+# UI stores the pasted token — no deploy), so the only wiring is the ARN env +
+# task-role grants. Context passed iff live already carries the env; FIRST
+# activation passes operator env EMAILBISON_SECRET_ARN=<arn> once, then live
+# state carries it forward.
+EB_ARN_LIVE=$(jq -r '[.environment[]? | select(.name=="EMAILBISON_SECRET_ARN") | .value][0] // ""' "$WORK/live-app-container.json")
+EB_ARN="${EMAILBISON_SECRET_ARN:-$EB_ARN_LIVE}"
+if [ -n "$EB_ARN" ]; then
+  EB_KMS_ID=$(aws secretsmanager describe-secret --secret-id "$EB_ARN" \
+    --region "$REGION" --query KmsKeyId --output text) \
+    || fail "emailbison secret '$EB_ARN' not found"
+  EB_KMS_ARN=$(aws kms describe-key --key-id "$EB_KMS_ID" --region "$REGION" \
+    --query KeyMetadata.Arn --output text)
+  # app-stack.ts grants Decrypt/GenerateDataKey on the SHARED CMK only — a
+  # secret under any other key would fail reads at run time, so abort here.
+  [ "$EB_KMS_ARN" = "$SRS_KMS_ARN" ] \
+    || fail "emailbison secret CMK ($EB_KMS_ARN) != service-role/sms CMK ($SRS_KMS_ARN) — re-provision the secret under the shared CMK first"
+  echo ">> EmailBison secret wired -> context passed ($EB_ARN)"
+else
+  echo ">> no EmailBison env live — emailbisonSecretArn context omitted (Email Campaign Center shows 'not provisioned')"
+fi
+
 # W8 Bedrock embeddings: flag ON iff live env says so (permanently skipped as
 # of 2026-08-10, so this normally stays off — posture-preserving either way).
 LIVE_CI_PROVIDER=$(jq -r '[.environment[]? | select(.name=="CI_EMBED_PROVIDER") | .value][0] // ""' "$WORK/live-app-container.json")
@@ -378,6 +400,9 @@ if [ -n "$AC_ARN" ]; then
 fi
 if [ -n "$GW_ARN" ]; then
   CDK_CTX+=( -c headlessClaudeUrl="$GW_URL" -c headlessClaudeApiKeySecretArn="$GW_ARN" )
+fi
+if [ -n "$EB_ARN" ]; then
+  CDK_CTX+=( -c emailbisonSecretArn="$EB_ARN" )
 fi
 if [ "$LIVE_CI_PROVIDER" = "bedrock" ]; then
   CDK_CTX+=( -c enableBedrockEmbeddings=true )

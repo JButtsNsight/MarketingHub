@@ -15,6 +15,7 @@ export type IconKey =
   | "storage"
   | "templates"
   | "campaigns"
+  | "email"
   | "inbox"
   | "review"
   | "suppressions"
@@ -148,6 +149,13 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: "campaigns",
         marketing: true,
         guideId: "nav.rail.sms-campaigns",
+      },
+      {
+        href: "/email",
+        label: "Email Campaigns",
+        icon: "email",
+        marketing: true,
+        guideId: "nav.rail.email-campaigns",
       },
       {
         href: "/inbox",
@@ -337,6 +345,12 @@ const ICONS: Record<IconKey, ReactNode> = {
     <>
       <path d="M21 11.5a8 8 0 0 1-8.5 8L7 21l1.2-3.6A8 8 0 1 1 21 11.5z" />
       <path d="M8.5 10h7M8.5 13.5h4.5" />
+    </>
+  ),
+  email: (
+    <>
+      <rect x="3" y="5" width="18" height="14" rx="2" />
+      <path d="m3 7.5 9 6 9-6" />
     </>
   ),
   inbox: (
