@@ -2,10 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   BisonApiError,
   bustConnectionCache,
+  createCampaign,
   isProvisioned,
   listCampaigns,
+  listReplies,
   normalizeBaseUrl,
+  pauseCampaign,
+  pushLeads,
   readConnection,
+  resumeCampaign,
   validateConnection,
   writeConnection,
   type SecretsInvoker,
@@ -263,5 +268,254 @@ describe("validateConnection", () => {
     await expect(validateConnection(CONN, fetchImpl)).rejects.toBeInstanceOf(
       BisonApiError,
     );
+  });
+});
+
+describe("pauseCampaign / resumeCampaign", () => {
+  it("POSTs the campaign action endpoints, body-less, and tolerates an empty 200", async () => {
+    const fetchImpl = vi.fn(async () => new Response(null, { status: 200 }));
+    await pauseCampaign(CONN, 7, fetchImpl);
+    await resumeCampaign(CONN, 7, fetchImpl);
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    expect(calls[0][0]).toBe("https://dedi.emailbison.com/api/campaigns/7/pause");
+    expect(calls[1][0]).toBe("https://dedi.emailbison.com/api/campaigns/7/resume");
+    for (const [, init] of calls) {
+      expect(init.method).toBe("POST");
+      expect(init.body).toBeUndefined();
+      expect((init.headers as Record<string, string>).Authorization).toBe(
+        "Bearer 9|abc",
+      );
+    }
+  });
+
+  it("maps 401 to a token-rejected BisonApiError", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 401 }));
+    await expect(pauseCampaign(CONN, 7, fetchImpl)).rejects.toThrow(
+      /rejected the API token/,
+    );
+    await expect(resumeCampaign(CONN, 7, fetchImpl)).rejects.toBeInstanceOf(
+      BisonApiError,
+    );
+  });
+});
+
+describe("createCampaign", () => {
+  it("POSTs {name, type:outbound} and maps the created campaign", async () => {
+    const fetchImpl = vi.fn(async () =>
+      okJson({ data: { id: 12, name: "September push", status: "Draft" } }),
+    );
+    const created = await createCampaign(CONN, "September push", fetchImpl);
+    const [url, init] = fetchImpl.mock.calls[0] as unknown as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("https://dedi.emailbison.com/api/campaigns");
+    expect(init.method).toBe("POST");
+    expect((init.headers as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
+    expect(JSON.parse(init.body as string)).toEqual({
+      name: "September push",
+      type: "outbound",
+    });
+    expect(created).toEqual({ id: 12, name: "September push", status: "Draft" });
+  });
+
+  it("tolerates an unwrapped campaign object", async () => {
+    const fetchImpl = vi.fn(async () =>
+      okJson({ id: 13, name: "Q4 revive", status: "Draft" }),
+    );
+    expect(await createCampaign(CONN, "Q4 revive", fetchImpl)).toEqual({
+      id: 13,
+      name: "Q4 revive",
+      status: "Draft",
+    });
+  });
+});
+
+/** One replies page as the real API shapes it (verified via OpenAPI spec). */
+const REPLIES_BODY = {
+  data: [
+    {
+      id: 31,
+      campaign_id: 7,
+      from_name: "Dana Reyes",
+      from_email_address: "dana@clinic.example.com",
+      subject: "Re: August outreach",
+      text_body: "Sounds good — send times?",
+      html_body: "<p>Sounds good — send times?</p>",
+      date_received: "2026-08-13T15:04:05.000000Z",
+      folder: "inbox",
+      interested: true,
+      automated_reply: false,
+      read: false,
+    },
+  ],
+  meta: { current_page: 2, last_page: 3, total: 41, per_page: 15 },
+};
+
+describe("listReplies", () => {
+  it("maps the real response shape, passes filters, and carries meta", async () => {
+    const fetchImpl = vi.fn(async () => okJson(REPLIES_BODY));
+    const { replies, meta } = await listReplies(CONN, {
+      folder: "inbox",
+      status: "interested",
+      page: 2,
+      fetchImpl,
+    });
+    const [url] = fetchImpl.mock.calls[0] as unknown as [string];
+    expect(url).toBe(
+      "https://dedi.emailbison.com/api/replies?page=2&folder=inbox&status=interested",
+    );
+    expect(replies).toEqual([
+      {
+        id: 31,
+        campaignId: 7,
+        fromName: "Dana Reyes",
+        fromEmail: "dana@clinic.example.com",
+        subject: "Re: August outreach",
+        body: "Sounds good — send times?",
+        dateReceived: "2026-08-13T15:04:05.000000Z",
+        folder: "inbox",
+        interested: true,
+        read: false,
+      },
+    ]);
+    expect(meta).toEqual({ currentPage: 2, lastPage: 3, total: 41 });
+  });
+
+  it("strips html_body to plain text when text_body is absent", async () => {
+    const fetchImpl = vi.fn(async () =>
+      okJson({
+        data: [
+          {
+            id: 32,
+            campaign_id: 7,
+            html_body:
+              "<html><head><style>p{color:red}</style></head><body>" +
+              "<p>Hi <b>Justin</b>,</p><p>Let&#39;s talk &amp; compare notes.</p>" +
+              "<script>alert(1)</script></body></html>",
+            folder: "inbox",
+          },
+        ],
+        meta: { current_page: 1, last_page: 1, total: 1 },
+      }),
+    );
+    const { replies } = await listReplies(CONN, { fetchImpl });
+    expect(replies[0].body).toBe("Hi Justin,\nLet's talk & compare notes.");
+    expect(replies[0].body).not.toMatch(/[<>]/);
+    // Absent fields coerce, never crash.
+    expect(replies[0].subject).toBe("");
+    expect(replies[0].dateReceived).toBeNull();
+    expect(replies[0].interested).toBe(false);
+  });
+
+  it("maps 401 to a token-rejected BisonApiError", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 401 }));
+    await expect(listReplies(CONN, { fetchImpl })).rejects.toThrow(
+      /rejected the API token/,
+    );
+  });
+});
+
+describe("pushLeads", () => {
+  it("attach failure after successful creates reports partial state honestly", async () => {
+    let nextId = 1;
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.endsWith("/api/leads/create-or-update/multiple")) {
+        return okJson({ data: [{ id: nextId++ }, { id: nextId++ }] });
+      }
+      return new Response("boom", { status: 500 }); // attach-leads dies
+    });
+    const err = await (
+      await import("./bison")
+    )
+      .pushLeads(CONN, 7, [{ email: "a@ex.com" }, { email: "b@ex.com" }], fetchImpl)
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(err).toBeInstanceOf(BisonApiError);
+    expect((err as Error).message).toMatch(
+      /2 leads were saved to EmailBison but attaching them to the campaign failed/,
+    );
+    expect((err as Error).message).toMatch(/retrying the push is safe/);
+  });
+
+
+  /** Fake instance: upserts echo ids in order, attach acks with a message. */
+  function leadsFetch() {
+    let nextId = 1000;
+    return vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith("/api/leads/create-or-update/multiple")) {
+        const body = JSON.parse(init.body as string) as {
+          data: { email: string }[];
+        };
+        return okJson({
+          data: body.data.map((l) => ({ id: nextId++, email: l.email })),
+        });
+      }
+      return okJson({ data: { success: true, message: "Leads attached" } });
+    });
+  }
+
+  it("batches creates in 100s and attaches all ids in one call", async () => {
+    const leads = Array.from({ length: 250 }, (_, i) => ({
+      email: `lead${i}@example.com`,
+      firstName: `F${i}`,
+    }));
+    const fetchImpl = leadsFetch();
+    const out = await pushLeads(CONN, 7, leads, fetchImpl);
+    expect(out).toEqual({ attached: 250, skipped: 0, message: "Leads attached" });
+    // 3 sequential creates (100/100/50) + exactly one attach.
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
+    const createSizes = calls
+      .filter(([u]) => u.includes("create-or-update"))
+      .map(([, i]) => (JSON.parse(i.body as string) as { data: unknown[] }).data.length);
+    expect(createSizes).toEqual([100, 100, 50]);
+    expect(calls[3][0]).toBe(
+      "https://dedi.emailbison.com/api/campaigns/7/leads/attach-leads",
+    );
+    const attachBody = JSON.parse(calls[3][1].body as string) as {
+      lead_ids: number[];
+    };
+    expect(attachBody.lead_ids).toHaveLength(250);
+    expect(attachBody.lead_ids[0]).toBe(1000);
+    expect(attachBody.lead_ids[249]).toBe(1249);
+  });
+
+  it("skips malformed emails, reports the count, and snake_cases names", async () => {
+    const fetchImpl = leadsFetch();
+    const out = await pushLeads(
+      CONN,
+      7,
+      [
+        { email: "good@example.com", lastName: "Reyes" },
+        { email: "no-at-sign" },
+        { email: "spaces in@bad.com" },
+        { email: "@nodomain" },
+      ],
+      fetchImpl,
+    );
+    expect(out.attached).toBe(1);
+    expect(out.skipped).toBe(3);
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      data: [{ email: "good@example.com", last_name: "Reyes" }],
+    });
+  });
+
+  it("rejects an empty batch and short-circuits when nothing is valid", async () => {
+    const fetchImpl = vi.fn(async () => okJson({}));
+    await expect(pushLeads(CONN, 7, [], fetchImpl)).rejects.toThrow(
+      /at least one lead/,
+    );
+    expect(await pushLeads(CONN, 7, [{ email: "nope" }], fetchImpl)).toEqual({
+      attached: 0,
+      skipped: 1,
+      message: "no valid email addresses",
+    });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

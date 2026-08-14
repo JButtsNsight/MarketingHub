@@ -101,6 +101,9 @@ export interface ContactListMember {
   first_name: string;
   phone_e164: string | null;
   raw_phone: string;
+  /** Verbatim-trimmed from the sheet's email header; '' when absent. Feeds
+   *  the EmailBison push only — `reason` still classifies PHONE validity. */
+  email: string;
   reason: "ok" | "invalid" | "duplicate";
   /** Recipient zone, verbatim from the sheet; null = campaign-zone fallback. */
   timezone: string | null;

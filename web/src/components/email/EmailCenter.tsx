@@ -1,11 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { Surface } from "@/components/Surface";
 import { Badge } from "@/components/ui/Badge";
 import { DataTable, type Column } from "@/components/ui/DataTable";
 import { useConfirm } from "@/components/ui/AlertDialog";
 import { Guide } from "@/components/guide/Guide";
+import { NewCampaignDialog } from "./NewCampaignDialog";
+import { PushContactsDialog } from "./PushContactsDialog";
 import {
   BISON_STATUS_FILTERS,
   type BisonCampaign,
@@ -24,6 +33,12 @@ interface ConnectionStatus {
   baseUrl?: string;
   workspaceName?: string | null;
 }
+
+const LINK_BTN: CSSProperties = {
+  background: "none",
+  border: "none",
+  cursor: "pointer",
+};
 
 const STATUS_TONE: Record<string, string | undefined> = {
   active: "var(--ok)",
@@ -80,6 +95,17 @@ export function EmailCenter({ admin }: { admin: boolean }) {
   const [tokenInput, setTokenInput] = useState("");
   const [connectState, setConnectState] = useState<"idle" | "busy">("idle");
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [rowBusy, setRowBusy] = useState<{
+    id: number;
+    action: "pause" | "resume";
+  } | null>(null);
+  const [actionError, setActionError] = useState<{
+    message: string;
+    retry: () => void;
+  } | null>(null);
+  const [notice, setNotice] = useState<ReactNode>(null);
+  const [pushFor, setPushFor] = useState<BisonCampaign | null>(null);
+  const [creating, setCreating] = useState(false);
   const { confirm, dialog } = useConfirm();
 
   const loadStatus = useCallback(async () => {
@@ -95,7 +121,11 @@ export function EmailCenter({ admin }: { admin: boolean }) {
     }
   }, []);
 
+  // Monotonic fetch token: a slow response for an ABANDONED filter/page must
+  // never overwrite the view the user has since navigated to.
+  const fetchSeq = useRef(0);
   const loadCampaigns = useCallback(async () => {
+    const seq = ++fetchSeq.current;
     setListState("loading");
     setListError(null);
     try {
@@ -108,15 +138,23 @@ export function EmailCenter({ admin }: { admin: boolean }) {
         meta?: BisonPage;
         error?: string;
       };
+      if (seq !== fetchSeq.current) return; // stale — a newer load owns the view
       if (!res.ok) throw new Error(body.error ?? `status ${res.status}`);
       setCampaigns(body.campaigns ?? []);
       setMeta(body.meta ?? null);
       setListState("idle");
     } catch (err) {
+      if (seq !== fetchSeq.current) return;
       setListState("error");
       setListError(err instanceof Error ? err.message : "load failed");
     }
   }, [filter, page]);
+  // Post-mutation refetches go through the LATEST loader — a mutation started
+  // before a filter/page change must not refetch (and race) the old view.
+  const loadCampaignsRef = useRef(loadCampaigns);
+  useEffect(() => {
+    loadCampaignsRef.current = loadCampaigns;
+  }, [loadCampaigns]);
 
   useEffect(() => {
     void loadStatus();
@@ -143,6 +181,41 @@ export function EmailCenter({ admin }: { admin: boolean }) {
       setConnectError(err instanceof Error ? err.message : "connect failed");
     } finally {
       setConnectState("idle");
+    }
+  }
+
+  async function runAction(c: BisonCampaign, action: "pause" | "resume") {
+    // Pause is safe to fire immediately; resume restarts real sending.
+    if (action === "resume") {
+      const ok = await confirm({
+        title: "Resume sending?",
+        message: `“${c.name}” starts sending again as soon as EmailBison picks it up.`,
+        confirmLabel: "Resume",
+      });
+      if (!ok) return;
+    }
+    setActionError(null);
+    setNotice(null);
+    setRowBusy({ id: c.id, action });
+    try {
+      const res = await fetch(`/api/email/campaigns/${c.id}/action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        error?: string;
+      } | null;
+      if (!res.ok) throw new Error(body?.error ?? `status ${res.status}`);
+      // No optimistic state: the table only says what a refetch confirmed.
+      await loadCampaignsRef.current();
+    } catch (err) {
+      setActionError({
+        message: err instanceof Error ? err.message : `${action} failed`,
+        retry: () => void runAction(c, action),
+      });
+    } finally {
+      setRowBusy(null);
     }
   }
 
@@ -225,9 +298,100 @@ export function EmailCenter({ admin }: { admin: boolean }) {
   }
 
   const host = status.baseUrl?.replace(/^https:\/\//, "") ?? "";
+  const baseUrl = status.baseUrl;
+  // Mutations are serialized: while one is in flight (or the table is
+  // refetching) every mutating row control disables — no racing actions.
+  const actionsDisabled = rowBusy !== null || listState === "loading";
+  const columns: Column<BisonCampaign>[] = [
+    ...COLUMNS,
+    {
+      key: "actions",
+      header: "Actions",
+      render: (c) => {
+        const s = c.status.toLowerCase();
+        const busyHere = rowBusy?.id === c.id;
+        return (
+          <span style={{ display: "inline-flex", gap: 6 }}>
+            {s === "active" || s === "launching" ? (
+              <Guide id="email.center.pause">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={actionsDisabled}
+                  onClick={() => void runAction(c, "pause")}
+                >
+                  {busyHere && rowBusy?.action === "pause"
+                    ? "Pausing…"
+                    : "Pause"}
+                </button>
+              </Guide>
+            ) : null}
+            {s === "paused" ? (
+              <Guide id="email.center.resume">
+                <button
+                  type="button"
+                  className="type-chip"
+                  disabled={actionsDisabled}
+                  onClick={() => void runAction(c, "resume")}
+                >
+                  {busyHere && rowBusy?.action === "resume"
+                    ? "Resuming…"
+                    : "Resume"}
+                </button>
+              </Guide>
+            ) : null}
+            <Guide id="email.center.push">
+              <button
+                type="button"
+                className="type-chip"
+                disabled={actionsDisabled}
+                onClick={() => {
+                  setNotice(null);
+                  setActionError(null);
+                  setPushFor(c);
+                }}
+              >
+                Push contacts
+              </button>
+            </Guide>
+          </span>
+        );
+      },
+    },
+  ];
   return (
     <div>
       {dialog}
+      {pushFor ? (
+        <PushContactsDialog
+          campaign={{ id: pushFor.id, name: pushFor.name }}
+          onClose={() => setPushFor(null)}
+          onPushed={(r) => {
+            setPushFor(null);
+            setNotice(
+              `${r.attached} attached · ${r.skipped} skipped — leads can take ~5 minutes to appear on active campaigns`,
+            );
+            void loadCampaignsRef.current();
+          }}
+        />
+      ) : null}
+      {creating ? (
+        <NewCampaignDialog
+          onClose={() => setCreating(false)}
+          onCreated={() => {
+            setCreating(false);
+            setNotice(
+              <>
+                Draft created — finish the sequence in{" "}
+                <a href={baseUrl} target="_blank" rel="noreferrer">
+                  EmailBison ↗
+                </a>
+              </>,
+            );
+            void loadCampaignsRef.current();
+          }}
+        />
+      ) : null}
       <div className="page-head">
         <span className="field-note">
           Connected to <span className="mono">{host}</span>
@@ -255,8 +419,21 @@ export function EmailCenter({ admin }: { admin: boolean }) {
           </Guide>
           <Guide id="email.center.open">
             <a href={status.baseUrl} target="_blank" rel="noreferrer">
-              Open EmailBison ↗
+              Open in EmailBison ↗
             </a>
+          </Guide>
+          <Guide id="email.center.new-campaign">
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => {
+                setNotice(null);
+                setActionError(null);
+                setCreating(true);
+              }}
+            >
+              New campaign
+            </button>
           </Guide>
           {admin ? (
             <Guide id="email.center.disconnect">
@@ -272,32 +449,48 @@ export function EmailCenter({ admin }: { admin: boolean }) {
           ) : null}
         </span>
       </div>
+      {notice ? (
+        <p className="field-note" role="status">
+          {notice}
+        </p>
+      ) : null}
+      {actionError ? (
+        <p className="form-error" role="alert">
+          {actionError.message}{" "}
+          <button
+            type="button"
+            className="user-menu-signout"
+            style={LINK_BTN}
+            onClick={actionError.retry}
+          >
+            Retry
+          </button>
+        </p>
+      ) : null}
+      {/* Load failures report inline; already-loaded rows stay visible. */}
       {listState === "error" ? (
-        <p className="form-error">
+        <p className="form-error" role="alert">
           {listError}{" "}
           <button
             type="button"
             className="user-menu-signout"
-            style={{ background: "none", border: "none", cursor: "pointer" }}
+            style={LINK_BTN}
             onClick={() => void loadCampaigns()}
           >
             Retry
           </button>
         </p>
-      ) : (
-        <Guide id="email.center.table">
-          <div>
-            <DataTable
-              columns={COLUMNS}
-              rows={campaigns}
-              getRowKey={(c) => c.uuid || String(c.id)}
-              empty={
-                listState === "loading" ? "Loading…" : "No campaigns yet."
-              }
-            />
-          </div>
-        </Guide>
-      )}
+      ) : null}
+      <Guide id="email.center.table">
+        <div>
+          <DataTable
+            columns={columns}
+            rows={campaigns}
+            getRowKey={(c) => c.uuid || String(c.id)}
+            empty={listState === "loading" ? "Loading…" : "No campaigns yet."}
+          />
+        </div>
+      </Guide>
       {meta && meta.lastPage > 1 ? (
         <div className="page-head" style={{ marginTop: 10 }}>
           <span className="count mono">

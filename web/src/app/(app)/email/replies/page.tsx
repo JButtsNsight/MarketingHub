@@ -1,28 +1,27 @@
 import { requireMarketingUser } from "@/lib/requireMarketingUser";
-import { isAdmin } from "@/lib/authGroups";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Tabs } from "@/components/ui/Tabs";
 import { Guide } from "@/components/guide/Guide";
-import { EmailCenter } from "@/components/email/EmailCenter";
+import { RepliesList } from "@/components/email/RepliesList";
 import { EMAIL_TABS } from "@/components/email/tabs";
 
 // Reads request-time identity + the live EmailBison connection; never prerender.
 export const dynamic = "force-dynamic";
 
 export const metadata = {
-  title: "Email Campaigns · MarketingHub",
+  title: "Email Replies · MarketingHub",
 };
 
-/** Email Campaign Center — EmailBison-backed, marketing tier. */
-export default async function EmailPage() {
-  const user = await requireMarketingUser();
+/** Master Inbox — EmailBison's shared reply inbox, read-only, marketing tier. */
+export default async function EmailRepliesPage() {
+  await requireMarketingUser();
   return (
     <div>
-      <PageHeader title="Email Campaigns" />
+      <PageHeader title="Master Inbox" />
       <Guide id="email.center.tabs">
         <Tabs items={EMAIL_TABS} />
       </Guide>
-      <EmailCenter admin={isAdmin(user)} />
+      <RepliesList />
     </div>
   );
 }

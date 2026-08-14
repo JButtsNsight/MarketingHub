@@ -207,6 +207,94 @@ describe("createCsvList — member timezone stored VERBATIM", () => {
   });
 });
 
+describe("createCsvList — member email persisted", () => {
+  beforeEach(() => {
+    h.client = null;
+  });
+
+  test("stores the email verbatim; absent/blank → '' (column NOT NULL DEFAULT '')", async () => {
+    const { client, calls } = buildClient();
+    h.client = client;
+
+    await createCsvList(
+      "August recall",
+      [
+        okContact({ email: "jane@example.com", emailValid: true }),
+        // Junk email is stored verbatim too — validity is parse-time only.
+        okContact({
+          phoneE164: "+15559234568",
+          rawPhone: "5559234568",
+          email: "not-an-email",
+          emailValid: false,
+        }),
+        // Blank cell (parser gave null) and no email column at all (key
+        // absent) both persist as ''.
+        okContact({
+          phoneE164: "+15559234569",
+          rawPhone: "5559234569",
+          email: null,
+          emailValid: false,
+        }),
+        okContact({ phoneE164: "+15559234570", rawPhone: "5559234570" }),
+      ],
+      file,
+      creator,
+    );
+
+    const rows = calls.memberChunks[0];
+    expect(rows.map((r) => r.email)).toEqual([
+      "jane@example.com",
+      "not-an-email",
+      "",
+      "",
+    ]);
+  });
+
+  test("a valid-email row with an unusable phone is stored unchanged: reason invalid, null phone", async () => {
+    const { client, calls } = buildClient();
+    h.client = client;
+
+    await createCsvList(
+      "August recall",
+      [
+        okContact({ email: "jane@example.com", emailValid: true }),
+        okContact({
+          phoneE164: null,
+          rawPhone: "123",
+          reason: "invalid",
+          email: "reachable@example.com",
+          emailValid: true,
+        }),
+      ],
+      file,
+      creator,
+    );
+
+    const rows = calls.memberChunks[0];
+    // Stored exactly like today's invalid rows (kept for audit) — the email
+    // rides along; the SMS send path (reason = 'ok') still never sees it.
+    expect(rows[1]).toMatchObject({
+      phone_e164: null,
+      raw_phone: "123",
+      reason: "invalid",
+      email: "reachable@example.com",
+    });
+    // Regression: the pre-email row shape is intact around the new column.
+    expect(rows[0]).toMatchObject({
+      list_id: "list-1",
+      name: "Jane Doe",
+      first_name: "Jane",
+      phone_e164: "+15559234567",
+      raw_phone: "(555) 923-4567",
+      reason: "ok",
+      consent_source: null,
+      consent_date: null,
+      timezone: null,
+      email: "jane@example.com",
+    });
+  });
+});
+
 describe("createMondayList — optional timezone/outcome columns", () => {
   beforeEach(() => {
     h.client = null;

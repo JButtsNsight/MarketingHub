@@ -197,3 +197,96 @@ describe("timezone column", () => {
     expect(contacts[2]).toMatchObject({ reason: "invalid", timezone: "MT" });
   });
 });
+
+describe("email column", () => {
+  it("captures the email cell verbatim-trimmed with a shape-check boolean; blank → null", () => {
+    const sheet = [
+      "name,phone,email",
+      "Ada Lovelace,(555) 000-0001, ada@example.com ",
+      "Grace Hopper,(555) 000-0002,not-an-email",
+      "Katherine Johnson,(555) 000-0003,",
+    ].join("\n");
+
+    const parsed = parseContactSheet(sheet);
+    expect(parsed.emailHeader).toBe("email");
+    // Verbatim raw strings (trimmed) — validity is a separate boolean, the
+    // value itself is never altered or rejected here.
+    expect(parsed.contacts[0]).toMatchObject({
+      email: "ada@example.com",
+      emailValid: true,
+    });
+    expect(parsed.contacts[1]).toMatchObject({
+      email: "not-an-email",
+      emailValid: false,
+    });
+    expect(parsed.contacts[2]).toMatchObject({ email: null, emailValid: false });
+  });
+
+  it("the shape check needs BOTH @ and a dot", () => {
+    const sheet = [
+      "name,phone,email",
+      "A,(555) 000-0001,a@b",
+      "B,(555) 000-0002,a.b",
+      "C,(555) 000-0003,a@b.co",
+    ].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts.map((c) => c.emailValid)).toEqual([false, false, true]);
+  });
+
+  it('matches header variants ("Email", "E-mail", "Email Address") case-insensitively', () => {
+    for (const header of ["Email", "E-mail", "EMAIL ADDRESS", "email (primary)"]) {
+      const parsed = parseContactSheet(
+        `name,phone,${header}\nAda,(555) 000-0001,ada@example.com\n`,
+      );
+      expect(parsed.contacts[0].email, `header ${header}`).toBe(
+        "ada@example.com",
+      );
+    }
+  });
+
+  it("a valid email never rescues a bad phone — reason stays invalid, counts unchanged", () => {
+    const sheet = [
+      "name,phone,email",
+      "Ada,(555) 000-0001,ada@example.com",
+      "Bad Phone,123,bad@example.com",
+    ].join("\n");
+    const parsed = parseContactSheet(sheet);
+    // Identical classification to the same sheet without the email column.
+    expect(parsed.counts).toEqual({ ok: 1, invalid: 1, duplicate: 0, total: 2 });
+    expect(parsed.contacts[1]).toMatchObject({
+      phoneE164: null,
+      reason: "invalid",
+      email: "bad@example.com",
+      emailValid: true,
+    });
+  });
+
+  it("carries email on duplicate rows too (phone stays null)", () => {
+    const sheet = [
+      "name,phone,email",
+      "Ada,(555) 000-0001,ada@example.com",
+      "Ada Again,(555) 000-0001,again@example.com",
+    ].join("\n");
+    const { contacts } = parseContactSheet(sheet);
+    expect(contacts[1]).toMatchObject({
+      phoneE164: null,
+      reason: "duplicate",
+      email: "again@example.com",
+    });
+  });
+
+  it("omits the email keys entirely when the sheet has no email column (output identical to before)", () => {
+    const parsed = parseContactSheet("name,phone\nAda,(555) 000-0001\n");
+    expect(parsed.emailHeader).toBeNull();
+    expect(parsed.contacts[0]).not.toHaveProperty("email");
+    expect(parsed.contacts[0]).not.toHaveProperty("emailValid");
+    // Full pre-email row shape, byte-for-byte.
+    expect(parsed.contacts[0]).toEqual({
+      name: "Ada",
+      firstName: "Ada",
+      phoneE164: "+15550000001",
+      rawPhone: "(555) 000-0001",
+      reason: "ok",
+    });
+  });
+});

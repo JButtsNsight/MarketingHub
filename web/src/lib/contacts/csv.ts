@@ -36,6 +36,14 @@ export interface ParsedContact {
    * sheet has no timezone column.
    */
   timezone?: string | null;
+  /**
+   * Email address, verbatim-trimmed from the sheet (blank cell → null).
+   * Absent when the sheet has no email column. Never feeds `reason` — that
+   * classification is phone-only, identical to sheets without emails.
+   */
+  email?: string | null;
+  /** Minimal shape check (contains "@" and "."); false for blank/absent. */
+  emailValid?: boolean;
 }
 
 export interface ParsedSheet {
@@ -45,6 +53,7 @@ export interface ParsedSheet {
   phoneHeader: string;
   nameHeader: string | null;
   timezoneHeader: string | null;
+  emailHeader: string | null;
 }
 
 export class SheetParseError extends Error {}
@@ -149,6 +158,9 @@ const CONSENT_SOURCE_HEADERS = [
 /** Recipient-zone column. "time zone" collapses to "timezone" via headerKey. */
 const TIMEZONE_HEADERS = ["timezone", "tz", "zone"];
 
+/** Email column. "e-mail"/"email address" collapse via headerKey. */
+const EMAIL_HEADERS = ["email", "emailaddress"];
+
 function findHeader(
   headers: string[],
   candidates: string[],
@@ -214,10 +226,23 @@ export function parseContactSheet(text: string): ParsedSheet {
   );
   const hasConsent = consentSourceIdx !== -1 || consentDateIdx !== -1;
   const timezoneIdx = findHeader(headers, TIMEZONE_HEADERS);
+  const emailIdx = findHeader(headers, EMAIL_HEADERS);
 
   const timezoneOf = (row: string[]): Pick<ParsedContact, "timezone"> => {
     if (timezoneIdx === -1) return {};
     return { timezone: (row[timezoneIdx] ?? "").trim() || null };
+  };
+
+  const emailOf = (
+    row: string[],
+  ): Pick<ParsedContact, "email" | "emailValid"> => {
+    if (emailIdx === -1) return {};
+    const email = (row[emailIdx] ?? "").trim() || null;
+    return {
+      email,
+      emailValid:
+        email !== null && email.includes("@") && email.includes("."),
+    };
   };
 
   const consentOf = (
@@ -255,17 +280,19 @@ export function parseContactSheet(text: string): ParsedSheet {
 
     const consent = consentOf(row);
     const tz = timezoneOf(row);
+    const em = emailOf(row);
 
+    // `reason` stays phone-only: an email never rescues an unusable phone.
     if (!phoneE164) {
-      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const, ...consent, ...tz };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "invalid" as const, ...consent, ...tz, ...em };
     }
     if (seen.has(phoneE164)) {
       // Duplicates must not carry the phone: the DB member table has
       // `unique (list_id, phone_e164)` and nulls are distinct.
-      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const, ...consent, ...tz };
+      return { name, firstName, phoneE164: null, rawPhone, reason: "duplicate" as const, ...consent, ...tz, ...em };
     }
     seen.add(phoneE164);
-    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const, ...consent, ...tz };
+    return { name, firstName, phoneE164, rawPhone, reason: "ok" as const, ...consent, ...tz, ...em };
   });
 
   const counts = { ok: 0, invalid: 0, duplicate: 0, total: contacts.length };
@@ -282,5 +309,6 @@ export function parseContactSheet(text: string): ParsedSheet {
           ? headers[firstIdx].trim()
           : null,
     timezoneHeader: timezoneIdx !== -1 ? headers[timezoneIdx].trim() : null,
+    emailHeader: emailIdx !== -1 ? headers[emailIdx].trim() : null,
   };
 }

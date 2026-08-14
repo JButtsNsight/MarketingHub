@@ -146,6 +146,10 @@ export async function createCsvList(
     // unknown value falls back to the campaign zone with a per-row note
     // instead of being destroyed here.
     timezone: c.timezone ?? null,
+    // Verbatim-trimmed; '' when the sheet had no email column or the cell
+    // was blank (column is NOT NULL DEFAULT ''). The SMS send path
+    // (getSendableMembers → reason = 'ok') never reads it.
+    email: c.email ?? "",
   }));
   for (let i = 0; i < rows.length; i += INSERT_CHUNK) {
     const chunk = rows.slice(i, i + INSERT_CHUNK);

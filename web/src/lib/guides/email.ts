@@ -26,4 +26,36 @@ export const email: GuideModule = {
     title: "Disconnect account",
     body: "Removes the stored API token so this console can no longer read EmailBison. Nothing in EmailBison is changed; reconnect anytime with a new token.",
   },
+  "email.center.tabs": {
+    title: "Campaigns or Master Inbox",
+    body: "Two surfaces, named as EmailBison names them: the campaign dashboard, and the Master Inbox where every reply lands. Switching tabs never changes anything.",
+  },
+  "email.center.new-campaign": {
+    title: "New campaign",
+    body: "Creates an outbound campaign in EmailBison as a Draft — just the name. Write the sequence, schedule, and sender emails in EmailBison, then launch there.",
+  },
+  "email.center.pause": {
+    title: "Pause sending",
+    body: "Stops this campaign's sends in EmailBison right away; stats and leads stay put. Resume picks up where it left off.",
+  },
+  "email.center.resume": {
+    title: "Resume sending",
+    body: "Starts a paused campaign sending again — emails go out as soon as EmailBison picks it up, so you're asked to confirm first.",
+  },
+  "email.center.push": {
+    title: "Push contacts",
+    body: "Adds a MarketingHub contact list to this campaign as EmailBison leads. On active campaigns, new leads can take about 5 minutes to appear.",
+  },
+  "email.center.replies-folders": {
+    title: "Inbox folders",
+    body: "The Master Inbox folders, exactly as in EmailBison: Inbox, Sent, Spam, and Bounces. Unread replies show bold.",
+  },
+  "email.center.replies-status": {
+    title: "Filter replies",
+    body: "Narrows the folder to one kind of reply — interested, automated, or written by a person. Pick All replies to clear it.",
+  },
+  "email.center.replies-table": {
+    title: "Reply list",
+    body: "Every reply EmailBison received for the folder, with the campaign it came from. Read-only here — open EmailBison to answer.",
+  },
 };

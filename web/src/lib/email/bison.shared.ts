@@ -39,6 +39,36 @@ export const BISON_STATUS_FILTERS = [
 export type BisonStatusFilter = (typeof BISON_STATUS_FILTERS)[number];
 
 /**
+ * One reply row, shaped for the replies pane. `body` is plain text — when the
+ * upstream row only carries html_body it is tag-stripped server-side; raw
+ * HTML never reaches the client.
+ */
+export interface BisonReply {
+  id: number;
+  campaignId: number;
+  fromName: string;
+  fromEmail: string;
+  subject: string;
+  body: string;
+  dateReceived: string | null;
+  folder: string;
+  interested: boolean;
+  read: boolean;
+}
+
+/** Folder filter values accepted by GET /api/replies. */
+export const REPLY_FOLDERS = ["inbox", "sent", "spam", "bounced", "all"] as const;
+export type BisonReplyFolder = (typeof REPLY_FOLDERS)[number];
+
+/** Status filter values accepted by GET /api/replies. */
+export const REPLY_STATUS_FILTERS = [
+  "interested",
+  "automated_reply",
+  "not_automated_reply",
+] as const;
+export type BisonReplyStatusFilter = (typeof REPLY_STATUS_FILTERS)[number];
+
+/**
  * Normalize an operator-pasted instance URL to `https://<host>` — accepts a
  * bare host, strips paths (incl. a pasted `/api`), rejects non-https schemes.
  * Returns null when it can't be made into a safe https origin.
