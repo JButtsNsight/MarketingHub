@@ -9,10 +9,11 @@ import { Guide } from "@/components/guide/Guide";
 /**
  * Category + type filter chips. Each chip toggles its query param (clicking the
  * active one clears it), preserving the search `q`. Category chips are colored
- * from the data pool by position (never red). Server `templates/page.tsx`
- * re-queries the repo from the resulting params.
+ * from the data pool by position (never red). The hosting server page
+ * re-queries the repo from the resulting params. `hideType` drops the type
+ * group — the typed template tabs (SMS / Email) lock the type themselves.
  */
-export function FilterChips() {
+export function FilterChips({ hideType = false }: { hideType?: boolean } = {}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -48,6 +49,7 @@ export function FilterChips() {
           })}
         </div>
       </Guide>
+      {hideType ? null : (
       <Guide id="engagement.templates.type-filter">
         <div className="filter-group" role="group" aria-label="Filter by type">
           {TEMPLATE_TYPES.map((t) => {
@@ -66,6 +68,7 @@ export function FilterChips() {
           })}
         </div>
       </Guide>
+      )}
     </div>
   );
 }

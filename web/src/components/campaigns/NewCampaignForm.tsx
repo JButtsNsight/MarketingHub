@@ -199,7 +199,7 @@ export function NewCampaignForm({
         ) : null}
         <p className="note">
           Templates are managed under{" "}
-          <Link href="/templates">Templates</Link> — edits there show up here.
+          <Link href="/campaigns/templates">Templates</Link> — edits there show up here.
         </p>
       </div>
 

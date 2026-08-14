@@ -10,6 +10,8 @@ nothing you already know goes to waste:
 - **Campaigns** — every campaign with its live numbers, plus pause/resume,
   contact pushes, and draft creation.
 - **Master Inbox** — EmailBison's shared reply inbox, read-only.
+- **Templates** — the email half of the template library (SMS templates live
+  under SMS Campaigns → Templates).
 
 ## What you can do here
 

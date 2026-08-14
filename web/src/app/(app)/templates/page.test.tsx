@@ -5,7 +5,11 @@ import type { Template } from "@/lib/templates/schema";
 const h = vi.hoisted(() => ({
   searchTemplates: vi.fn(),
   requireMarketingUser: vi.fn(),
-  // Sentinel client threaded by the page into every repo call (Wave 4).
+  redirect: vi.fn((to: string) => {
+    // Next's redirect() throws — mirror that so the page function never returns.
+    throw new Error(`REDIRECT:${to}`);
+  }),
+  // Sentinel client threaded by the view into every repo call (Wave 4).
   userDb: {},
 }));
 
@@ -15,21 +19,24 @@ vi.mock("@/lib/supabase", () => ({
 vi.mock("@/lib/templates/repo", () => ({
   searchTemplates: h.searchTemplates,
 }));
-// The page is gated server-side on the marketing group; stub the gate so these
-// render tests focus on the page body (the gate itself is unit-tested in
+// The view is gated server-side on the marketing group; stub the gate so these
+// render tests focus on the body (the gate itself is unit-tested in
 // requireMarketingUser.test.ts).
 vi.mock("@/lib/requireMarketingUser", () => ({
   requireMarketingUser: h.requireMarketingUser,
 }));
-// SearchBar/FilterChips use next/navigation client hooks; stub them for the
-// server-component render.
+// SearchBar/FilterChips/Tabs use next/navigation client hooks; stub them for
+// the server-component render. redirect backs the /templates bookmark shim.
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ replace: vi.fn() }),
-  usePathname: () => "/templates",
+  usePathname: () => "/campaigns/templates",
   useSearchParams: () => new URLSearchParams(""),
+  redirect: h.redirect,
 }));
 
-import TemplatesPage from "./page";
+import TemplatesRedirect from "./page";
+import SmsTemplatesPage from "../campaigns/templates/page";
+import EmailTemplatesPage from "../email/templates/page";
 
 function tpl(id: string, name: string): Template {
   return {
@@ -47,10 +54,11 @@ function tpl(id: string, name: string): Template {
   };
 }
 
-describe("templates/page.tsx (server component)", () => {
+describe("typed template tabs (server components)", () => {
   beforeEach(() => {
     h.searchTemplates.mockReset();
     h.requireMarketingUser.mockReset();
+    h.redirect.mockClear();
     h.requireMarketingUser.mockResolvedValue({
       email: "amy@nsight.example",
       name: "Amy",
@@ -58,57 +66,57 @@ describe("templates/page.tsx (server component)", () => {
     });
   });
 
-  test("enforces the marketing group gate before reading templates", async () => {
-    h.searchTemplates.mockResolvedValue([]);
-    await TemplatesPage({ searchParams: Promise.resolve({}) });
-    expect(h.requireMarketingUser).toHaveBeenCalled();
-  });
-
-  test("reads q/category/type from searchParams and calls the repo", async () => {
+  test("SMS view enforces the marketing gate and LOCKS type=text", async () => {
     h.searchTemplates.mockResolvedValue([tpl("a", "Alpha")]);
-    const ui = await TemplatesPage({
-      searchParams: Promise.resolve({
-        q: "spring",
-        category: "Promotion",
-        type: "email",
-      }),
+    const ui = await SmsTemplatesPage({
+      searchParams: Promise.resolve({ q: "spring", category: "Promotion" }),
     });
     render(ui);
-
+    expect(h.requireMarketingUser).toHaveBeenCalled();
     expect(h.searchTemplates).toHaveBeenCalledWith(
       "spring",
-      { category: "Promotion", type: "email" },
+      { category: "Promotion", type: "text" },
       h.userDb,
     );
     expect(screen.getByRole("link", { name: /alpha/i })).toBeInTheDocument();
-    // filtered/searched view labels the count as matches, not the library total.
     expect(screen.getByText(/1 result/i)).toBeInTheDocument();
+    // The type is locked by the tab — no type filter chips render.
+    expect(screen.queryByRole("group", { name: /filter by type/i })).toBeNull();
+    // The SMS tab strip hosts the view.
+    expect(screen.getByRole("link", { name: "Suppressions" })).toBeInTheDocument();
+  });
+
+  test("Email view locks type=email and hosts the email tab strip", async () => {
+    h.searchTemplates.mockResolvedValue([]);
+    const ui = await EmailTemplatesPage({ searchParams: Promise.resolve({}) });
+    render(ui);
+    expect(h.searchTemplates).toHaveBeenCalledWith(
+      "",
+      { category: undefined, type: "email" },
+      h.userDb,
+    );
+    expect(screen.getByText(/no templates/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Master Inbox" })).toBeInTheDocument();
   });
 
   test("labels the count as 'total' when browsing with no filters", async () => {
     h.searchTemplates.mockResolvedValue([tpl("a", "Alpha"), tpl("b", "Beta")]);
-    const ui = await TemplatesPage({ searchParams: Promise.resolve({}) });
+    const ui = await SmsTemplatesPage({ searchParams: Promise.resolve({}) });
     render(ui);
     expect(screen.getByText(/2 total/i)).toBeInTheDocument();
   });
 
-  test("renders an empty state when there are no results", async () => {
-    h.searchTemplates.mockResolvedValue([]);
-    const ui = await TemplatesPage({ searchParams: Promise.resolve({}) });
-    render(ui);
-    expect(screen.getByText(/no templates/i)).toBeInTheDocument();
+  test("/templates bookmarks redirect to the SMS view, params intact", async () => {
+    await expect(
+      TemplatesRedirect({
+        searchParams: Promise.resolve({ q: "spring", category: "Promotion" }),
+      }),
+    ).rejects.toThrow("REDIRECT:/campaigns/templates?q=spring&category=Promotion");
   });
 
-  test("ignores an invalid type value from the URL", async () => {
-    h.searchTemplates.mockResolvedValue([]);
-    const ui = await TemplatesPage({
-      searchParams: Promise.resolve({ type: "bogus" }),
-    });
-    render(ui);
-    expect(h.searchTemplates).toHaveBeenCalledWith(
-      "",
-      { category: undefined, type: undefined },
-      h.userDb,
-    );
+  test("/templates?type=email bookmarks redirect to the email view", async () => {
+    await expect(
+      TemplatesRedirect({ searchParams: Promise.resolve({ type: "email" }) }),
+    ).rejects.toThrow("REDIRECT:/email/templates");
   });
 });

@@ -138,13 +138,6 @@ export const NAV_GROUPS: NavGroup[] = [
     guideId: "nav.rail.group-marketing",
     items: [
       {
-        href: "/templates",
-        label: "Templates",
-        icon: "templates",
-        marketing: true,
-        guideId: "nav.rail.templates",
-      },
-      {
         // The SMS surfaces (Campaigns/Schedule/Inbox/Review/Suppressions) are
         // TABS on the pages (SMS_TABS, 2026-08-14) — one rail item owns all
         // their routes so the rail mirrors the Email Campaigns shape.

@@ -27,8 +27,8 @@ export const email: GuideModule = {
     body: "Removes the stored API token so this console can no longer read EmailBison. Nothing in EmailBison is changed; reconnect anytime with a new token.",
   },
   "email.center.tabs": {
-    title: "Campaigns or Master Inbox",
-    body: "Two surfaces, named as EmailBison names them: the campaign dashboard, and the Master Inbox where every reply lands. Switching tabs never changes anything.",
+    title: "Email section tabs",
+    body: "The campaign dashboard, the Master Inbox (EmailBison's name for the shared reply inbox), and email templates. Switching tabs never changes anything.",
   },
   "email.center.new-campaign": {
     title: "New campaign",

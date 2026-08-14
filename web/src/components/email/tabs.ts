@@ -9,4 +9,5 @@ import type { TabItem } from "@/components/ui/Tabs";
 export const EMAIL_TABS: TabItem[] = [
   { href: "/email", label: "Campaigns" },
   { href: "/email/replies", label: "Master Inbox" },
+  { href: "/email/templates", label: "Templates" },
 ];

@@ -35,11 +35,10 @@ describe("NAV_GROUPS — Studio IA parity", () => {
     ]);
   });
 
-  it("keeps Marketing to five items — the SMS surfaces are tabs, not rail items", () => {
+  it("keeps Marketing to four items — SMS surfaces and templates are tabs, not rail items", () => {
     const marketing = NAV_GROUPS.find((g) => g.label === "Marketing");
     expect(marketing).toBeDefined();
     expect(marketing!.items.map((i) => [i.label, i.href])).toEqual([
-      ["Templates", "/templates"],
       ["SMS Campaigns", "/campaigns"],
       ["Email Campaigns", "/email"],
       ["Reports", "/reports"],

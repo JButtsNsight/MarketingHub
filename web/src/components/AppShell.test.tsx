@@ -28,15 +28,14 @@ describe("AppShell", () => {
     expect(screen.queryByText(/nsight/i)).toBeNull();
   });
 
-  it("renders a left nav containing a Templates link to /templates", () => {
+  it("renders NO standalone Templates rail item — templates are section tabs now", () => {
     render(
       <AppShell>
         <p>body</p>
       </AppShell>,
     );
     const nav = screen.getByRole("navigation");
-    const link = within(nav).getByRole("link", { name: /templates/i });
-    expect(link).toHaveAttribute("href", "/templates");
+    expect(within(nav).queryByRole("link", { name: /templates/i })).toBeNull();
   });
 
   it("renders an SMS Campaigns link to /campaigns in the left nav", () => {

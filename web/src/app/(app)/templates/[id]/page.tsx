@@ -47,7 +47,14 @@ export default async function TemplateDetailPage({
           <h1>{template.name}</h1>
         </Guide>
         <Guide id="engagement.template.back">
-          <Link className="type-chip" href="/templates">
+          <Link
+            className="type-chip"
+            href={
+              template.type === "email"
+                ? "/email/templates"
+                : "/campaigns/templates"
+            }
+          >
             Back to templates
           </Link>
         </Guide>

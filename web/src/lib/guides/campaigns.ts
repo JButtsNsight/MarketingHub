@@ -10,7 +10,7 @@ export const campaigns: GuideModule = {
   // ── /campaigns (the list) ──
   "campaigns.shell.tabs": {
     title: "SMS section tabs",
-    body: "Everything SMS in one place: the campaign list, the send schedule, text replies, sends needing a human, and the do-not-text list. Switching tabs never changes anything.",
+    body: "Everything SMS in one place: the campaign list, send schedule, text templates, replies, sends needing a human, and the do-not-text list. Switching tabs never changes anything.",
   },
   "campaigns.list.title": {
     title: "SMS text campaigns",

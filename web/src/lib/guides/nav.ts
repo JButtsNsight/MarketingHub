@@ -31,7 +31,7 @@ export const nav: GuideModule = {
   },
   "nav.rail.group-marketing": {
     title: "Marketing tools",
-    body: "Templates, the SMS and Email campaign centers (each with its own tabs), usage reports, and competitor intel. Click the header to collapse or expand the group — the rail remembers your layout.",
+    body: "The SMS and Email campaign centers — each with tabs for its campaigns, templates, and replies — plus usage reports and competitor intel. Click the header to collapse or expand the group.",
   },
   "nav.rail.group-admin": {
     title: "Admin area",
@@ -87,13 +87,9 @@ export const nav: GuideModule = {
     title: "Secrets vault",
     body: "The vault keeps secrets — passwords, API keys — encrypted inside the database. Store them here instead of pasting them into code or settings.",
   },
-  "nav.rail.templates": {
-    title: "Message templates",
-    body: "Reusable message layouts: write the wording once, then reuse it across sends. Browse, search, and manage the library here.",
-  },
   "nav.rail.sms-campaigns": {
     title: "SMS campaigns",
-    body: "Everything text-message, tabbed inside: campaigns and their schedule, the reply inbox, sends needing review, and the do-not-text list.",
+    body: "Everything text-message, tabbed inside: campaigns, their schedule, text templates, the reply inbox, sends needing review, and the do-not-text list.",
   },
   "nav.rail.email-campaigns": {
     title: "Email Campaigns",
